@@ -1,0 +1,168 @@
+# WeKan on FerretDB v1 (SQLite) — Compatibility Roadmap
+
+This roadmap tracks what is needed to run [WeKan](https://github.com/wekan/wekan)
+(Meteor 3 / MongoDB) on **FerretDB v1.24.2 with the SQLite backend** (this repo,
+`main-v1` branch).
+
+**Assumptions**
+
+- WeKan **attachments are stored on the filesystem** (`WRITABLE_PATH`, storage
+  strategy `fs`), not in the database — so **GridFS is out of scope**. GridFS is
+  only exercised if an admin explicitly selects the `gridfs` backend or migrates
+  legacy CollectionFS data. See WeKan `models/attachments.server.js`,
+  `models/lib/fileStoreStrategy.js`, `server/lib/mongoStartup.js` (startup notice:
+  *"Attachments and avatars are stored ON DISK under WRITABLE_PATH, NOT in MongoDB"*).
+- Core CRUD (`insert`, `find`, `count`, `update` with `$set`, `findOneAndUpdate`)
+  has already been **verified working** against this FerretDB v1.24.2 SQLite build
+  with the MongoDB wire driver.
+
+**Legend:** `[x]` = supported / already works · `[ ]` = missing / to do.
+FerretDB sources are relative paths in this repo; WeKan sources link to
+`github.com/wekan/wekan`.
+
+---
+
+## 1) MongoDB features WeKan uses
+
+What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use.
+
+### CRUD & atomic operations
+- [x] `find` / `insert` / `update` / `delete`
+- [x] `findOneAndUpdate` with `$inc` + `{ upsert: true, returnDocument: 'after' }` — atomic counters ([`models/counters.js`](https://github.com/wekan/wekan/blob/main/models/counters.js))
+- [x] `updateOne` with `$setOnInsert` + `upsert` — race-safe per-board card numbering ([`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
+- [x] `rawCollection()` access (node-mongodb driver) for the above and index creation
+
+### Update operators
+- [x] `$set` (pervasive, ~765 sites), `$unset` (~42)
+- [x] `$pull` (~72), `$push` (~46), `$addToSet` (~38)
+- [x] `$each` (~7), `$slice` (~4), `$sort` update-modifier (1) — with `$push`/`$addToSet`
+- [x] `$setOnInsert` (~44, upserts), `$inc` (3), `$rename` (1), `$pullAll` (1, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js))
+- Not used: `$pop`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
+
+### Query operators
+- [x] `$regex` incl. `$options: 'i'` and `$not: { $regex: … }` — **WeKan's entire search/filter is regex-based** ([`client/lib/filter.js`](https://github.com/wekan/wekan/blob/main/client/lib/filter.js), [`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
+- [x] `$in`, `$gte`, `$ne`, `$or`, `$not`, `$exists`, `$size`
+- Not used: `$text`, `$where`, `$expr`, geospatial (`$near`/`$geoWithin`), `collation`
+
+### Aggregation pipelines (3 sites, server-side admin/metrics only — not on the hot path)
+- [x] Stages: `$match`, `$group` (`$sum`), `$sort`, `$project`, `$addFields`, `$count`, **`$lookup`**
+- [x] Expression operators: `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$or`, `$eq`, `$ne`
+- Sites: [`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js) (Prometheus "top boards"), [`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) (attachment storage stats)
+
+### Indexes
+- [x] Single-field indexes ([`server/lib/mongoStartup.js`](https://github.com/wekan/wekan/blob/main/server/lib/mongoStartup.js) `ensureIndex()`)
+- [x] Compound indexes (e.g. `{ boardId: 1, createdAt: -1 }`)
+- [x] Unique indexes (e.g. boards, invitation codes)
+- Not used: **TTL** (`expireAfterSeconds`), **text** indexes, geospatial indexes
+
+### Reactivity (Meteor pub/sub)
+- [x] Configurable driver order via `METEOR_REACTIVITY_ORDER` = `changeStreams,oplog,polling` ([`start-wekan.sh`](https://github.com/wekan/wekan/blob/main/start-wekan.sh))
+- [x] **`polling` (poll-and-diff) is a first-class fallback** — no hard oplog/change-stream dependency (~2000 ms latency without oplog)
+- [x] Oplog is only *introspected* for the Admin Panel, never required ([`server/statistics.js`](https://github.com/wekan/wekan/blob/main/server/statistics.js))
+
+### Admin / diagnostic commands
+- [x] `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
+- [x] `compact`, `replSetGetStatus` — GridFS admin tooling only (skippable with `fs` attachments)
+
+### Not used at all (so not required from FerretDB)
+- [ ] ~~Multi-document transactions / sessions~~ (`startSession`, `withTransaction`) — none
+- [ ] ~~Capped collections~~ — none created by WeKan
+- [ ] ~~Full-text search~~ (`$text` / text indexes) — replaced by `$regex`
+- [ ] ~~GridFS~~ — attachments on filesystem
+- [ ] ~~TTL indexes, geospatial, `$where`, `mapReduce`, `collation`~~ — none
+
+---
+
+## 2) What FerretDB v1 already implements
+
+From this repo (`internal/handler/…`, `website/docs/reference/supported-commands.md`).
+
+### CRUD & cursors — implemented
+- [x] `find`, `insert`, `update`, `delete` (`internal/handler/msg_find.go`, `msg_insert.go`, `msg_update.go`, `msg_delete.go`)
+- [x] `findAndModify` — query/sort/remove/update/new/upsert (`msg_findandmodify.go`)
+- [x] `count`, `distinct`, `getMore`, `killCursors`
+
+### Update operators — implemented
+- [x] `$set`, `$unset`, `$inc`, `$push`, `$pull`, `$addToSet`, `$pop`, `$rename`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
+- [~] `$each` supported; modifiers `$slice`, `$sort`, `$position` only **partial**
+- [ ] `$pullAll` — not in the documented update-operator set
+
+### Query filter operators — implemented (`internal/handler/common/filter.go`)
+- [x] `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
+- [x] `$in`, `$nin`, `$exists`, `$type`, `$size`, `$all`, `$elemMatch`, `$mod`, `$bitsAllSet`
+- [x] **`$regex`** with `$options` (`filterFieldRegex` / `filterFieldExprRegex`)
+- [ ] `$text`, `$where` — not implemented
+
+### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
+- [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
+- [x] Accumulator/operator `$sum`, `$count`
+- [ ] Stages: **`$lookup`**, `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$replaceRoot`, `$bucket`, `$setWindowFields`, `$changeStream`, `$sample`, `$geoNear`, … (return `ErrNotImplemented`)
+- [ ] Nearly **all aggregation expression operators** (`$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or`, arithmetic/date/string/array/conditional) — unimplemented
+
+### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
+- [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
+- [x] `sparse` accepted (silently ignored — comment: *"Ignore for now to make Meteor apps work"*)
+- [ ] `expireAfterSeconds` (**TTL**), text (`weights`/`default_language`), `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
+
+### Reactivity — limited
+- [x] **Tailable / awaitData cursors** on **capped collections** (poll-based; `msg_find.go`, `msg_getmore.go`)
+- [x] Capped collections in the **SQLite backend** (`internal/backends/sqlite/database.go`, `insert.go`, `query.go`)
+- [x] **Basic OpLog tailing** via `internal/backends/decorators/oplog/` — writes `local.oplog.rs` records (i/u/d)
+- [ ] **Change streams** (`$changeStream` / `watch`) — not supported ([issue #1415](https://github.com/FerretDB/FerretDB/issues/1415))
+- [ ] Real **replication** / `replSetInitiate` — oplog is tailing-only; the capped `local.oplog.rs` must be created **manually** and `FERRETDB_REPL_SET_NAME` set (`website/docs/configuration/oplog-support.md`)
+
+### Sessions / transactions — not supported
+- [ ] `startSession`, `commitTransaction`, `abortTransaction`, retryable writes — all `❌`
+
+### Admin / diagnostic — implemented
+- [x] `serverStatus`, `buildInfo`, `hello`/`ismaster`, `ping`, `collStats`, `dbStats`
+- [x] `listCollections`, `listDatabases`, `listIndexes`, `createIndexes`, `dropIndexes`, `create`, `drop`, `compact`
+- [ ] `getParameter`, `replSetInitiate` — `❌`
+
+---
+
+## 3) Missing from FerretDB v1 to run WeKan on FerretDB v1 SQLite
+
+Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no action.
+`[ ]` = gap to close (in FerretDB) or configure around (in WeKan).
+
+### ✅ Already satisfied — WeKan core runs on FerretDB v1 SQLite today
+- [x] Core CRUD + `findOneAndUpdate($inc)` atomic counters (**verified** against this build)
+- [x] All update operators WeKan uses: `$set/$unset/$push/$pull/$addToSet/$setOnInsert/$inc/$rename`
+- [x] All query operators WeKan uses, incl. **`$regex` + `$options:'i'`** and `$not:{$regex}` (WeKan search)
+- [x] Single-field, compound, and unique indexes
+- [x] `sparse` index option (silently ignored — harmless for WeKan)
+- [x] Admin/startup commands: `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
+
+### ⚠️ Gaps that break **admin-only** features (core kanban unaffected)
+- [ ] **`$lookup` aggregation stage** → breaks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). *Workaround:* rewrite that metric without `$lookup`, or disable it.
+- [ ] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → break attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`). These are `…Safe`-wrapped and degrade gracefully; also GridFS-related, so moot with `fs` attachments.
+
+### 🔁 Reactivity — configure WeKan around the gap
+- [ ] **Change streams unsupported** → set `METEOR_REACTIVITY_ORDER=polling` (poll-and-diff, ~2000 ms latency). This is the primary supported path. *(FerretDB to-do: implement change streams — [#1415](https://github.com/FerretDB/FerretDB/issues/1415).)*
+- [ ] **No real replication oplog** → optional lower-latency path needs manual setup: create capped `local.oplog.rs`, set `FERRETDB_REPL_SET_NAME`, point `MONGO_OPLOG_URL` at it, and use `METEOR_REACTIVITY_ORDER=oplog,polling`. Needs end-to-end validation with Meteor's oplog tailer.
+
+### 🔎 To verify (partial support — likely fine, confirm under load)
+- [ ] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — FerretDB marks these modifiers *partial*. Verify WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
+- [ ] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — not in FerretDB's documented update operators. Verify or replace with `$pull: { …: { $in: [...] } }`.
+- [ ] **`getParameter` `❌`** — confirm WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) doesn't hard-fail without it.
+
+### 🚫 Not needed (WeKan doesn't use them; no action)
+- [x] Transactions/sessions, capped collections, TTL indexes, text indexes/`$text`, geospatial, `collation`, `mapReduce`, `$where` — unused by WeKan
+- [x] GridFS commands (`replSetGetStatus`, GridFS `compact`) — attachments on filesystem
+
+---
+
+## Bottom line
+
+WeKan's **core functionality runs on FerretDB v1.24.2 SQLite** with
+`METEOR_REACTIVITY_ORDER=polling` and filesystem attachments. No blocking gaps
+exist for boards/cards/lists/CRUD/search. The only real gaps are:
+
+1. **Admin metrics/attachment-stats aggregations** using `$lookup` and expression
+   operators (cosmetic; fixable by simplifying those queries).
+2. **Low-latency reactivity** (change streams unsupported; basic oplog tailing
+   needs manual setup and validation) — otherwise polling works.
+
+A handful of **partial** update-operator modifiers (`$each`+`$slice`/`$sort`,
+`$pullAll`) should be validated end-to-end.
