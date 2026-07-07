@@ -18,6 +18,7 @@
 - Implement the `$replaceRoot`, `$replaceWith`, `$sortByCount` and `$sample` aggregation stages by @xet7. Thanks to xet7.
 - Implement the `$facet` aggregation stage (multi-sub-pipeline) by @xet7. Thanks to xet7.
 - Implement the `$unionWith` aggregation stage (with optional sub-pipeline) by @xet7. Thanks to xet7.
+- Implement the `$bucket` and `$bucketAuto` aggregation stages (the `$bucketAuto` `granularity` option is not yet supported) by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
 

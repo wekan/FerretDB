@@ -52,8 +52,6 @@ var Stages = map[string]newStageFunc{
 // unsupportedStages maps all unsupported yet stages.
 var unsupportedStages = map[string]struct{}{
 	// sorted alphabetically
-	"$bucket":                 {},
-	"$bucketAuto":             {},
 	"$changeStream":           {},
 	"$currentOp":              {},
 	"$densify":                {},
