@@ -13,6 +13,7 @@
 - Implement the string aggregation expression operators `$concat`, `$toUpper`, `$toLower`, `$strLenCP`, `$strLenBytes`, `$strcasecmp`, `$substr`, `$substrCP`, `$substrBytes`, `$split`, `$trim`, `$ltrim`, `$rtrim`, `$indexOfCP`, `$indexOfBytes`, `$replaceOne`, `$replaceAll` and `$regexMatch` by @xet7. Thanks to xet7.
 - Implement the array aggregation expression operators `$size`, `$arrayElemAt`, `$concatArrays`, `$isArray`, `$in`, `$reverseArray`, `$slice`, `$range`, `$indexOfArray`, `$arrayToObject`, `$filter`, `$reduce`, `$sortArray`, `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$setIsSubset` and `$zip` by @xet7. Thanks to xet7.
 - Implement the type-conversion aggregation expression operators `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toBool`, `$toObjectId`, `$toDate`, `$convert`, `$isNumber`, `$literal`, `$let`, `$getField`, `$setField`, `$unsetField`, `$binarySize` and `$rand` by @xet7. Thanks to xet7.
+- Implement the date aggregation expression operators `$year`, `$month`, `$dayOfMonth`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$isoDayOfWeek`, `$isoWeek`, `$isoWeekYear`, `$dateToString`, `$dateFromString`, `$dateToParts`, `$dateFromParts`, `$dateAdd`, `$dateSubtract`, `$dateDiff` and `$dateTrunc` by @xet7. Thanks to xet7.
 - Implement the `$lookup` aggregation stage (basic equality-join form) used by WeKan by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
