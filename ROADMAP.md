@@ -85,7 +85,7 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 ### Update operators — implemented
 - [x] `$set`, `$unset`, `$inc`, `$push`, `$pull`, `$addToSet`, `$pop`, `$rename`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
 - [~] `$each` supported; modifiers `$slice`, `$sort`, `$position` only **partial**
-- [ ] `$pullAll` — not in the documented update-operator set
+- [x] `$pullAll` — implemented in `internal/handler/common/update_array_operators.go`
 
 ### Query filter operators — implemented (`internal/handler/common/filter.go`)
 - [x] `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
@@ -144,7 +144,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 
 ### 🔎 To verify (partial support — likely fine, confirm under load)
 - [ ] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — FerretDB marks these modifiers *partial*. Verify WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
-- [ ] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — not in FerretDB's documented update operators. Verify or replace with `$pull: { …: { $in: [...] } }`.
+- [x] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — implemented and covered by integration tests (`integration/update_pullall_test.go`).
 - [ ] **`getParameter` `❌`** — confirm WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) doesn't hard-fail without it.
 
 ### 🚫 Not needed (WeKan doesn't use them; no action)
