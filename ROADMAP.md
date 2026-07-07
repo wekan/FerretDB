@@ -99,7 +99,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Accumulator/operator `$sum`, `$count`
 - [ ] Stages: `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$replaceRoot`, `$bucket`, `$setWindowFields`, `$changeStream`, `$sample`, `$geoNear`, … (return `ErrNotImplemented`)
 - [x] Aggregation expression operators used by WeKan: `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray`, `$map`
-- [ ] Remaining **aggregation expression operators** (arithmetic/date/string/array/conditional, e.g. `$add`, `$cond`, `$filter`, `$reduce`, `$arrayToObject`) — unimplemented
+- [x] Comparison/boolean/conditional expression operators: `$cmp`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$not`, `$cond`, `$switch`, `$allElementsTrue`
+- [ ] Remaining **aggregation expression operators** (arithmetic/date/string/array, e.g. `$add`, `$filter`, `$reduce`, `$arrayToObject`) — unimplemented
 
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
