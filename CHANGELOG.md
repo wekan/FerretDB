@@ -13,7 +13,7 @@
 ### Other Changes 🤖
 
 - Add positive and negative integration tests for the `$pullAll` update operator, used by WeKan (already implemented upstream) by @xet7. Thanks to xet7.
-
+- Add `docker-compose.yml` and `Dockerfile.wekan` so `docker compose up --build` builds FerretDB v1 (SQLite backend) and runs WeKan against it (no oplog, `METEOR_REACTIVITY_ORDER=polling`, attachments on filesystem); the previous FerretDB development compose is preserved as `docker-compose.dev.yml` by @xet7 in https://github.com/wekan/FerretDB/commit/ed7a4df1 . Thanks to xet7.
 - Update all Go dependencies to their latest releases (grpc, protobuf, OpenTelemetry, `golang.org/x/{crypto,net,sys,text}`, `go.mongodb.org/mongo-driver`, testify and procfs) and bump the `go` directive from 1.24 to 1.25 by @xet7 in https://github.com/wekan/FerretDB/commit/7549f63d311e499c3136a9eac9efed874bccbf6a . Thanks to xet7.
 - Update the SQLite backend driver `modernc.org/sqlite` v1.32.0 → v1.53.0 (and `modernc.org/libc` v1.55.3 → v1.74.0), which requires Go 1.25 by @xet7 in https://github.com/wekan/FerretDB/commit/7549f63d311e499c3136a9eac9efed874bccbf6a . Thanks to xet7.
 - Keep `github.com/FerretDB/wire` pinned at v0.0.8, because newer releases change the internal BSON API (`GetByIndex`, `Sections`, `CheckNaNs`) used by this v1.24.2 codebase by @xet7 in https://github.com/wekan/FerretDB/commit/7549f63d311e499c3136a9eac9efed874bccbf6a . Thanks to xet7.
