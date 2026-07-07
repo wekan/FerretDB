@@ -17,6 +17,7 @@
 - Implement the `$lookup` aggregation stage (basic equality-join form) used by WeKan by @xet7. Thanks to xet7.
 - Implement the `$replaceRoot`, `$replaceWith`, `$sortByCount` and `$sample` aggregation stages by @xet7. Thanks to xet7.
 - Implement the `$facet` aggregation stage (multi-sub-pipeline) by @xet7. Thanks to xet7.
+- Implement the `$unionWith` aggregation stage (with optional sub-pipeline) by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
 

@@ -72,7 +72,6 @@ var unsupportedStages = map[string]struct{}{
 	"$searchMeta":             {},
 	"$setWindowFields":        {},
 	"$sharedDataDistribution": {},
-	"$unionWith":              {},
 	// please keep sorted alphabetically
 }
 

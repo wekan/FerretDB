@@ -357,20 +357,34 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 		//
 		// Limitation: the entire `from` collection is loaded into memory (full scan, no index use).
 		// This is acceptable for WeKan's small joins.
+		//
+		// The same technique is applied to $unionWith, which likewise needs to read another
+		// ("coll") collection but has no database handle of its own.
 		for _, s := range stagesDocuments {
-			lookup, ok := s.(*stages.Lookup)
-			if !ok {
+			var name string
+
+			switch stage := s.(type) {
+			case *stages.Lookup:
+				name = stage.From()
+			case *stages.UnionWith:
+				name = stage.Coll()
+			default:
 				continue
 			}
 
 			var fromDocs []*types.Document
 
-			if fromDocs, err = fetchAllDocuments(ctx, db, lookup.From()); err != nil {
+			if fromDocs, err = fetchAllDocuments(ctx, db, name); err != nil {
 				closer.Close()
 				return nil, handleMaxTimeMSError(err, maxTimeMS, "aggregate")
 			}
 
-			lookup.SetFromDocuments(fromDocs)
+			switch stage := s.(type) {
+			case *stages.Lookup:
+				stage.SetFromDocuments(fromDocs)
+			case *stages.UnionWith:
+				stage.SetFromDocuments(fromDocs)
+			}
 		}
 
 		iter, err = processStagesDocuments(ctx, closer, &stagesDocumentsParams{c, qp, stagesDocuments})
