@@ -102,7 +102,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Comparison/boolean/conditional expression operators: `$cmp`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$not`, `$cond`, `$switch`, `$allElementsTrue`
 - [x] Arithmetic expression operators: `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$abs`, `$ceil`, `$floor`, `$trunc`, `$round`, `$pow`, `$sqrt`, `$exp`, `$ln`, `$log`, `$max`, `$min`, `$avg`
 - [x] String expression operators: `$concat`, `$toUpper`, `$toLower`, `$strLenCP`, `$strLenBytes`, `$strcasecmp`, `$substr`, `$substrCP`, `$substrBytes`, `$split`, `$trim`, `$ltrim`, `$rtrim`, `$indexOfCP`, `$indexOfBytes`, `$replaceOne`, `$replaceAll`, `$regexMatch`
-- [ ] Remaining **aggregation expression operators** (date/array, e.g. `$filter`, `$reduce`, `$arrayToObject`) — unimplemented
+- [x] Array expression operators: `$size`, `$arrayElemAt`, `$concatArrays`, `$isArray`, `$in`, `$reverseArray`, `$slice`, `$range`, `$indexOfArray`, `$arrayToObject`, `$filter`, `$reduce`, `$sortArray`, `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$setIsSubset`, `$zip`
+- [ ] Remaining **aggregation expression operators** — mostly date operators (`$dateAdd`, `$dateToString`, `$year`, `$month`, …), type-conversion operators (`$convert`, `$toInt`, `$toString`, `$toDate`, …) and a few niche ones (`$let`, `$getField`, `$function`, trigonometric) — unimplemented
 
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
