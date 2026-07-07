@@ -178,7 +178,7 @@ Remaining gaps:
 2. **Minor**: `getParameter` is unimplemented — confirm WeKan startup does not
    hard-depend on it.
 
-A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile.wekan`):
+A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile`):
 `docker compose up --build` builds FerretDB v1 (SQLite) and runs WeKan against it.
 
 A handful of **partial** update-operator modifiers (`$each`+`$slice`/`$sort`,

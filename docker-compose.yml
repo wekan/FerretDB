@@ -4,7 +4,7 @@
 # Running from inside this FerretDB directory:
 #     docker compose up --build
 #
-# This BUILDS FerretDB v1 from the source in this repository (see Dockerfile.wekan)
+# This BUILDS FerretDB v1 from the source in this repository (see Dockerfile)
 # and RUNS WeKan against it, mirroring how WeKan runs with MongoDB in the main
 # WeKan docker-compose.yml at https://github.com/wekan/wekan
 #
