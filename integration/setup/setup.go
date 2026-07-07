@@ -101,6 +101,9 @@ type BackendOpts struct {
 	// Percentage of documents to cleanup for capped collections. If not set, defaults to 20.
 	CappedCleanupPercentage uint8
 
+	// TTL indexes cleanup interval. If not set, FerretDB defaults to 60s.
+	TTLCleanupInterval time.Duration
+
 	// MaxBsonObjectSizeBytes is the maximum allowed size of a document, if not set FerretDB sets the default.
 	MaxBsonObjectSizeBytes int
 

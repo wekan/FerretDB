@@ -112,7 +112,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
 - [x] `sparse` accepted (silently ignored — comment: *"Ignore for now to make Meteor apps work"*)
-- [ ] `expireAfterSeconds` (**TTL**), text (`weights`/`default_language`), `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
+- [x] `expireAfterSeconds` (**TTL**) indexes — parsed by createIndexes, reported by listIndexes, and enforced by a background reaper (`internal/handler/handler.go` `runTTLCleanup`)
+- [ ] text (`weights`/`default_language`), `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
 
 ### Reactivity — limited
 - [x] **Tailable / awaitData cursors** on **capped collections** (poll-based; `msg_find.go`, `msg_getmore.go`)

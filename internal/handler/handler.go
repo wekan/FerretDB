@@ -75,6 +75,9 @@ type Handler struct {
 	cappedCleanupStop             chan struct{}
 	cleanupCappedCollectionsDocs  *prometheus.CounterVec
 	cleanupCappedCollectionsBytes *prometheus.CounterVec
+
+	ttlCleanupStop            chan struct{}
+	cleanupTTLCollectionsDocs *prometheus.CounterVec
 }
 
 // NewOpts represents handler configuration.
@@ -99,6 +102,7 @@ type NewOpts struct {
 	EnableNestedPushdown    bool
 	CappedCleanupInterval   time.Duration
 	CappedCleanupPercentage uint8
+	TTLCleanupInterval      time.Duration
 	EnableNewAuth           bool
 	BatchSize               int
 	MaxBsonObjectSizeBytes  int
@@ -119,6 +123,10 @@ func New(opts *NewOpts) (*Handler, error) {
 
 	if opts.MaxBsonObjectSizeBytes == 0 {
 		opts.MaxBsonObjectSizeBytes = types.MaxDocumentLen
+	}
+
+	if opts.TTLCleanupInterval == 0 {
+		opts.TTLCleanupInterval = 60 * time.Second
 	}
 
 	b := oplog.NewBackend(opts.Backend, logging.WithName(opts.L, "oplog"))
@@ -147,6 +155,17 @@ func New(opts *NewOpts) (*Handler, error) {
 			},
 			[]string{"db", "collection"},
 		),
+
+		ttlCleanupStop: make(chan struct{}),
+		cleanupTTLCollectionsDocs: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "cleanup_ttl_docs",
+				Help:      "Total number of documents deleted in TTL collections during cleanup.",
+			},
+			[]string{"db", "collection"},
+		),
 	}
 
 	if err := h.setup(); err != nil {
@@ -162,6 +181,14 @@ func New(opts *NewOpts) (*Handler, error) {
 		defer h.wg.Done()
 
 		h.runCappedCleanup()
+	}()
+
+	h.wg.Add(1)
+
+	go func() {
+		defer h.wg.Done()
+
+		h.runTTLCleanup()
 	}()
 
 	return h, nil
@@ -272,11 +299,181 @@ func (h *Handler) runCappedCleanup() {
 	}
 }
 
+// runTTLCleanup deletes expired documents from TTL indexes according to the given interval.
+func (h *Handler) runTTLCleanup() {
+	if h.TTLCleanupInterval <= 0 {
+		h.L.Info("TTL indexes cleanup disabled.")
+		return
+	}
+
+	h.L.Info("TTL indexes cleanup enabled.", slog.Duration("interval", h.TTLCleanupInterval))
+
+	ticker := time.NewTicker(h.TTLCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := h.cleanupAllTTLCollections(context.Background()); err != nil {
+				h.L.Error("Failed to cleanup TTL collections.", logging.Error(err))
+			}
+
+		case <-h.ttlCleanupStop:
+			h.L.Info("TTL indexes cleanup stopped.")
+			return
+		}
+	}
+}
+
+// cleanupAllTTLCollections removes expired documents from every TTL index in every collection.
+func (h *Handler) cleanupAllTTLCollections(ctx context.Context) error {
+	ctx, span := otel.Tracer("").Start(ctx, "HandlerCleanupAllTTLCollections")
+
+	start := time.Now()
+	defer func() {
+		span.End()
+		h.L.DebugContext(ctx, "cleanupAllTTLCollections: finished", slog.Duration("duration", time.Since(start)))
+	}()
+
+	connInfo := conninfo.New()
+	connInfo.SetBypassBackendAuth()
+	ctx = conninfo.Ctx(ctx, connInfo)
+
+	now := time.Now()
+
+	dbList, err := h.b.ListDatabases(ctx, nil)
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+
+	for _, dbInfo := range dbList.Databases {
+		db, err := h.b.Database(dbInfo.Name)
+		if err != nil {
+			return lazyerrors.Error(err)
+		}
+
+		cList, err := db.ListCollections(ctx, nil)
+		if err != nil {
+			return lazyerrors.Error(err)
+		}
+
+		for _, cInfo := range cList.Collections {
+			coll, err := db.Collection(cInfo.Name)
+			if err != nil {
+				return lazyerrors.Error(err)
+			}
+
+			indexes, err := coll.ListIndexes(ctx, nil)
+			if err != nil {
+				if backends.ErrorCodeIs(err, backends.ErrorCodeCollectionDoesNotExist) ||
+					backends.ErrorCodeIs(err, backends.ErrorCodeDatabaseDoesNotExist) {
+					continue
+				}
+
+				return lazyerrors.Error(err)
+			}
+
+			for _, index := range indexes.Indexes {
+				// TTL indexes are single-field only; skip anything else defensively.
+				if index.ExpireAfterSeconds == nil || len(index.Key) != 1 {
+					continue
+				}
+
+				cutoff := now.Add(-time.Duration(*index.ExpireAfterSeconds) * time.Second)
+
+				deleted, err := h.cleanupTTLCollection(ctx, coll, index.Key[0].Field, cutoff)
+				if err != nil {
+					if backends.ErrorCodeIs(err, backends.ErrorCodeCollectionDoesNotExist) ||
+						backends.ErrorCodeIs(err, backends.ErrorCodeDatabaseDoesNotExist) {
+						continue
+					}
+
+					return lazyerrors.Error(err)
+				}
+
+				if deleted > 0 {
+					h.L.InfoContext(
+						ctx,
+						"TTL collection cleaned up",
+						slog.String("db", dbInfo.Name),
+						slog.String("collection", cInfo.Name),
+						slog.String("index", index.Name),
+						slog.Int("deleted", int(deleted)),
+					)
+
+					h.cleanupTTLCollectionsDocs.WithLabelValues(dbInfo.Name, cInfo.Name).Add(float64(deleted))
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// cleanupTTLCollection deletes documents whose date field is older than or equal to the cutoff.
+//
+// Documents where the field is missing or is not a date are skipped, matching MongoDB behavior.
+func (h *Handler) cleanupTTLCollection(ctx context.Context, coll backends.Collection, field string, cutoff time.Time) (int32, error) { //nolint:lll // for readability
+	path, err := types.NewPathFromString(field)
+	if err != nil {
+		return 0, lazyerrors.Error(err)
+	}
+
+	res, err := coll.Query(ctx, &backends.QueryParams{})
+	if err != nil {
+		return 0, lazyerrors.Error(err)
+	}
+
+	defer res.Iter.Close()
+
+	var ids []any
+
+	for {
+		_, doc, err := res.Iter.Next()
+		if err != nil {
+			if errors.Is(err, iterator.ErrIteratorDone) {
+				break
+			}
+
+			return 0, lazyerrors.Error(err)
+		}
+
+		v, err := doc.GetByPath(path)
+		if err != nil {
+			// field is missing
+			continue
+		}
+
+		t, ok := v.(time.Time)
+		if !ok {
+			// non-date values are ignored by the reaper, per MongoDB
+			continue
+		}
+
+		// delete where field <= cutoff
+		if !t.After(cutoff) {
+			ids = append(ids, must.NotFail(doc.Get("_id")))
+		}
+	}
+
+	if len(ids) == 0 {
+		return 0, nil
+	}
+
+	deleteRes, err := coll.DeleteAll(ctx, &backends.DeleteAllParams{IDs: ids})
+	if err != nil {
+		return 0, lazyerrors.Error(err)
+	}
+
+	return deleteRes.Deleted, nil
+}
+
 // Close gracefully shutdowns handler.
 // It should be called after listener closes all client connections and stops listening.
 func (h *Handler) Close() {
 	h.cursors.Close()
 	close(h.cappedCleanupStop)
+	close(h.ttlCleanupStop)
 	h.wg.Wait()
 }
 
@@ -286,6 +483,7 @@ func (h *Handler) Describe(ch chan<- *prometheus.Desc) {
 	h.cursors.Describe(ch)
 	h.cleanupCappedCollectionsDocs.Describe(ch)
 	h.cleanupCappedCollectionsBytes.Describe(ch)
+	h.cleanupTTLCollectionsDocs.Describe(ch)
 }
 
 // Collect implements [prometheus.Collector].
@@ -294,6 +492,7 @@ func (h *Handler) Collect(ch chan<- prometheus.Metric) {
 	h.cursors.Collect(ch)
 	h.cleanupCappedCollectionsDocs.Collect(ch)
 	h.cleanupCappedCollectionsBytes.Collect(ch)
+	h.cleanupTTLCollectionsDocs.Collect(ch)
 }
 
 // cleanupAllCappedCollections drops the given percent of documents from all capped collections.

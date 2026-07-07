@@ -104,6 +104,10 @@ func (h *Handler) MsgListIndexes(connCtx context.Context, msg *wire.OpMsg) (*wir
 			indexDoc.Set("unique", index.Unique)
 		}
 
+		if index.ExpireAfterSeconds != nil {
+			indexDoc.Set("expireAfterSeconds", *index.ExpireAfterSeconds)
+		}
+
 		firstBatch.Append(indexDoc)
 	}
 

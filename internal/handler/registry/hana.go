@@ -55,6 +55,7 @@ func init() {
 			DisablePushdown:         opts.DisablePushdown,
 			CappedCleanupPercentage: opts.CappedCleanupPercentage,
 			CappedCleanupInterval:   opts.CappedCleanupInterval,
+			TTLCleanupInterval:      opts.TTLCleanupInterval,
 			EnableNewAuth:           opts.EnableNewAuth,
 			BatchSize:               opts.BatchSize,
 			MaxBsonObjectSizeBytes:  opts.MaxBsonObjectSizeBytes,

@@ -475,9 +475,10 @@ func (c *collection) ListIndexes(ctx context.Context, params *backends.ListIndex
 
 	for i, index := range coll.Settings.Indexes {
 		res.Indexes[i] = backends.IndexInfo{
-			Name:   index.Name,
-			Unique: index.Unique,
-			Key:    make([]backends.IndexKeyPair, len(index.Key)),
+			Name:               index.Name,
+			Unique:             index.Unique,
+			ExpireAfterSeconds: index.ExpireAfterSeconds,
+			Key:                make([]backends.IndexKeyPair, len(index.Key)),
 		}
 
 		for j, key := range index.Key {
@@ -500,9 +501,10 @@ func (c *collection) CreateIndexes(ctx context.Context, params *backends.CreateI
 	indexes := make([]metadata.IndexInfo, len(params.Indexes))
 	for i, index := range params.Indexes {
 		indexes[i] = metadata.IndexInfo{
-			Name:   index.Name,
-			Key:    make([]metadata.IndexKeyPair, len(index.Key)),
-			Unique: index.Unique,
+			Name:               index.Name,
+			Key:                make([]metadata.IndexKeyPair, len(index.Key)),
+			ExpireAfterSeconds: index.ExpireAfterSeconds,
+			Unique:             index.Unique,
 		}
 
 		for j, key := range index.Key {

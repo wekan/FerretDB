@@ -372,9 +372,12 @@ type ListIndexesResult struct {
 
 // IndexInfo represents information about a single index.
 type IndexInfo struct {
-	Name   string
-	Key    []IndexKeyPair
-	Unique bool
+	Name string
+	Key  []IndexKeyPair
+	// ExpireAfterSeconds, when non-nil, marks this as a TTL index; documents whose
+	// indexed date field is older than this many seconds are removed by the background reaper.
+	ExpireAfterSeconds *int32
+	Unique             bool
 }
 
 // IndexKeyPair consists of a field name and a sort order that are part of the index.

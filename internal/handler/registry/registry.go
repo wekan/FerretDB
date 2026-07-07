@@ -74,6 +74,7 @@ type TestOpts struct {
 	EnableNestedPushdown    bool
 	CappedCleanupInterval   time.Duration
 	CappedCleanupPercentage uint8
+	TTLCleanupInterval      time.Duration
 	EnableNewAuth           bool
 	BatchSize               int
 	MaxBsonObjectSizeBytes  int

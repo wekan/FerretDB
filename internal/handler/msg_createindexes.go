@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
@@ -358,7 +359,51 @@ func processIndex(command string, indexDoc *types.Document) (*backends.IndexInfo
 			// Ignore for now to make Meteor apps work.
 			// TODO https://github.com/FerretDB/FerretDB/issues/2448
 
-		case "partialFilterExpression", "expireAfterSeconds", "hidden", "storageEngine",
+		case "expireAfterSeconds":
+			v := must.NotFail(indexDoc.Get("expireAfterSeconds"))
+
+			seconds, err := handlerparams.GetWholeNumberParam(v)
+			if err != nil {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					fmt.Sprintf(
+						"Error in specification { key: %s, name: %q, expireAfterSeconds: %s } "+
+							":: caused by :: expireAfterSeconds must be a number",
+						types.FormatAnyValue(must.NotFail(indexDoc.Get("key"))),
+						index.Name, types.FormatAnyValue(v),
+					),
+					command,
+				)
+			}
+
+			if seconds < 0 {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrBadValue,
+					fmt.Sprintf("Expiration time '%d' must be greater than or equal to 0", seconds),
+					command,
+				)
+			}
+
+			if seconds > math.MaxInt32 {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrBadValue,
+					fmt.Sprintf("Expiration time '%d' must be between 0 and %d seconds", seconds, math.MaxInt32),
+					command,
+				)
+			}
+
+			if len(index.Key) != 1 {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrCannotCreateIndex,
+					"TTL indexes are single-field indexes, compound indexes do not support TTL",
+					command,
+				)
+			}
+
+			s := int32(seconds)
+			index.ExpireAfterSeconds = &s
+
+		case "partialFilterExpression", "hidden", "storageEngine",
 			"weights", "default_language", "language_override", "textIndexVersion", "2dsphereIndexVersion",
 			"bits", "min", "max", "bucketSize", "collation", "wildcardProjection":
 			return nil, handlererrors.NewCommandErrorMsgWithArgument(

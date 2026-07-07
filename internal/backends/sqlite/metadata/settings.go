@@ -33,9 +33,11 @@ type Settings struct {
 
 // IndexInfo represents information about a single index.
 type IndexInfo struct {
-	Name   string         `json:"name"`
-	Key    []IndexKeyPair `json:"key"`
-	Unique bool           `json:"unique"`
+	Name string         `json:"name"`
+	Key  []IndexKeyPair `json:"key"`
+	// ExpireAfterSeconds, when non-nil, marks this as a TTL index.
+	ExpireAfterSeconds *int32 `json:"expireAfterSeconds,omitempty"`
+	Unique             bool   `json:"unique"`
 }
 
 // IndexKeyPair consists of a field name and a sort order that are part of the index.
@@ -50,9 +52,10 @@ func (s Settings) deepCopy() Settings {
 
 	for i, index := range s.Indexes {
 		indexes[i] = IndexInfo{
-			Name:   index.Name,
-			Key:    slices.Clone(index.Key),
-			Unique: index.Unique,
+			Name:               index.Name,
+			Key:                slices.Clone(index.Key),
+			ExpireAfterSeconds: index.ExpireAfterSeconds,
+			Unique:             index.Unique,
 		}
 	}
 

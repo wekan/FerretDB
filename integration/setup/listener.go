@@ -188,6 +188,7 @@ func setupListener(tb testtb.TB, ctx context.Context, logger *slog.Logger, opts 
 			DisablePushdown:         *disablePushdownF,
 			CappedCleanupPercentage: opts.CappedCleanupPercentage,
 			CappedCleanupInterval:   opts.CappedCleanupInterval,
+			TTLCleanupInterval:      opts.TTLCleanupInterval,
 			EnableNewAuth:           !opts.DisableNewAuth,
 			BatchSize:               *batchSizeF,
 			MaxBsonObjectSizeBytes:  opts.MaxBsonObjectSizeBytes,
