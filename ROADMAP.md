@@ -136,7 +136,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 - [x] `sparse` index option (silently ignored — harmless for WeKan)
 - [x] Admin/startup commands: `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
 
-### ⚠️ Gaps that break **admin-only** features (core kanban unaffected)
+### ✅ Admin-only aggregation gaps — now implemented in this branch (core kanban always worked)
 - [x] **`$lookup` aggregation stage** (basic equality-join form `{ from, localField, foreignField, as }`) → unblocks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). The `pipeline`/`let` sub-form is still unimplemented.
 - [x] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → previously broke attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`); now implemented.
 
@@ -159,12 +159,25 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 
 WeKan's **core functionality runs on FerretDB v1.24.2 SQLite** with
 `METEOR_REACTIVITY_ORDER=polling` and filesystem attachments. No blocking gaps
-exist for boards/cards/lists/CRUD/search. The only real gaps are:
+exist for boards/cards/lists/CRUD/search.
 
-1. **Admin metrics/attachment-stats aggregations** using `$lookup` and expression
-   operators (cosmetic; fixable by simplifying those queries).
-2. **Low-latency reactivity** (change streams unsupported; basic oplog tailing
-   needs manual setup and validation) — otherwise polling works.
+The admin-only aggregation gaps are now **closed** in this branch: the `$lookup`
+stage (basic equality-join) and the `$eq`/`$ne`/`$or`/`$ifNull`/`$anyElementTrue`/
+`$objectToArray`/`$map` expression operators are implemented and tested, so the
+Prometheus `/metrics` and attachment-stats aggregations work. The `$push`
+`$slice`/`$sort`/`$position` modifiers and `$pullAll` are likewise implemented/covered.
+
+Remaining gaps:
+
+1. **Low-latency reactivity** — change streams are unsupported
+   ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)); use
+   `METEOR_REACTIVITY_ORDER=polling`, or set up basic oplog tailing manually.
+   A configuration choice, not a blocker.
+2. **Minor**: `getParameter` is unimplemented — confirm WeKan startup does not
+   hard-depend on it.
+
+A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile.wekan`):
+`docker compose up --build` builds FerretDB v1 (SQLite) and runs WeKan against it.
 
 A handful of **partial** update-operator modifiers (`$each`+`$slice`/`$sort`,
 `$pullAll`) should be validated end-to-end.
