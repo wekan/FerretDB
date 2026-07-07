@@ -95,8 +95,9 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 
 ### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
 - [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
+- [x] Stage: `$lookup` (basic equality-join form `{ from, localField, foreignField, as }` used by WeKan; the `pipeline`/`let` sub-form returns `ErrNotImplemented`)
 - [x] Accumulator/operator `$sum`, `$count`
-- [ ] Stages: **`$lookup`**, `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$replaceRoot`, `$bucket`, `$setWindowFields`, `$changeStream`, `$sample`, `$geoNear`, … (return `ErrNotImplemented`)
+- [ ] Stages: `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$replaceRoot`, `$bucket`, `$setWindowFields`, `$changeStream`, `$sample`, `$geoNear`, … (return `ErrNotImplemented`)
 - [x] Aggregation expression operators used by WeKan: `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray`, `$map`
 - [ ] Remaining **aggregation expression operators** (arithmetic/date/string/array/conditional, e.g. `$add`, `$cond`, `$filter`, `$reduce`, `$arrayToObject`) — unimplemented
 
@@ -136,7 +137,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 - [x] Admin/startup commands: `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
 
 ### ⚠️ Gaps that break **admin-only** features (core kanban unaffected)
-- [ ] **`$lookup` aggregation stage** → breaks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). *Workaround:* rewrite that metric without `$lookup`, or disable it.
+- [x] **`$lookup` aggregation stage** (basic equality-join form `{ from, localField, foreignField, as }`) → unblocks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). The `pipeline`/`let` sub-form is still unimplemented.
 - [x] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → previously broke attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`); now implemented.
 
 ### 🔁 Reactivity — configure WeKan around the gap

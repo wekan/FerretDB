@@ -8,6 +8,7 @@
 
 - Implement the `$slice`, `$sort` and `$position` modifiers for the `$push` update operator (used by WeKan) by @xet7. Thanks to xet7.
 - Implement the `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray` and `$map` aggregation expression operators used by WeKan by @xet7. Thanks to xet7.
+- Implement the `$lookup` aggregation stage (basic equality-join form) used by WeKan by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
 

@@ -350,6 +350,29 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 			qp.Sort = sort
 		}
 
+		// $lookup needs to read another ("from") collection, but an aggregation stage only receives
+		// the incoming document iterator and has no access to the database handle. Here, where the
+		// database handle is available, we pre-fetch the whole `from` collection and inject it into
+		// each $lookup stage before Process runs.
+		//
+		// Limitation: the entire `from` collection is loaded into memory (full scan, no index use).
+		// This is acceptable for WeKan's small joins.
+		for _, s := range stagesDocuments {
+			lookup, ok := s.(*stages.Lookup)
+			if !ok {
+				continue
+			}
+
+			var fromDocs []*types.Document
+
+			if fromDocs, err = fetchAllDocuments(ctx, db, lookup.From()); err != nil {
+				closer.Close()
+				return nil, handleMaxTimeMSError(err, maxTimeMS, "aggregate")
+			}
+
+			lookup.SetFromDocuments(fromDocs)
+		}
+
 		iter, err = processStagesDocuments(ctx, closer, &stagesDocumentsParams{c, qp, stagesDocuments})
 	} else {
 		// TODO https://github.com/FerretDB/FerretDB/issues/2423
@@ -412,6 +435,34 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 			"ok", float64(1),
 		)),
 	)
+}
+
+// fetchAllDocuments reads and returns all documents of the named collection in the given database.
+//
+// It is used to pre-fetch the `from` collection for the $lookup aggregation stage, which itself
+// has no access to the database handle. The whole collection is loaded into memory (full scan,
+// no index use); this is acceptable for the small joins used by WeKan.
+//
+// If the database or collection does not exist, an empty slice is returned.
+func fetchAllDocuments(ctx context.Context, db backends.Database, cName string) ([]*types.Document, error) {
+	c, err := db.Collection(cName)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	queryRes, err := c.Query(ctx, new(backends.QueryParams))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	defer queryRes.Iter.Close()
+
+	docs, err := iterator.ConsumeValues(queryRes.Iter)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	return docs, nil
 }
 
 // stagesDocumentsParams contains the parameters for processStagesDocuments.
