@@ -12,6 +12,7 @@
 - Implement the arithmetic aggregation expression operators `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$abs`, `$ceil`, `$floor`, `$trunc`, `$round`, `$pow`, `$sqrt`, `$exp`, `$ln`, `$log`, `$max`, `$min` and `$avg` by @xet7. Thanks to xet7.
 - Implement the string aggregation expression operators `$concat`, `$toUpper`, `$toLower`, `$strLenCP`, `$strLenBytes`, `$strcasecmp`, `$substr`, `$substrCP`, `$substrBytes`, `$split`, `$trim`, `$ltrim`, `$rtrim`, `$indexOfCP`, `$indexOfBytes`, `$replaceOne`, `$replaceAll` and `$regexMatch` by @xet7. Thanks to xet7.
 - Implement the array aggregation expression operators `$size`, `$arrayElemAt`, `$concatArrays`, `$isArray`, `$in`, `$reverseArray`, `$slice`, `$range`, `$indexOfArray`, `$arrayToObject`, `$filter`, `$reduce`, `$sortArray`, `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$setIsSubset` and `$zip` by @xet7. Thanks to xet7.
+- Implement the type-conversion aggregation expression operators `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toBool`, `$toObjectId`, `$toDate`, `$convert`, `$isNumber`, `$literal`, `$let`, `$getField`, `$setField`, `$unsetField`, `$binarySize` and `$rand` by @xet7. Thanks to xet7.
 - Implement the `$lookup` aggregation stage (basic equality-join form) used by WeKan by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
