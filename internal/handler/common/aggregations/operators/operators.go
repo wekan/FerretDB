@@ -139,8 +139,15 @@ func NewOperator(doc *types.Document) (Operator, error) {
 // Operators maps all standard aggregation operators.
 var Operators = map[string]newOperatorFunc{
 	// sorted alphabetically
-	"$sum":  newSum,
-	"$type": newType,
+	"$anyElementTrue": newAnyElementTrue,
+	"$eq":             newEq,
+	"$ifNull":         newIfNull,
+	"$map":            newMap,
+	"$ne":             newNe,
+	"$objectToArray":  newObjectToArray,
+	"$or":             newOr,
+	"$sum":            newSum,
+	"$type":           newType,
 	// please keep sorted alphabetically
 }
 
@@ -153,7 +160,6 @@ var unsupportedOperators = map[string]struct{}{
 	"$add":              {},
 	"$allElementsTrue":  {},
 	"$and":              {},
-	"$anyElementTrue":   {},
 	"$arrayElemAt":      {},
 	"$arrayToObject":    {},
 	"$asin":             {},
@@ -190,7 +196,6 @@ var unsupportedOperators = map[string]struct{}{
 	"$derivative":       {},
 	"$divide":           {},
 	"$documentNumber":   {},
-	"$eq":               {},
 	"$exp":              {},
 	"$expMovingAvg":     {},
 	"$filter":           {},
@@ -200,7 +205,6 @@ var unsupportedOperators = map[string]struct{}{
 	"$gt":               {},
 	"$gte":              {},
 	"$hour":             {},
-	"$ifNull":           {},
 	"$in":               {},
 	"$indexOfArray":     {},
 	"$indexOfBytes":     {},
@@ -221,7 +225,6 @@ var unsupportedOperators = map[string]struct{}{
 	"$lt":               {},
 	"$lte":              {},
 	"$ltrim":            {},
-	"$map":              {},
 	"$max":              {},
 	"$meta":             {},
 	"$min":              {},
@@ -231,10 +234,7 @@ var unsupportedOperators = map[string]struct{}{
 	"$mod":              {},
 	"$month":            {},
 	"$multiply":         {},
-	"$ne":               {},
 	"$not":              {},
-	"$objectToArray":    {},
-	"$or":               {},
 	"$pow":              {},
 	"$radiansToDegrees": {},
 	"$rand":             {},

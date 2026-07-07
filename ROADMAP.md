@@ -97,7 +97,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
 - [x] Accumulator/operator `$sum`, `$count`
 - [ ] Stages: **`$lookup`**, `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$replaceRoot`, `$bucket`, `$setWindowFields`, `$changeStream`, `$sample`, `$geoNear`, … (return `ErrNotImplemented`)
-- [ ] Nearly **all aggregation expression operators** (`$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or`, arithmetic/date/string/array/conditional) — unimplemented
+- [x] Aggregation expression operators used by WeKan: `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray`, `$map`
+- [ ] Remaining **aggregation expression operators** (arithmetic/date/string/array/conditional, e.g. `$add`, `$cond`, `$filter`, `$reduce`, `$arrayToObject`) — unimplemented
 
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
@@ -136,7 +137,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 
 ### ⚠️ Gaps that break **admin-only** features (core kanban unaffected)
 - [ ] **`$lookup` aggregation stage** → breaks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). *Workaround:* rewrite that metric without `$lookup`, or disable it.
-- [ ] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → break attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`). These are `…Safe`-wrapped and degrade gracefully; also GridFS-related, so moot with `fs` attachments.
+- [x] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → previously broke attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`); now implemented.
 
 ### 🔁 Reactivity — configure WeKan around the gap
 - [ ] **Change streams unsupported** → set `METEOR_REACTIVITY_ORDER=polling` (poll-and-diff, ~2000 ms latency). This is the primary supported path. *(FerretDB to-do: implement change streams — [#1415](https://github.com/FerretDB/FerretDB/issues/1415).)*
