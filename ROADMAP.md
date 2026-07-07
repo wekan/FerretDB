@@ -126,7 +126,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 ### Admin / diagnostic — implemented
 - [x] `serverStatus`, `buildInfo`, `hello`/`ismaster`, `ping`, `collStats`, `dbStats`
 - [x] `listCollections`, `listDatabases`, `listIndexes`, `createIndexes`, `dropIndexes`, `create`, `drop`, `compact`
-- [ ] `getParameter`, `replSetInitiate` — `❌`
+- [x] `getParameter` — implemented (`internal/handler/msg_getparameter.go`; returns `authenticationMechanisms`, `featureCompatibilityVersion`, etc.; verified on SQLite by `TestCommandsAdministrationGetParameter`)
+- [ ] `replSetInitiate` — `❌`
 
 ---
 
@@ -154,7 +155,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 ### 🔎 To verify (partial support — likely fine, confirm under load)
 - [x] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — the `$push` modifiers `$slice`, `$sort` and `$position` are implemented in `internal/handler/common/update_array_operators.go` and covered by integration tests (`integration/update_push_modifiers_test.go`). WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
 - [x] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — implemented and covered by integration tests (`integration/update_pullall_test.go`).
-- [ ] **`getParameter` `❌`** — confirm WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) doesn't hard-fail without it.
+- [x] **`getParameter`** — already implemented (`internal/handler/msg_getparameter.go`); verified working on SQLite, so WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) is fine.
 
 ### 🚫 Not needed (WeKan doesn't use them; no action)
 - [x] Transactions/sessions, capped collections, TTL indexes, text indexes/`$text`, geospatial, `collation`, `mapReduce`, `$where` — unused by WeKan
@@ -174,14 +175,12 @@ stage (basic equality-join) and the `$eq`/`$ne`/`$or`/`$ifNull`/`$anyElementTrue
 Prometheus `/metrics` and attachment-stats aggregations work. The `$push`
 `$slice`/`$sort`/`$position` modifiers and `$pullAll` are likewise implemented/covered.
 
-Remaining gaps:
+The only remaining gap is:
 
 1. **Low-latency reactivity** — change streams are unsupported
    ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)); use
    `METEOR_REACTIVITY_ORDER=polling`, or set up basic oplog tailing manually.
    A configuration choice, not a blocker.
-2. **Minor**: `getParameter` is unimplemented — confirm WeKan startup does not
-   hard-depend on it.
 
 A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile`):
 `docker compose up --build` builds FerretDB v1 (SQLite) and runs WeKan against it.
