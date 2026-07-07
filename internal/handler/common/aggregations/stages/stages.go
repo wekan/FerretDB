@@ -58,7 +58,6 @@ var unsupportedStages = map[string]struct{}{
 	"$currentOp":              {},
 	"$densify":                {},
 	"$documents":              {},
-	"$facet":                  {},
 	"$fill":                   {},
 	"$geoNear":                {},
 	"$graphLookup":            {},

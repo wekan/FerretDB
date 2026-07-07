@@ -16,6 +16,7 @@
 - Implement the date aggregation expression operators `$year`, `$month`, `$dayOfMonth`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$isoDayOfWeek`, `$isoWeek`, `$isoWeekYear`, `$dateToString`, `$dateFromString`, `$dateToParts`, `$dateFromParts`, `$dateAdd`, `$dateSubtract`, `$dateDiff` and `$dateTrunc` by @xet7. Thanks to xet7.
 - Implement the `$lookup` aggregation stage (basic equality-join form) used by WeKan by @xet7. Thanks to xet7.
 - Implement the `$replaceRoot`, `$replaceWith`, `$sortByCount` and `$sample` aggregation stages by @xet7. Thanks to xet7.
+- Implement the `$facet` aggregation stage (multi-sub-pipeline) by @xet7. Thanks to xet7.
 
 ### Other Changes 🤖
 

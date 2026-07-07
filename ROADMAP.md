@@ -96,9 +96,9 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 ### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
 - [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
 - [x] Stage: `$lookup` (basic equality-join form `{ from, localField, foreignField, as }` used by WeKan; the `pipeline`/`let` sub-form returns `ErrNotImplemented`)
-- [x] Stages: `$replaceRoot`, `$replaceWith`, `$sortByCount`, `$sample`
+- [x] Stages: `$replaceRoot`, `$replaceWith`, `$sortByCount`, `$sample`, `$facet`
 - [x] Accumulator/operator `$sum`, `$count`
-- [ ] Stages: `$facet`, `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$bucket`, `$setWindowFields`, `$changeStream`, `$geoNear`, … (return `ErrNotImplemented`)
+- [ ] Stages: `$graphLookup`, `$unionWith`, `$merge`, `$out`, `$bucket`, `$setWindowFields`, `$changeStream`, `$geoNear`, … (return `ErrNotImplemented`)
 - [x] Aggregation expression operators used by WeKan: `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray`, `$map`
 - [x] Comparison/boolean/conditional expression operators: `$cmp`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$not`, `$cond`, `$switch`, `$allElementsTrue`
 - [x] Arithmetic expression operators: `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$abs`, `$ceil`, `$floor`, `$trunc`, `$round`, `$pow`, `$sqrt`, `$exp`, `$ln`, `$log`, `$max`, `$min`, `$avg`
