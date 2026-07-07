@@ -4,6 +4,10 @@
 
 ## Upcoming release
 
+### New Features 🎉
+
+- Implement the `$slice`, `$sort` and `$position` modifiers for the `$push` update operator (used by WeKan) by @xet7. Thanks to xet7.
+
 ### Other Changes 🤖
 
 - Add positive and negative integration tests for the `$pullAll` update operator, used by WeKan (already implemented upstream) by @xet7. Thanks to xet7.

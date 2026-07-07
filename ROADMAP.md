@@ -84,7 +84,7 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 
 ### Update operators — implemented
 - [x] `$set`, `$unset`, `$inc`, `$push`, `$pull`, `$addToSet`, `$pop`, `$rename`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
-- [~] `$each` supported; modifiers `$slice`, `$sort`, `$position` only **partial**
+- [x] `$each` supported; modifiers `$slice`, `$sort`, `$position` implemented in `internal/handler/common/update_array_operators.go`
 - [x] `$pullAll` — implemented in `internal/handler/common/update_array_operators.go`
 
 ### Query filter operators — implemented (`internal/handler/common/filter.go`)
@@ -143,7 +143,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 - [ ] **No real replication oplog** → optional lower-latency path needs manual setup: create capped `local.oplog.rs`, set `FERRETDB_REPL_SET_NAME`, point `MONGO_OPLOG_URL` at it, and use `METEOR_REACTIVITY_ORDER=oplog,polling`. Needs end-to-end validation with Meteor's oplog tailer.
 
 ### 🔎 To verify (partial support — likely fine, confirm under load)
-- [ ] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — FerretDB marks these modifiers *partial*. Verify WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
+- [x] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — the `$push` modifiers `$slice`, `$sort` and `$position` are implemented in `internal/handler/common/update_array_operators.go` and covered by integration tests (`integration/update_push_modifiers_test.go`). WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
 - [x] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — implemented and covered by integration tests (`integration/update_pullall_test.go`).
 - [ ] **`getParameter` `❌`** — confirm WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) doesn't hard-fail without it.
 
