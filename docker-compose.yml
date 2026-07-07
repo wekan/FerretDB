@@ -27,7 +27,7 @@ services:
   ferretdb:
     build:
       context: .
-      dockerfile: Dockerfile.wekan
+      dockerfile: Dockerfile
     container_name: wekan-ferretdb
     restart: always
     networks:
