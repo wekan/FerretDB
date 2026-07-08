@@ -107,7 +107,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Array expression operators: `$size`, `$arrayElemAt`, `$concatArrays`, `$isArray`, `$in`, `$reverseArray`, `$slice`, `$range`, `$indexOfArray`, `$arrayToObject`, `$filter`, `$reduce`, `$sortArray`, `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$setIsSubset`, `$zip`
 - [x] Type-conversion and related expression operators: `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toBool`, `$toObjectId`, `$toDate`, `$convert`, `$isNumber`, `$literal`, `$let`, `$getField`, `$setField`, `$unsetField`, `$binarySize`, `$rand`
 - [x] Date expression operators: `$year`, `$month`, `$dayOfMonth`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$isoDayOfWeek`, `$isoWeek`, `$isoWeekYear`, `$dateToString`, `$dateFromString`, `$dateToParts`, `$dateFromParts`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dateTrunc`
-- [ ] Remaining **aggregation expression operators** — a few niche ones (`$function`, `$toDecimal`, `$bsonSize`, `$meta`, trigonometric, and window operators like `$rank`/`$shift`/`$setWindowFields`-only accumulators) — unimplemented
+- [x] Trigonometric, hyperbolic, angle-conversion and `$log10` expression operators: `$sin`, `$cos`, `$tan`, `$asin`, `$acos`, `$atan`, `$atan2`, `$sinh`, `$cosh`, `$tanh`, `$asinh`, `$acosh`, `$atanh`, `$degreesToRadians`, `$radiansToDegrees`, `$log10` (all return a `double`)
+- [ ] Remaining **aggregation expression operators** — a few niche ones (`$function`, `$toDecimal`, `$bsonSize`, `$meta`, and window operators like `$rank`/`$shift`/`$setWindowFields`-only accumulators) — unimplemented
 
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
