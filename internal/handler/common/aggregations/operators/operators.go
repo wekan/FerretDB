@@ -155,6 +155,7 @@ var Operators = map[string]newOperatorFunc{
 	"$atanh":            newAtanh,
 	"$avg":              newAvg,
 	"$binarySize":       newBinarySize,
+	"$bsonSize":         newBsonSize,
 	"$ceil":             newCeil,
 	"$cmp":              newCmp,
 	"$concat":           newConcat,
@@ -272,7 +273,6 @@ var Operators = map[string]newOperatorFunc{
 // unsupportedOperators maps all unsupported yet operators.
 var unsupportedOperators = map[string]struct{}{
 	// sorted alphabetically
-	"$bsonSize":       {},
 	"$covariancePop":  {},
 	"$covarianceSamp": {},
 	"$denseRank":      {},
