@@ -42,7 +42,7 @@ What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use
 ### Query operators
 - [x] `$regex` incl. `$options: 'i'` and `$not: { $regex: … }` — **WeKan's entire search/filter is regex-based** ([`client/lib/filter.js`](https://github.com/wekan/wekan/blob/main/client/lib/filter.js), [`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
 - [x] `$in`, `$gte`, `$ne`, `$or`, `$not`, `$exists`, `$size`
-- Not used by WeKan: `$text`, `$expr`, geospatial (`$near`/`$geoWithin`), `collation` (`$where` is unused by WeKan but now implemented via the embedded goja JavaScript engine)
+- Not used by WeKan: `$expr`, geospatial (`$near`/`$geoWithin`), `collation` (`$where` and `$text` are unused by WeKan but now implemented — `$where` via the embedded goja JavaScript engine, `$text` as a partial substring/word matcher)
 
 ### Aggregation pipelines (3 sites, server-side admin/metrics only — not on the hot path)
 - [x] Stages: `$match`, `$group` (`$sum`), `$sort`, `$project`, `$addFields`, `$count`, **`$lookup`**
@@ -53,7 +53,7 @@ What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use
 - [x] Single-field indexes ([`server/lib/mongoStartup.js`](https://github.com/wekan/wekan/blob/main/server/lib/mongoStartup.js) `ensureIndex()`)
 - [x] Compound indexes (e.g. `{ boardId: 1, createdAt: -1 }`)
 - [x] Unique indexes (e.g. boards, invitation codes)
-- Not used: **TTL** (`expireAfterSeconds`), **text** indexes, geospatial indexes
+- Not used: geospatial indexes. **TTL** (`expireAfterSeconds`) and **text** indexes are unused by WeKan but now implemented (text indexes only pragmatically — the options are stored and round-tripped, but no real inverted index is built)
 
 ### Reactivity (Meteor pub/sub)
 - [x] Configurable driver order via `METEOR_REACTIVITY_ORDER` = `changeStreams,oplog,polling` ([`start-wekan.sh`](https://github.com/wekan/wekan/blob/main/start-wekan.sh))
@@ -67,7 +67,7 @@ What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use
 ### Not used at all (so not required from FerretDB)
 - [ ] ~~Multi-document transactions / sessions~~ (`startSession`, `withTransaction`) — none
 - [ ] ~~Capped collections~~ — none created by WeKan
-- [ ] ~~Full-text search~~ (`$text` / text indexes) — replaced by `$regex`
+- [x] Full-text search (`$text` / text indexes) — WeKan uses `$regex` instead, but both are now implemented partially: text indexes are accepted and round-tripped, and `$text` matches search terms against a document's string fields (no stemming, no relevance scoring, no `$meta: "textScore"`)
 - [ ] ~~GridFS~~ — attachments on filesystem
 - [ ] ~~TTL indexes, geospatial, `$where`, `mapReduce`, `collation`~~ — none
 
@@ -92,7 +92,7 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] `$in`, `$nin`, `$exists`, `$type`, `$size`, `$all`, `$elemMatch`, `$mod`, `$bitsAllSet`
 - [x] **`$regex`** with `$options` (`filterFieldRegex` / `filterFieldExprRegex`)
 - [x] **`$where`** — implemented via the embedded pure-Go goja JavaScript engine; evaluates a JS expression or function against each document with `this` bound to the document (`filterWhereOperator` / `operators.EvalWhere`)
-- [ ] `$text` — not implemented
+- [x] **`$text`** — implemented partially (`filterTextOperator`): matches `$search` terms directly against a document's string fields (recursing into sub-documents and arrays) with multi-term OR, case-insensitive whole-word matching, `$caseSensitive`, double-quoted phrases and leading `-` negation; `$language`/`$diacriticSensitive` are accepted and ignored. No stemming, no relevance scoring, no `$meta: "textScore"` (does not consult the collection's text index)
 
 ### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
 - [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
@@ -117,7 +117,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
 - [x] `sparse` accepted (silently ignored — comment: *"Ignore for now to make Meteor apps work"*)
 - [x] `expireAfterSeconds` (**TTL**) indexes — parsed by createIndexes, reported by listIndexes, and enforced by a background reaper (`internal/handler/handler.go` `runTTLCleanup`)
-- [ ] text (`weights`/`default_language`), `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
+- [x] **text** indexes (`"text"` key value with `weights`/`default_language`/`language_override`/`textIndexVersion`) — accepted by createIndexes and stored/round-tripped through listIndexes (weights default to 1 per field); pragmatic only, no real inverted/full-text index is built (see the `$text` query operator)
+- [ ] `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
 
 ### Reactivity — limited
 - [x] **Tailable / awaitData cursors** on **capped collections** (poll-based; `msg_find.go`, `msg_getmore.go`)
@@ -165,7 +166,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 - [x] **`getParameter`** — already implemented (`internal/handler/msg_getparameter.go`); verified working on SQLite, so WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) is fine.
 
 ### 🚫 Not needed (WeKan doesn't use them; no action)
-- [x] Transactions/sessions, capped collections, TTL indexes, text indexes/`$text`, geospatial, `collation`, `mapReduce` — unused by WeKan (`$where` is likewise unused by WeKan but now implemented via the embedded goja JavaScript engine)
+- [x] Transactions/sessions, capped collections, TTL indexes, geospatial, `collation`, `mapReduce` — unused by WeKan (`$where`, `$text` and text indexes are likewise unused by WeKan but now implemented: `$where` via the embedded goja JavaScript engine, and `$text`/text indexes partially — search terms are matched against string fields and index options are stored, but no real inverted index is built)
 - [x] GridFS commands (`replSetGetStatus`, GridFS `compact`) — attachments on filesystem
 
 ---
