@@ -5,9 +5,13 @@
 # Usage:
 #   ./build.sh              # interactive menu
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
-#   ./build.sh deps | build | run | test | test-one <TestName> |
-#             unit | lint | docker | clean | goenv
+#   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
+#   ./build.sh test                    # integration tests, parallel (default)
+#   ./build.sh test-seq                # integration tests, sequential (one at a time)
+#   ./build.sh test-par [N]            # integration tests, parallel with N workers
+#   ./build.sh test-one <Test> [seq|par]   # one integration test (default parallel)
 #
+# Test parallelism can also be set with TEST_PARALLEL=<N> (defaults to CPU count).
 # It self-installs a local Go toolchain under ./.goroot if `go` is not found.
 
 set -u
@@ -136,28 +140,48 @@ act_run() {
     exec ./bin/ferretdb
 }
 
+# number of parallel test workers; override with TEST_PARALLEL.
+cpu_count() { nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4; }
+
 # Integration tests run in-process against the SQLite backend.
 # -target-tls is REQUIRED (otherwise the client hits SCRAM auth with no
 # credentials and the run hangs). Certs live in build/certs/.
+#
+# run_integration <runexpr> <mode>
+#   mode: seq -> one test at a time  (-p 1 -parallel 1)
+#         par -> concurrent          (-parallel N; N = TEST_PARALLEL or CPU count)
 run_integration() {
   go_env
   local runexpr="${1:-}"
+  local mode="${2:-par}"
   rm -rf "$SQLITE_TEST_DIR"; mkdir -p "$SQLITE_TEST_DIR"
   local args=(test -count=1 -timeout=600s
     -target-backend=ferretdb-sqlite
     -sqlite-url="file:../tmp/sqlite-tests/"
     -target-tls)
+  local desc
+  case "$mode" in
+    seq)
+      args+=(-p 1 -parallel 1)
+      desc="sequential"
+      ;;
+    *)
+      local n="${TEST_PARALLEL:-$(cpu_count)}"
+      args+=(-parallel "$n")
+      desc="parallel (${n} workers)"
+      ;;
+  esac
   if [ -n "$runexpr" ]; then
     args+=(-run "$runexpr" -v)
   fi
-  info "Running integration tests (SQLite, in-process, TLS)${runexpr:+ matching '$runexpr'} ..."
+  info "Running integration tests (SQLite, in-process, TLS, ${desc})${runexpr:+ matching '$runexpr'} ..."
   ( cd integration && go "${args[@]}" . )
 }
 
-act_test()     { run_integration ""; }
+act_test()     { run_integration "" "${1:-par}"; }
 act_test_one() {
-  if [ -z "${1:-}" ]; then err "usage: $0 test-one <TestNameRegex>"; return 2; fi
-  run_integration "$1"
+  if [ -z "${1:-}" ]; then err "usage: $0 test-one <TestNameRegex> [seq|par]"; return 2; fi
+  run_integration "$1" "${2:-par}"
 }
 
 act_unit() {
@@ -192,15 +216,16 @@ menu() {
   while true; do
     printf "\n${B}FerretDB v1 (SQLite) — build.sh${N}\n"
     cat <<EOF
-  1) Install dependencies      (go mod download: root + integration + tools)
-  2) Build FerretDB            (-> bin/ferretdb, SQLite handler)
-  3) Run FerretDB              (SQLite backend on $LISTEN_ADDR)
-  4) Run integration tests     (in-process SQLite, all tests)
-  5) Run ONE integration test  (enter a Test name / regex)
-  6) Run unit tests            (./internal/... ./cmd/...)
-  7) Lint / vet
-  8) Build & run with Docker   (docker compose up --build)
-  9) Clean build artifacts
+  1) Install dependencies         (go mod download: root + integration + tools)
+  2) Build FerretDB               (-> bin/ferretdb, SQLite handler)
+  3) Run FerretDB                 (SQLite backend on $LISTEN_ADDR)
+  4) Run integration tests        — PARALLEL (all tests, $(cpu_count) workers)
+  5) Run integration tests        — SEQUENTIAL (one at a time)
+  6) Run ONE integration test     (enter a Test name / regex, pick par/seq)
+  7) Run unit tests               (./internal/... ./cmd/...)
+  8) Lint / vet
+  9) Build & run with Docker      (docker compose up --build)
+ 10) Clean build artifacts
   g) Show / install Go toolchain
   0) Exit
 EOF
@@ -210,12 +235,15 @@ EOF
       1) act_deps ;;
       2) act_build ;;
       3) act_run ;;
-      4) act_test ;;
-      5) printf "Test name / regex (e.g. TestSessions): "; read -r t; act_test_one "$t" ;;
-      6) act_unit ;;
-      7) act_lint ;;
-      8) act_docker ;;
-      9) act_clean ;;
+      4) act_test par ;;
+      5) act_test seq ;;
+      6) printf "Test name / regex (e.g. TestSessions): "; read -r t
+         printf "Mode - [P]arallel / [s]equential: "; read -r m
+         case "$m" in [sS]*) act_test_one "$t" seq ;; *) act_test_one "$t" par ;; esac ;;
+      7) act_unit ;;
+      8) act_lint ;;
+      9) act_docker ;;
+      10) act_clean ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -229,8 +257,10 @@ case "${1:-}" in
   deps)       act_deps ;;
   build)      act_build ;;
   run)        act_run ;;
-  test)       act_test ;;
-  test-one)   shift; act_test_one "${1:-}" ;;
+  test)       act_test par ;;
+  test-seq)   act_test seq ;;
+  test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
+  test-one)   shift; act_test_one "${1:-}" "${2:-par}" ;;
   unit)       act_unit ;;
   lint)       act_lint ;;
   docker)     act_docker ;;
