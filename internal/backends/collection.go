@@ -378,12 +378,25 @@ type IndexInfo struct {
 	// indexed date field is older than this many seconds are removed by the background reaper.
 	ExpireAfterSeconds *int32
 	Unique             bool
+	// TextOptions, when non-nil, marks this as a text index and carries its options.
+	TextOptions *TextIndexOptions
+}
+
+// TextIndexOptions holds the options of a MongoDB text index. FerretDB stores these
+// so the index round-trips through listIndexes, but does not build a real inverted index.
+type TextIndexOptions struct {
+	Weights          map[string]int32
+	DefaultLanguage  string
+	LanguageOverride string
+	TextIndexVersion int32
 }
 
 // IndexKeyPair consists of a field name and a sort order that are part of the index.
 type IndexKeyPair struct {
 	Field      string
 	Descending bool
+	// Text marks this key as a text index field (its requested value was "text").
+	Text bool
 }
 
 // ListIndexes returns a list of collection indexes.

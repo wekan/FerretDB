@@ -38,12 +38,26 @@ type IndexInfo struct {
 	// ExpireAfterSeconds, when non-nil, marks this as a TTL index.
 	ExpireAfterSeconds *int32 `json:"expireAfterSeconds,omitempty"`
 	Unique             bool   `json:"unique"`
+	// TextOptions, when non-nil, marks this as a text index and carries its options.
+	TextOptions *TextIndexOptions `json:"textOptions,omitempty"`
+}
+
+// TextIndexOptions holds the options of a MongoDB text index. Note that FerretDB
+// stores these options so that the index round-trips through listIndexes, but it
+// does not build a real inverted (full-text) index; see the $text query operator.
+type TextIndexOptions struct {
+	Weights          map[string]int32 `json:"weights,omitempty"`
+	DefaultLanguage  string           `json:"defaultLanguage,omitempty"`
+	LanguageOverride string           `json:"languageOverride,omitempty"`
+	TextIndexVersion int32            `json:"textIndexVersion,omitempty"`
 }
 
 // IndexKeyPair consists of a field name and a sort order that are part of the index.
 type IndexKeyPair struct {
 	Field      string `json:"field"`
 	Descending bool   `json:"descending"`
+	// Text marks this key as a text index field (its requested value was "text").
+	Text bool `json:"text,omitempty"`
 }
 
 // deepCopy returns a deep copy.
@@ -56,6 +70,19 @@ func (s Settings) deepCopy() Settings {
 			Key:                slices.Clone(index.Key),
 			ExpireAfterSeconds: index.ExpireAfterSeconds,
 			Unique:             index.Unique,
+		}
+
+		if index.TextOptions != nil {
+			opts := *index.TextOptions
+
+			if index.TextOptions.Weights != nil {
+				opts.Weights = make(map[string]int32, len(index.TextOptions.Weights))
+				for k, v := range index.TextOptions.Weights {
+					opts.Weights[k] = v
+				}
+			}
+
+			indexes[i].TextOptions = &opts
 		}
 	}
 

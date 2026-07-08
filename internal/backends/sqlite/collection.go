@@ -481,10 +481,20 @@ func (c *collection) ListIndexes(ctx context.Context, params *backends.ListIndex
 			Key:                make([]backends.IndexKeyPair, len(index.Key)),
 		}
 
+		if index.TextOptions != nil {
+			res.Indexes[i].TextOptions = &backends.TextIndexOptions{
+				Weights:          index.TextOptions.Weights,
+				DefaultLanguage:  index.TextOptions.DefaultLanguage,
+				LanguageOverride: index.TextOptions.LanguageOverride,
+				TextIndexVersion: index.TextOptions.TextIndexVersion,
+			}
+		}
+
 		for j, key := range index.Key {
 			res.Indexes[i].Key[j] = backends.IndexKeyPair{
 				Field:      key.Field,
 				Descending: key.Descending,
+				Text:       key.Text,
 			}
 		}
 	}
@@ -507,10 +517,20 @@ func (c *collection) CreateIndexes(ctx context.Context, params *backends.CreateI
 			Unique:             index.Unique,
 		}
 
+		if index.TextOptions != nil {
+			indexes[i].TextOptions = &metadata.TextIndexOptions{
+				Weights:          index.TextOptions.Weights,
+				DefaultLanguage:  index.TextOptions.DefaultLanguage,
+				LanguageOverride: index.TextOptions.LanguageOverride,
+				TextIndexVersion: index.TextOptions.TextIndexVersion,
+			}
+		}
+
 		for j, key := range index.Key {
 			indexes[i].Key[j] = metadata.IndexKeyPair{
 				Field:      key.Field,
 				Descending: key.Descending,
+				Text:       key.Text,
 			}
 		}
 	}

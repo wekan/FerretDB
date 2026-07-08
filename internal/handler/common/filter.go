@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/FerretDB/FerretDB/internal/handler/common/aggregations/operators"
 	"github.com/FerretDB/FerretDB/internal/handler/commonpath"
@@ -292,6 +293,9 @@ func filterOperator(doc *types.Document, operator string, filterValue any) (bool
 
 	case "$where":
 		return filterWhereOperator(doc, filterValue)
+
+	case "$text":
+		return filterTextOperator(doc, filterValue)
 	default:
 		msg := fmt.Sprintf(
 			`unknown top level operator: %s. `+
@@ -359,6 +363,266 @@ func filterWhereOperator(doc *types.Document, filterValue any) (bool, error) {
 	}
 
 	return matches, nil
+}
+
+// filterTextOperator evaluates a {$text: {$search: <string>, ...}} filter.
+//
+// This is a PARTIAL, self-contained implementation of MongoDB's `$text` operator.
+// Because the query filter only sees one document at a time (and FerretDB does not
+// build a real inverted/full-text index), matching is performed directly against the
+// document's string fields instead of consulting the collection's text index. In
+// particular there is NO stemming/language processing, NO relevance scoring, and the
+// `$meta: "textScore"` projection is not produced. `$language` and `$diacriticSensitive`
+// are accepted and ignored.
+//
+// Matching semantics: `$search` is tokenized on whitespace into terms; double-quoted
+// runs are treated as phrases (matched as a contiguous, case-insensitive substring);
+// a leading `-` negates a term or phrase (documents containing it are excluded). A
+// document matches when any of its string fields (recursing into sub-documents and
+// arrays) contains any positive term as a whole word (or any positive phrase as a
+// substring) and contains none of the negated terms/phrases. `$caseSensitive: true`
+// makes matching case-sensitive.
+func filterTextOperator(doc *types.Document, filterValue any) (bool, error) {
+	textDoc, ok := filterValue.(*types.Document)
+	if !ok {
+		return false, handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrBadValue,
+			"$text expects an object",
+			"$text",
+		)
+	}
+
+	searchVal, err := textDoc.Get("$search")
+	if err != nil {
+		return false, handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrBadValue,
+			"$search is required for $text",
+			"$text",
+		)
+	}
+
+	search, ok := searchVal.(string)
+	if !ok {
+		return false, handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrTypeMismatch,
+			fmt.Sprintf("$search had the wrong type. Expected string, found %s", handlerparams.AliasFromType(searchVal)),
+			"$text",
+		)
+	}
+
+	caseSensitive := false
+
+	if v, err := textDoc.Get("$caseSensitive"); err == nil {
+		b, ok := v.(bool)
+		if !ok {
+			return false, handlererrors.NewCommandErrorMsgWithArgument(
+				handlererrors.ErrTypeMismatch,
+				"$caseSensitive must be a boolean",
+				"$text",
+			)
+		}
+
+		caseSensitive = b
+	}
+
+	// $language and $diacriticSensitive are accepted but ignored; still type-check them.
+	if v, err := textDoc.Get("$language"); err == nil {
+		if _, ok := v.(string); !ok {
+			return false, handlererrors.NewCommandErrorMsgWithArgument(
+				handlererrors.ErrTypeMismatch,
+				"$language must be a string",
+				"$text",
+			)
+		}
+	}
+
+	if v, err := textDoc.Get("$diacriticSensitive"); err == nil {
+		if _, ok := v.(bool); !ok {
+			return false, handlererrors.NewCommandErrorMsgWithArgument(
+				handlererrors.ErrTypeMismatch,
+				"$diacriticSensitive must be a boolean",
+				"$text",
+			)
+		}
+	}
+
+	posWords, posPhrases, negWords, negPhrases := parseTextSearch(search)
+
+	// Gather all string values from the document.
+	var texts []string
+	collectStrings(doc, &texts)
+
+	// A document containing any negated term/phrase is excluded.
+	for _, w := range negWords {
+		if containsWord(texts, w, caseSensitive) {
+			return false, nil
+		}
+	}
+
+	for _, p := range negPhrases {
+		if containsPhrase(texts, p, caseSensitive) {
+			return false, nil
+		}
+	}
+
+	// If there are no positive terms (only negations), the document matches
+	// as long as it was not excluded above.
+	if len(posWords) == 0 && len(posPhrases) == 0 {
+		return true, nil
+	}
+
+	for _, w := range posWords {
+		if containsWord(texts, w, caseSensitive) {
+			return true, nil
+		}
+	}
+
+	for _, p := range posPhrases {
+		if containsPhrase(texts, p, caseSensitive) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// parseTextSearch tokenizes a $text $search string into positive/negative words and
+// phrases. Double-quoted runs become phrases; a leading '-' marks a term as negated.
+func parseTextSearch(search string) (posWords, posPhrases, negWords, negPhrases []string) {
+	runes := []rune(search)
+	i := 0
+
+	for i < len(runes) {
+		// skip whitespace
+		if runes[i] == ' ' || runes[i] == '\t' || runes[i] == '\n' || runes[i] == '\r' {
+			i++
+			continue
+		}
+
+		negate := false
+		if runes[i] == '-' {
+			negate = true
+			i++
+
+			if i >= len(runes) {
+				break
+			}
+		}
+
+		if runes[i] == '"' {
+			i++
+			start := i
+
+			for i < len(runes) && runes[i] != '"' {
+				i++
+			}
+
+			phrase := string(runes[start:i])
+
+			if i < len(runes) {
+				i++ // skip closing quote
+			}
+
+			if phrase == "" {
+				continue
+			}
+
+			if negate {
+				negPhrases = append(negPhrases, phrase)
+			} else {
+				posPhrases = append(posPhrases, phrase)
+			}
+
+			continue
+		}
+
+		start := i
+		for i < len(runes) && runes[i] != ' ' && runes[i] != '\t' && runes[i] != '\n' && runes[i] != '\r' {
+			i++
+		}
+
+		word := string(runes[start:i])
+		if word == "" {
+			continue
+		}
+
+		if negate {
+			negWords = append(negWords, word)
+		} else {
+			posWords = append(posWords, word)
+		}
+	}
+
+	return posWords, posPhrases, negWords, negPhrases
+}
+
+// collectStrings recursively collects all string values from the given value into out.
+func collectStrings(v any, out *[]string) {
+	switch v := v.(type) {
+	case *types.Document:
+		for _, k := range v.Keys() {
+			collectStrings(must.NotFail(v.Get(k)), out)
+		}
+	case *types.Array:
+		for i := 0; i < v.Len(); i++ {
+			collectStrings(must.NotFail(v.Get(i)), out)
+		}
+	case string:
+		*out = append(*out, v)
+	}
+}
+
+// isTextWordSeparator reports whether r separates words for $text matching.
+func isTextWordSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+}
+
+// containsWord reports whether term appears as a whole word in any of the texts.
+func containsWord(texts []string, term string, caseSensitive bool) bool {
+	if term == "" {
+		return false
+	}
+
+	if !caseSensitive {
+		term = strings.ToLower(term)
+	}
+
+	for _, text := range texts {
+		if !caseSensitive {
+			text = strings.ToLower(text)
+		}
+
+		for _, word := range strings.FieldsFunc(text, isTextWordSeparator) {
+			if word == term {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// containsPhrase reports whether phrase appears as a contiguous substring in any of the texts.
+func containsPhrase(texts []string, phrase string, caseSensitive bool) bool {
+	if phrase == "" {
+		return false
+	}
+
+	if !caseSensitive {
+		phrase = strings.ToLower(phrase)
+	}
+
+	for _, text := range texts {
+		if !caseSensitive {
+			text = strings.ToLower(text)
+		}
+
+		if strings.Contains(text, phrase) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // filterFieldExpr handles {field: {expr}} or {field: {document}} filter.

@@ -403,8 +403,99 @@ func processIndex(command string, indexDoc *types.Document) (*backends.IndexInfo
 			s := int32(seconds)
 			index.ExpireAfterSeconds = &s
 
+		case "weights":
+			// Text index option: a document mapping indexed fields to their weight.
+			// Stored so the index round-trips through listIndexes.
+			if index.TextOptions == nil {
+				index.TextOptions = new(backends.TextIndexOptions)
+			}
+
+			v := must.NotFail(indexDoc.Get("weights"))
+
+			weightsDoc, ok := v.(*types.Document)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'weights' option must be specified as an object",
+					command,
+				)
+			}
+
+			weights := make(map[string]int32, weightsDoc.Len())
+
+			for _, wField := range weightsDoc.Keys() {
+				wVal := must.NotFail(weightsDoc.Get(wField))
+
+				w, err := handlerparams.GetWholeNumberParam(wVal)
+				if err != nil {
+					return nil, handlererrors.NewCommandErrorMsgWithArgument(
+						handlererrors.ErrTypeMismatch,
+						fmt.Sprintf("Index weight for field %q must be a number", wField),
+						command,
+					)
+				}
+
+				weights[wField] = int32(w)
+			}
+
+			index.TextOptions.Weights = weights
+
+		case "default_language":
+			if index.TextOptions == nil {
+				index.TextOptions = new(backends.TextIndexOptions)
+			}
+
+			v := must.NotFail(indexDoc.Get("default_language"))
+
+			lang, ok := v.(string)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'default_language' option must be specified as a string",
+					command,
+				)
+			}
+
+			index.TextOptions.DefaultLanguage = lang
+
+		case "language_override":
+			if index.TextOptions == nil {
+				index.TextOptions = new(backends.TextIndexOptions)
+			}
+
+			v := must.NotFail(indexDoc.Get("language_override"))
+
+			lang, ok := v.(string)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'language_override' option must be specified as a string",
+					command,
+				)
+			}
+
+			index.TextOptions.LanguageOverride = lang
+
+		case "textIndexVersion":
+			if index.TextOptions == nil {
+				index.TextOptions = new(backends.TextIndexOptions)
+			}
+
+			v := must.NotFail(indexDoc.Get("textIndexVersion"))
+
+			version, err := handlerparams.GetWholeNumberParam(v)
+			if err != nil {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'textIndexVersion' option must be specified as a number",
+					command,
+				)
+			}
+
+			index.TextOptions.TextIndexVersion = int32(version)
+
 		case "partialFilterExpression", "hidden", "storageEngine",
-			"weights", "default_language", "language_override", "textIndexVersion", "2dsphereIndexVersion",
+			"2dsphereIndexVersion",
 			"bits", "min", "max", "bucketSize", "collation", "wildcardProjection":
 			return nil, handlererrors.NewCommandErrorMsgWithArgument(
 				handlererrors.ErrNotImplemented,
@@ -455,6 +546,16 @@ func processIndexKey(command string, keyDoc *types.Document) ([]backends.IndexKe
 		}
 
 		duplicateChecker[field] = struct{}{}
+
+		// Text indexes use the string value "text" instead of a numeric direction.
+		if s, ok := order.(string); ok && s == "text" {
+			res = append(res, backends.IndexKeyPair{
+				Field: field,
+				Text:  true,
+			})
+
+			continue
+		}
 
 		var orderParam int64
 

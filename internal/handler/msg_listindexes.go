@@ -84,7 +84,18 @@ func (h *Handler) MsgListIndexes(connCtx context.Context, msg *wire.OpMsg) (*wir
 	for _, index := range res.Indexes {
 		indexKey := must.NotFail(types.NewDocument())
 
+		var isText bool
+
 		for _, key := range index.Key {
+			if key.Text {
+				isText = true
+
+				// Text index fields are reported with the string value "text".
+				indexKey.Set(key.Field, "text")
+
+				continue
+			}
+
 			order := int32(1)
 			if key.Descending {
 				order = -1
@@ -106,6 +117,50 @@ func (h *Handler) MsgListIndexes(connCtx context.Context, msg *wire.OpMsg) (*wir
 
 		if index.ExpireAfterSeconds != nil {
 			indexDoc.Set("expireAfterSeconds", *index.ExpireAfterSeconds)
+		}
+
+		if isText {
+			// Report the text index options, defaulting like MongoDB does
+			// (weight 1 per field, english, "language", textIndexVersion 3).
+			weights := must.NotFail(types.NewDocument())
+
+			for _, key := range index.Key {
+				if !key.Text {
+					continue
+				}
+
+				w := int32(1)
+				if index.TextOptions != nil {
+					if wv, ok := index.TextOptions.Weights[key.Field]; ok {
+						w = wv
+					}
+				}
+
+				weights.Set(key.Field, w)
+			}
+
+			defaultLanguage := "english"
+			languageOverride := "language"
+			textIndexVersion := int32(3)
+
+			if index.TextOptions != nil {
+				if index.TextOptions.DefaultLanguage != "" {
+					defaultLanguage = index.TextOptions.DefaultLanguage
+				}
+
+				if index.TextOptions.LanguageOverride != "" {
+					languageOverride = index.TextOptions.LanguageOverride
+				}
+
+				if index.TextOptions.TextIndexVersion != 0 {
+					textIndexVersion = index.TextOptions.TextIndexVersion
+				}
+			}
+
+			indexDoc.Set("weights", weights)
+			indexDoc.Set("default_language", defaultLanguage)
+			indexDoc.Set("language_override", languageOverride)
+			indexDoc.Set("textIndexVersion", textIndexVersion)
 		}
 
 		firstBatch.Append(indexDoc)
