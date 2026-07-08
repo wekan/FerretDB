@@ -289,6 +289,9 @@ func filterOperator(doc *types.Document, operator string, filterValue any) (bool
 
 	case "$expr":
 		return filterExprOperator(doc, must.NotFail(types.NewDocument(operator, filterValue)))
+
+	case "$where":
+		return filterWhereOperator(doc, filterValue)
 	default:
 		msg := fmt.Sprintf(
 			`unknown top level operator: %s. `+
@@ -330,6 +333,32 @@ func filterExprOperator(doc, filter *types.Document) (bool, error) {
 	default:
 		panic(fmt.Sprintf("common.filterExprOperator: unexpected type %[1]T (%#[1]v)", v))
 	}
+}
+
+// filterWhereOperator evaluates a {$where: <js>} filter using the embedded
+// JavaScript engine. The value is a JavaScript expression or function source
+// string that is evaluated with `this` bound to the document; the document
+// matches when the result is truthy.
+func filterWhereOperator(doc *types.Document, filterValue any) (bool, error) {
+	code, ok := filterValue.(string)
+	if !ok {
+		return false, handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrBadValue,
+			"$where must be a string",
+			"$where",
+		)
+	}
+
+	matches, err := operators.EvalWhere(code, doc)
+	if err != nil {
+		return false, handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrBadValue,
+			err.Error(),
+			"$where",
+		)
+	}
+
+	return matches, nil
 }
 
 // filterFieldExpr handles {field: {expr}} or {field: {document}} filter.
