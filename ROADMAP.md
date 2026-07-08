@@ -127,7 +127,7 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Capped collections in the **SQLite backend** (`internal/backends/sqlite/database.go`, `insert.go`, `query.go`)
 - [x] **Basic OpLog tailing** via `internal/backends/decorators/oplog/` — writes `local.oplog.rs` records (i/u/d)
 - [ ] **Change streams** (`$changeStream` / `watch`) — not supported ([issue #1415](https://github.com/FerretDB/FerretDB/issues/1415))
-- [ ] Real **replication** / `replSetInitiate` — oplog is tailing-only; the capped `local.oplog.rs` must be created **manually** and `FERRETDB_REPL_SET_NAME` set (`website/docs/configuration/oplog-support.md`)
+- [ ] Real **replication** — still not supported; oplog is tailing-only, the capped `local.oplog.rs` must be created **manually** and `FERRETDB_REPL_SET_NAME` set (`website/docs/configuration/oplog-support.md`). The `replSetInitiate` command is now accepted as a compatibility no-op (see the Admin / diagnostic section) but sets up no real replica set
 
 ### Sessions / transactions — implemented as compatibility no-ops
 - [x] `startSession`, `commitTransaction`, `abortTransaction`, retryable writes — this fork now implements them as compatibility commands (`internal/handler/msg_startsession.go`, `msg_committransaction.go`, `msg_aborttransaction.go`, `msg_endsessions.go`, registered in `internal/handler/commands.go`). `startSession` returns a session record with a generated UUID; `commitTransaction`, `abortTransaction`, `endSessions`, `refreshSessions`, `killSessions`, `killAllSessions` and `killAllSessionsByPattern` return `{ok: 1}`. Write commands accept and ignore the retryable-write / session fields (`lsid`, `txnNumber`, `autocommit`, `startTransaction`, `stmtId`, `stmtIds`). IMPORTANT: these are NO-OP compatibility commands — there are still no real multi-document transactions with the SQLite backend, every write auto-commits on its own, and the commands provide no atomicity or isolation (`abortTransaction` does not roll back writes); logical sessions carry no server-side state
@@ -136,7 +136,7 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] `serverStatus`, `buildInfo`, `hello`/`ismaster`, `ping`, `collStats`, `dbStats`
 - [x] `listCollections`, `listDatabases`, `listIndexes`, `createIndexes`, `dropIndexes`, `create`, `drop`, `compact`
 - [x] `getParameter` — implemented (`internal/handler/msg_getparameter.go`; returns `authenticationMechanisms`, `featureCompatibilityVersion`, etc.; verified on SQLite by `TestCommandsAdministrationGetParameter`)
-- [ ] `replSetInitiate` — `❌`
+- [x] `replSetInitiate` — implemented as a **compatibility no-op** (`internal/handler/msg_replsetinitiate.go`): accepted with or without a config document and returns `{ok: 1}` (echoing the config `_id` / set name when supplied) so tools and drivers that bootstrap a replica set do not hard-fail. IMPORTANT: it does **not** set up real replication — no oplog is created, no primary is elected and the topology is unchanged; the oplog remains tailing-only and must still be configured manually (see the Reactivity section)
 
 ---
 
