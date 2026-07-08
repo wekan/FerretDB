@@ -22,6 +22,8 @@
 - Implement the `$unionWith` aggregation stage (with optional sub-pipeline) by @xet7. Thanks to xet7.
 - Implement the `$bucket` and `$bucketAuto` aggregation stages (the `$bucketAuto` `granularity` option is not yet supported) by @xet7. Thanks to xet7.
 - Implement TTL indexes (`expireAfterSeconds` on createIndexes, reported by listIndexes, with a background reaper that deletes expired documents) by @xet7. Thanks to xet7.
+- Implement the `$where` query operator, which evaluates a JavaScript expression or function against each document (with `this` bound to the document) using the embedded pure-Go goja JavaScript engine by @xet7 in https://github.com/wekan/FerretDB/commit/dd4dafe7ff21734a2308fb75691b2c9e330d2d69 . Thanks to xet7.
+- Implement the `$function` aggregation expression operator (`{body, args, lang: "js"}`), which runs a user-supplied JavaScript function over the evaluated argument expressions using the embedded pure-Go goja JavaScript engine by @xet7 in https://github.com/wekan/FerretDB/commit/dd4dafe7ff21734a2308fb75691b2c9e330d2d69 . Thanks to xet7.
 
 ### Other Changes 🤖
 

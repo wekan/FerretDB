@@ -42,7 +42,7 @@ What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use
 ### Query operators
 - [x] `$regex` incl. `$options: 'i'` and `$not: { $regex: … }` — **WeKan's entire search/filter is regex-based** ([`client/lib/filter.js`](https://github.com/wekan/wekan/blob/main/client/lib/filter.js), [`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
 - [x] `$in`, `$gte`, `$ne`, `$or`, `$not`, `$exists`, `$size`
-- Not used: `$text`, `$where`, `$expr`, geospatial (`$near`/`$geoWithin`), `collation`
+- Not used by WeKan: `$text`, `$expr`, geospatial (`$near`/`$geoWithin`), `collation` (`$where` is unused by WeKan but now implemented via the embedded goja JavaScript engine)
 
 ### Aggregation pipelines (3 sites, server-side admin/metrics only — not on the hot path)
 - [x] Stages: `$match`, `$group` (`$sum`), `$sort`, `$project`, `$addFields`, `$count`, **`$lookup`**
@@ -91,7 +91,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
 - [x] `$in`, `$nin`, `$exists`, `$type`, `$size`, `$all`, `$elemMatch`, `$mod`, `$bitsAllSet`
 - [x] **`$regex`** with `$options` (`filterFieldRegex` / `filterFieldExprRegex`)
-- [ ] `$text`, `$where` — not implemented
+- [x] **`$where`** — implemented via the embedded pure-Go goja JavaScript engine; evaluates a JS expression or function against each document with `this` bound to the document (`filterWhereOperator` / `operators.EvalWhere`)
+- [ ] `$text` — not implemented
 
 ### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
 - [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
@@ -109,7 +110,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] Date expression operators: `$year`, `$month`, `$dayOfMonth`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$isoDayOfWeek`, `$isoWeek`, `$isoWeekYear`, `$dateToString`, `$dateFromString`, `$dateToParts`, `$dateFromParts`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dateTrunc`
 - [x] Trigonometric, hyperbolic, angle-conversion and `$log10` expression operators: `$sin`, `$cos`, `$tan`, `$asin`, `$acos`, `$atan`, `$atan2`, `$sinh`, `$cosh`, `$tanh`, `$asinh`, `$acosh`, `$atanh`, `$degreesToRadians`, `$radiansToDegrees`, `$log10` (all return a `double`)
 - [x] Data-size expression operator: `$bsonSize` (returns the size in bytes of the BSON encoding of a document as an `int32`, `null` for a `null` argument, and a type-mismatch error for a non-document argument)
-- [ ] Remaining **aggregation expression operators** — a few niche ones still unimplemented: `$toDecimal` (v1's `internal/types` has no `Decimal128` type, so it cannot return a correct `decimal` value without adding a new BSON type through the whole stack), `$meta` (requires per-query metadata plumbing — text score / index key / record id — that the v1 aggregation pipeline does not produce), `$function` (server-side JavaScript), and window operators like `$rank`/`$shift`/`$setWindowFields`-only accumulators — all remain in `unsupportedOperators`
+- [x] Server-side JavaScript expression operator: `$function` (`{body, args, lang: "js"}`) — implemented via the embedded pure-Go goja JavaScript engine; evaluates the `args` aggregation expressions and runs the user-supplied JS function over them (`internal/handler/common/aggregations/operators/function.go`)
+- [ ] Remaining **aggregation expression operators** — a few niche ones still unimplemented: `$toDecimal` (v1's `internal/types` has no `Decimal128` type, so it cannot return a correct `decimal` value without adding a new BSON type through the whole stack), `$meta` (requires per-query metadata plumbing — text score / index key / record id — that the v1 aggregation pipeline does not produce), and window operators like `$rank`/`$shift`/`$setWindowFields`-only accumulators — all remain in `unsupportedOperators`
 
 ### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
 - [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
@@ -151,6 +153,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 ### ✅ Admin-only aggregation gaps — now implemented in this branch (core kanban always worked)
 - [x] **`$lookup` aggregation stage** (basic equality-join form `{ from, localField, foreignField, as }`) → unblocks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). The `pipeline`/`let` sub-form is still unimplemented.
 - [x] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → previously broke attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`); now implemented.
+- [x] **Server-side JavaScript** — the `$where` query operator and the `$function` aggregation expression operator are now implemented via the embedded pure-Go goja JavaScript engine (unused by WeKan, but available for MongoDB compatibility).
 
 ### 🔁 Reactivity — configure WeKan around the gap
 - [ ] **Change streams unsupported** → set `METEOR_REACTIVITY_ORDER=polling` (poll-and-diff, ~2000 ms latency). This is the primary supported path. *(FerretDB to-do: implement change streams — [#1415](https://github.com/FerretDB/FerretDB/issues/1415).)*
@@ -162,7 +165,7 @@ Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no
 - [x] **`getParameter`** — already implemented (`internal/handler/msg_getparameter.go`); verified working on SQLite, so WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) is fine.
 
 ### 🚫 Not needed (WeKan doesn't use them; no action)
-- [x] Transactions/sessions, capped collections, TTL indexes, text indexes/`$text`, geospatial, `collation`, `mapReduce`, `$where` — unused by WeKan
+- [x] Transactions/sessions, capped collections, TTL indexes, text indexes/`$text`, geospatial, `collation`, `mapReduce` — unused by WeKan (`$where` is likewise unused by WeKan but now implemented via the embedded goja JavaScript engine)
 - [x] GridFS commands (`replSetGetStatus`, GridFS `compact`) — attachments on filesystem
 
 ---
