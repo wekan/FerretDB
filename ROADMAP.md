@@ -189,3 +189,119 @@ A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile`):
 
 A handful of **partial** update-operator modifiers (`$each`+`$slice`/`$sort`,
 `$pullAll`) should be validated end-to-end.
+
+---
+
+## FerretDB v1 vs v2
+
+The two FerretDB lines have fundamentally different architectures, which is why
+they support different databases.
+
+- **v1** (`main-v1` here, module `github.com/FerretDB/FerretDB`) implements the
+  MongoDB-compatibility layer **itself, in Go** (`internal/handler/…` parses and
+  executes commands; `internal/handler/common/aggregations/…` implements operators
+  and stages), on top of a **pluggable storage layer** (`internal/backends/{sqlite,
+  postgresql, mysql, hana}`). Compatibility is *partial* but portable — any backend
+  a Go driver can talk to. This branch has greatly expanded that Go layer.
+- **v2** (`main`, module `github.com/FerretDB/FerretDB/v2`) is a **thin proxy** that
+  translates the MongoDB wire protocol to SQL and delegates all compatibility to
+  **PostgreSQL + the [DocumentDB extension](https://github.com/documentdb/documentdb)**
+  (`internal/documentdb/…`). There is **no `internal/backends`** — PostgreSQL (with
+  the extension) is the only engine. Compatibility is *far more complete* because
+  DocumentDB does the heavy lifting, but it is Postgres-extension-bound.
+
+| Capability | v1 (`main-v1`) | v2 (`main`) |
+|---|---|---|
+| Architecture | Go compatibility layer over pluggable backends | Wire→SQL proxy delegating to DocumentDB |
+| **SQLite** (embedded, single file) | ✅ `internal/backends/sqlite` | ❌ not supported |
+| **PostgreSQL** (vanilla, no extension) | ✅ `internal/backends/postgresql` | ❌ requires the DocumentDB extension |
+| **PostgreSQL + DocumentDB extension** | ❌ | ✅ the only engine |
+| **MySQL** | ✅ `internal/backends/mysql` (partial) | ❌ |
+| **SAP HANA** | ✅ `internal/backends/hana` (partial) | ❌ |
+| Embeddable / no external DB server | ✅ (SQLite in-process) | ❌ (needs PostgreSQL) |
+| MongoDB wire target | ~5.0 (reports FCV 7.0) | 5.0+ |
+| Aggregation stages | partial — greatly expanded in this branch | ✅ full (DocumentDB) |
+| Aggregation expression operators | large subset (≈all common ones after this branch) | ✅ full (DocumentDB) |
+| `$lookup` (cross-collection) | ✅ basic equality-join (this branch) | ✅ full |
+| TTL indexes (`expireAfterSeconds`) | ✅ this branch (SQLite reaper) | ✅ (DocumentDB) |
+| Text search (`$text`) / geospatial | ❌ | ✅ (DocumentDB) |
+| Transactions / sessions | ❌ | ✅ (`msg_startsession.go`, via PostgreSQL) |
+| Change streams | ❌ (basic oplog tailing only) | evolving (via DocumentDB) |
+| Compatibility maintenance | must be written in Go (this fork) | inherited from the DocumentDB project |
+| Deployment weight | light (one binary + a data file) | heavier (PostgreSQL + DocumentDB extension) |
+
+**Takeaway:** v1 is the only line that runs on **SQLite / MySQL / SAP HANA /
+vanilla PostgreSQL** and is embeddable; v2 is the only line with **near-complete
+MongoDB compatibility** (transactions, full aggregation, text/geo) — but only on
+PostgreSQL + DocumentDB.
+
+---
+
+## Merging FerretDB v1 and v2
+
+Goal: one FerretDB that keeps v2's completeness **and** v1's reach (SQLite,
+vanilla PostgreSQL, MySQL, SAP HANA, embeddable). The obstacle is that v2's
+compatibility lives inside a **PostgreSQL C extension (DocumentDB)** that cannot
+run inside SQLite or the other backends, while v1's compatibility lives in **Go**
+and is portable but incomplete. So a merge cannot simply "use DocumentDB
+everywhere"; it must make the compatibility engine **pluggable**.
+
+### Proposal: a pluggable compatibility "engine" behind a shared frontend
+
+Adopt v2 as the base module and reintroduce v1's portability as a selectable
+engine, sharing everything above the engine boundary.
+
+1. **Shared wire frontend + conformance suite.** Factor the parts that are
+   engine-independent — `clientconn`, wire parsing, command dispatch, error
+   mapping (v1 `internal/handler/*`, v2 `internal/mongoerrors`) — into a common
+   frontend used by every engine. Make the existing `integration/` compat test
+   suite the **single conformance suite** every engine must run in CI; each
+   engine's failing tests become its published gap list.
+
+2. **`Engine` strategy interface.** Define one interface (roughly `RunCommand` /
+   CRUD / aggregate / index ops) with two implementations:
+   - **`documentdb`** — v2's current path (PostgreSQL + DocumentDB): full features.
+   - **`go`** — v1's Go compatibility layer (`internal/handler/common/…`, now with
+     this branch's ~110 operators, the added stages, and TTL) over
+     `internal/backends/{sqlite, postgresql, mysql, hana}`: portable, partial.
+
+3. **Engine/back-end selection from the connection target.** Choose the engine
+   from a scheme or env var, e.g. `FERRETDB_ENGINE` or the URL:
+   `sqlite:file:/state/` and `mysql://…` → `go` engine; a plain
+   `postgres://…` → `go` engine (vanilla Postgres, no extension); a
+   `postgres://…?documentdb=on` → `documentdb` engine (full features). This lets a
+   single binary serve an embedded SQLite dev instance *and* a
+   DocumentDB-backed production instance.
+
+4. **Capability negotiation.** Because engines differ, report per-engine
+   capabilities through `buildInfo`/`hello`/`getParameter` (e.g. `transactions`,
+   `changeStreams`, `textSearch`) so clients adapt — exactly how WeKan already
+   chooses `METEOR_REACTIVITY_ORDER=polling` when change streams are absent. The
+   `go` engine advertises the reduced set; `documentdb` advertises the full set.
+
+5. **Incremental convergence.** Close `go`-engine gaps (the `[ ]` items in §2)
+   against the shared conformance suite so SQLite/MySQL/Hana parity approaches
+   DocumentDB. Features impractical to reimplement portably in Go — multi-document
+   **transactions**, **change streams**, **text/geo search** — stay
+   `documentdb`-only and are surfaced as unavailable via capability flags rather
+   than silently failing. v1's partial **MySQL** and **SAP HANA** backends are
+   carried forward under the `go` engine and completed as needed.
+
+### Alternatives considered
+
+- **Port DocumentDB to SQLite ("DocumentDB-lite").** Reimplement DocumentDB's BSON
+  operators as SQLite loadable extension functions (or in Go over SQLite). This
+  would give SQLite near-v2 fidelity from one implementation, but it is essentially
+  rebuilding DocumentDB — very large, and duplicated maintenance. Not recommended
+  short-term; revisit only if the `go` engine's gap list proves too costly to
+  maintain.
+- **Keep two separate products.** Simplest, but perpetuates divergence and means
+  SQLite users never benefit from v2's work. The shared frontend + conformance
+  suite (step 1) is worth doing even if full engine-pluggability is deferred.
+
+**Recommended path:** steps 1–4 first (shared frontend, `Engine` interface with
+`documentdb` + `go`, target-based selection, capability negotiation), then step 5
+(convergence) as an ongoing effort. This yields a single FerretDB that supports
+SQLite, vanilla PostgreSQL, MySQL and SAP HANA via the `go` engine, and full
+MongoDB compatibility via the `documentdb` engine — the WeKan-on-SQLite stack in
+this branch becomes the `go`-engine reference deployment.
