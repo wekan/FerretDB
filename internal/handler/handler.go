@@ -31,6 +31,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/clientconn/conninfo"
 	"github.com/FerretDB/FerretDB/internal/clientconn/connmetrics"
 	"github.com/FerretDB/FerretDB/internal/clientconn/cursor"
+	"github.com/FerretDB/FerretDB/internal/handler/session"
 	"github.com/FerretDB/FerretDB/internal/handler/users"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/ctxutil"
@@ -69,6 +70,7 @@ type Handler struct {
 	b backends.Backend
 
 	cursors  *cursor.Registry
+	sessions *session.Registry
 	commands map[string]*command
 	wg       sync.WaitGroup
 
@@ -132,9 +134,10 @@ func New(opts *NewOpts) (*Handler, error) {
 	b := oplog.NewBackend(opts.Backend, logging.WithName(opts.L, "oplog"))
 
 	h := &Handler{
-		b:       b,
-		NewOpts: opts,
-		cursors: cursor.NewRegistry(logging.WithName(opts.L, "cursors")),
+		b:        b,
+		NewOpts:  opts,
+		cursors:  cursor.NewRegistry(logging.WithName(opts.L, "cursors")),
+		sessions: session.NewRegistry(time.Duration(logicalSessionTimeoutMinutes)*time.Minute, opts.L),
 
 		cappedCleanupStop: make(chan struct{}),
 		cleanupCappedCollectionsDocs: prometheus.NewCounterVec(
@@ -472,6 +475,7 @@ func (h *Handler) cleanupTTLCollection(ctx context.Context, coll backends.Collec
 // It should be called after listener closes all client connections and stops listening.
 func (h *Handler) Close() {
 	h.cursors.Close()
+	h.sessions.Stop()
 	close(h.cappedCleanupStop)
 	close(h.ttlCleanupStop)
 	h.wg.Wait()
@@ -481,6 +485,7 @@ func (h *Handler) Close() {
 func (h *Handler) Describe(ch chan<- *prometheus.Desc) {
 	h.b.Describe(ch)
 	h.cursors.Describe(ch)
+	h.sessions.Describe(ch)
 	h.cleanupCappedCollectionsDocs.Describe(ch)
 	h.cleanupCappedCollectionsBytes.Describe(ch)
 	h.cleanupTTLCollectionsDocs.Describe(ch)
@@ -490,6 +495,7 @@ func (h *Handler) Describe(ch chan<- *prometheus.Desc) {
 func (h *Handler) Collect(ch chan<- prometheus.Metric) {
 	h.b.Collect(ch)
 	h.cursors.Collect(ch)
+	h.sessions.Collect(ch)
 	h.cleanupCappedCollectionsDocs.Collect(ch)
 	h.cleanupCappedCollectionsBytes.Collect(ch)
 	h.cleanupTTLCollectionsDocs.Collect(ch)

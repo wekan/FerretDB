@@ -18,8 +18,8 @@ import (
 	"context"
 
 	"github.com/FerretDB/wire"
-	"github.com/google/uuid"
 
+	"github.com/FerretDB/FerretDB/internal/handler/session"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/must"
@@ -28,29 +28,34 @@ import (
 // MsgStartSession implements `startSession` command.
 //
 // FerretDB v1 with the SQLite backend has no real multi-document transactions;
-// every write auto-commits. This command exists as a compatibility no-op so that
-// MongoDB drivers that rely on logical sessions do not error. It returns a fresh
-// session record with a generated UUID, but the session carries no server-side
-// transactional state.
+// every write auto-commits. Logical sessions themselves are tracked for real in
+// the handler's session registry (adapted from FerretDB v2), but the session
+// carries no server-side transactional state.
 //
 // The passed context is canceled when the client connection is closed.
 func (h *Handler) MsgStartSession(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-	id, err := uuid.NewRandom()
+	doc, err := opMsgDocument(msg)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
+	if _, _, err = h.sessions.CreateOrUpdateByLSID(connCtx, doc); err != nil {
+		return nil, err
+	}
+
+	sessionID := h.sessions.NewSession(connCtx)
+
 	lsid := must.NotFail(types.NewDocument(
 		"id", types.Binary{
 			Subtype: types.BinaryUUID,
-			B:       must.NotFail(id.MarshalBinary()),
+			B:       sessionID[:],
 		},
 	))
 
 	return documentOpMsg(
 		must.NotFail(types.NewDocument(
 			"id", lsid,
-			"timeoutMinutes", logicalSessionTimeoutMinutes,
+			"timeoutMinutes", session.LogicalSessionTimeoutMinutes,
 			"ok", float64(1),
 		)),
 	)
