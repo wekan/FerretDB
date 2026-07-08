@@ -125,9 +125,9 @@ backends). Source paths in `v1` cells are relative to this repo; WeKan sources l
 | Change streams (`$changeStream` / `watch`) | — | ❌ ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)) → use `METEOR_REACTIVITY_ORDER=polling` | ❌ no `watch`/change-stream handler in v2 |
 | Real replication / elected primary | — | ❌ (`replSetInitiate` is a no-op) | ⚠️ PostgreSQL WAL streaming replication — **not** a MongoDB replica set / oplog |
 | **— Sessions / transactions —** | | | |
-| `startSession` | — | ⚠️ compat: returns a session record with a generated UUID (`msg_startsession.go`) · `sessions_transactions_test.go` | ✅ logical session record only (`msg_startsession.go`) |
+| `startSession` | — | ✅ tracked in a session registry adapted from v2: returns a session record with a generated UUID and registers it server-side (`msg_startsession.go`, `internal/handler/session`) · `sessions_transactions_test.go`, `session_registry_test.go` | ✅ logical session record only (`msg_startsession.go`) |
 | `commitTransaction` / `abortTransaction` | — | ⚠️ compat no-op `{ok:1}`; **no** atomicity/isolation · `sessions_transactions_test.go` | ❌ "Not implemented yet" (compatibility.md; #1548/#1547) |
-| `endSessions` `refreshSessions` `killSessions` `killAllSessions` `killAllSessionsByPattern` | — | ⚠️ compat no-op `{ok:1}` (`msg_endsessions.go`) | ✅ᴰ (session-mgmt commands) |
+| `endSessions` `refreshSessions` `killSessions` `killAllSessions` `killAllSessionsByPattern` | — | ✅ tracked in a session registry adapted from v2: actually end / refresh / remove sessions from the registry, still returning `{ok:1}` (`msg_endsessions.go`, `internal/handler/session`) · `session_registry_test.go` | ✅ᴰ (session-mgmt commands) |
 | Retryable-write / session fields (`lsid` `txnNumber` `autocommit` `startTransaction` `stmtId` `stmtIds`) | — | ⚠️ accepted & ignored on insert/update/delete/findAndModify · `sessions_transactions_test.go` | ⚠️ not evidenced in v2 |
 | Real multi-document transactions (atomicity/isolation) | — | ❌ every write auto-commits (SQLite) | ❌ commit/abort unimplemented (#1548/#1547) |
 | **— Admin / diagnostic —** | | | |
