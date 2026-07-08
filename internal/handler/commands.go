@@ -44,6 +44,10 @@ type command struct {
 func (h *Handler) initCommands() {
 	h.commands = map[string]*command{
 		// sorted alphabetically
+		"abortTransaction": {
+			Handler: h.MsgAbortTransaction,
+			Help:    "Aborts a transaction (compatibility no-op; writes already auto-committed are not rolled back).",
+		},
 		"aggregate": {
 			Handler: h.MsgAggregate,
 			Help:    "Returns aggregated data.",
@@ -65,6 +69,10 @@ func (h *Handler) initCommands() {
 		"collStats": {
 			Handler: h.MsgCollStats,
 			Help:    "Returns storage data for a collection.",
+		},
+		"commitTransaction": {
+			Handler: h.MsgCommitTransaction,
+			Help:    "Commits a transaction (compatibility no-op; each write already auto-commits).",
 		},
 		"compact": {
 			Handler: h.MsgCompact,
@@ -128,6 +136,10 @@ func (h *Handler) initCommands() {
 			Handler: h.MsgDropIndexes,
 			Help:    "Drops indexes on a collection.",
 		},
+		"endSessions": {
+			Handler: h.MsgEndSessions,
+			Help:    "Ends logical sessions (compatibility no-op; sessions carry no server-side state).",
+		},
 		"explain": {
 			Handler: h.MsgExplain,
 			Help:    "Returns the execution plan.",
@@ -187,9 +199,21 @@ func (h *Handler) initCommands() {
 			anonymous: true,
 			Help:      "", // hidden
 		},
+		"killAllSessions": {
+			Handler: h.MsgKillAllSessions,
+			Help:    "Kills all logical sessions (compatibility no-op; sessions carry no server-side state).",
+		},
+		"killAllSessionsByPattern": {
+			Handler: h.MsgKillAllSessionsByPattern,
+			Help:    "Kills logical sessions matching a pattern (compatibility no-op).",
+		},
 		"killCursors": {
 			Handler: h.MsgKillCursors,
 			Help:    "Closes server cursors.",
+		},
+		"killSessions": {
+			Handler: h.MsgKillSessions,
+			Help:    "Kills logical sessions (compatibility no-op; sessions carry no server-side state).",
 		},
 		"listCollections": {
 			Handler: h.MsgListCollections,
@@ -217,6 +241,10 @@ func (h *Handler) initCommands() {
 			anonymous: true,
 			Help:      "Returns a pong response.",
 		},
+		"refreshSessions": {
+			Handler: h.MsgRefreshSessions,
+			Help:    "Refreshes logical sessions (compatibility no-op; sessions carry no server-side state).",
+		},
 		"renameCollection": {
 			Handler: h.MsgRenameCollection,
 			Help:    "Changes the name of an existing collection.",
@@ -238,6 +266,10 @@ func (h *Handler) initCommands() {
 		"setFreeMonitoring": {
 			Handler: h.MsgSetFreeMonitoring,
 			Help:    "Toggles free monitoring.",
+		},
+		"startSession": {
+			Handler: h.MsgStartSession,
+			Help:    "Starts a logical session (compatibility; sessions are accepted but carry no server-side state).",
 		},
 		"update": {
 			Handler: h.MsgUpdate,
