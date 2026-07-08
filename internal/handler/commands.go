@@ -249,6 +249,10 @@ func (h *Handler) initCommands() {
 			Handler: h.MsgRenameCollection,
 			Help:    "Changes the name of an existing collection.",
 		},
+		"replSetInitiate": {
+			Handler: h.MsgReplSetInitiate,
+			Help:    "Accepts replica set initiation (compatibility; FerretDB v1 does not implement real replication).",
+		},
 		"saslStart": {
 			Handler:   h.MsgSASLStart,
 			anonymous: true,
