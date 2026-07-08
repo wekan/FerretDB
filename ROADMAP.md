@@ -119,7 +119,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [x] `sparse` accepted (silently ignored — comment: *"Ignore for now to make Meteor apps work"*)
 - [x] `expireAfterSeconds` (**TTL**) indexes — parsed by createIndexes, reported by listIndexes, and enforced by a background reaper (`internal/handler/handler.go` `runTTLCleanup`)
 - [x] **text** indexes (`"text"` key value with `weights`/`default_language`/`language_override`/`textIndexVersion`) — accepted by createIndexes and stored/round-tripped through listIndexes (weights default to 1 per field); pragmatic only, no real inverted/full-text index is built (see the `$text` query operator)
-- [ ] `partialFilterExpression`, `2dsphere`, `collation`, `hidden` — `ErrNotImplemented`
+- [x] `hidden`, `collation`, `partialFilterExpression`, `2dsphere` (`"2dsphere"` key value with `2dsphereIndexVersion`) — accepted by createIndexes and stored/round-tripped through listIndexes; accepted and reported only, **not enforced**: no planner-hiding of `hidden` indexes, no locale-aware collation, no partial-index filtering and no geospatial queries
+- [ ] `storageEngine`, `bits`, `min`, `max`, `bucketSize`, `wildcardProjection` — `ErrNotImplemented`
 
 ### Reactivity — limited
 - [x] **Tailable / awaitData cursors** on **capped collections** (poll-based; `msg_find.go`, `msg_getmore.go`)
