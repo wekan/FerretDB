@@ -65,7 +65,7 @@ What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use
 - [x] `compact`, `replSetGetStatus` — GridFS admin tooling only (skippable with `fs` attachments)
 
 ### Not used at all (so not required from FerretDB)
-- [ ] ~~Multi-document transactions / sessions~~ (`startSession`, `withTransaction`) — none
+- [x] Multi-document transactions / sessions (`startSession`, `withTransaction`) — WeKan does not use them, but the fork now accepts sessions and the transaction commands as compatibility no-ops (each write auto-commits; no real atomicity/isolation) so MongoDB drivers do not error
 - [ ] ~~Capped collections~~ — none created by WeKan
 - [x] Full-text search (`$text` / text indexes) — WeKan uses `$regex` instead, but both are now implemented partially: text indexes are accepted and round-tripped, and `$text` matches search terms against a document's string fields (no stemming, no relevance scoring, no `$meta: "textScore"`)
 - [ ] ~~GridFS~~ — attachments on filesystem
@@ -129,8 +129,8 @@ From this repo (`internal/handler/…`, `website/docs/reference/supported-comman
 - [ ] **Change streams** (`$changeStream` / `watch`) — not supported ([issue #1415](https://github.com/FerretDB/FerretDB/issues/1415))
 - [ ] Real **replication** / `replSetInitiate` — oplog is tailing-only; the capped `local.oplog.rs` must be created **manually** and `FERRETDB_REPL_SET_NAME` set (`website/docs/configuration/oplog-support.md`)
 
-### Sessions / transactions — not supported
-- [ ] `startSession`, `commitTransaction`, `abortTransaction`, retryable writes — all `❌`
+### Sessions / transactions — implemented as compatibility no-ops
+- [x] `startSession`, `commitTransaction`, `abortTransaction`, retryable writes — this fork now implements them as compatibility commands (`internal/handler/msg_startsession.go`, `msg_committransaction.go`, `msg_aborttransaction.go`, `msg_endsessions.go`, registered in `internal/handler/commands.go`). `startSession` returns a session record with a generated UUID; `commitTransaction`, `abortTransaction`, `endSessions`, `refreshSessions`, `killSessions`, `killAllSessions` and `killAllSessionsByPattern` return `{ok: 1}`. Write commands accept and ignore the retryable-write / session fields (`lsid`, `txnNumber`, `autocommit`, `startTransaction`, `stmtId`, `stmtIds`). IMPORTANT: these are NO-OP compatibility commands — there are still no real multi-document transactions with the SQLite backend, every write auto-commits on its own, and the commands provide no atomicity or isolation (`abortTransaction` does not roll back writes); logical sessions carry no server-side state
 
 ### Admin / diagnostic — implemented
 - [x] `serverStatus`, `buildInfo`, `hello`/`ismaster`, `ping`, `collStats`, `dbStats`
@@ -233,7 +233,7 @@ they support different databases.
 | `$lookup` (cross-collection) | ✅ basic equality-join (this branch) | ✅ full |
 | TTL indexes (`expireAfterSeconds`) | ✅ this branch (SQLite reaper) | ✅ (DocumentDB) |
 | Text search (`$text`) / geospatial | ❌ | ✅ (DocumentDB) |
-| Transactions / sessions | ❌ | ✅ (`msg_startsession.go`, via PostgreSQL) |
+| Transactions / sessions | ⚠️ compatibility no-ops in this fork (sessions accepted, transaction commands return `{ok:1}`, no real atomicity/isolation) | ✅ (`msg_startsession.go`, via PostgreSQL) |
 | Change streams | ❌ (basic oplog tailing only) | evolving (via DocumentDB) |
 | Compatibility maintenance | must be written in Go (this fork) | inherited from the DocumentDB project |
 | Deployment weight | light (one binary + a data file) | heavier (PostgreSQL + DocumentDB extension) |
