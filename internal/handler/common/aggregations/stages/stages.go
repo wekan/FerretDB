@@ -29,23 +29,24 @@ type newStageFunc func(stage *types.Document) (aggregations.Stage, error)
 // Stages maps all supported aggregation Stages.
 var Stages = map[string]newStageFunc{
 	// sorted alphabetically
-	"$addFields":   newAddFields,
-	"$collStats":   newCollStats,
-	"$count":       newCount,
-	"$group":       newGroup,
-	"$limit":       newLimit,
-	"$lookup":      newLookup,
-	"$match":       newMatch,
-	"$project":     newProject,
-	"$replaceRoot": newReplaceRoot,
-	"$replaceWith": newReplaceWith,
-	"$sample":      newSample,
-	"$set":         newSet,
-	"$skip":        newSkip,
-	"$sort":        newSort,
-	"$sortByCount": newSortByCount,
-	"$unset":       newUnset,
-	"$unwind":      newUnwind,
+	"$addFields":       newAddFields,
+	"$collStats":       newCollStats,
+	"$count":           newCount,
+	"$group":           newGroup,
+	"$limit":           newLimit,
+	"$lookup":          newLookup,
+	"$match":           newMatch,
+	"$project":         newProject,
+	"$replaceRoot":     newReplaceRoot,
+	"$replaceWith":     newReplaceWith,
+	"$sample":          newSample,
+	"$set":             newSet,
+	"$setWindowFields": newSetWindowFields,
+	"$skip":            newSkip,
+	"$sort":            newSort,
+	"$sortByCount":     newSortByCount,
+	"$unset":           newUnset,
+	"$unwind":          newUnwind,
 	// please keep sorted alphabetically
 }
 
@@ -68,7 +69,6 @@ var unsupportedStages = map[string]struct{}{
 	"$redact":                 {},
 	"$search":                 {},
 	"$searchMeta":             {},
-	"$setWindowFields":        {},
 	"$sharedDataDistribution": {},
 	// please keep sorted alphabetically
 }
