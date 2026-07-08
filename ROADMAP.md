@@ -241,6 +241,9 @@ leads on everything DocumentDB implements natively.
 
 A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile`):
 `docker compose up --build` builds FerretDB v1 (SQLite) and runs WeKan against it.
+For local development, `./build.sh` offers a menu (and non-interactive commands) to
+install dependencies, build/run FerretDB on SQLite, and run the integration tests
+sequentially or in parallel.
 
 ---
 
