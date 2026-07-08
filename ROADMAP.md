@@ -56,11 +56,11 @@ backends). Source paths in `v1` cells are relative to this repo; WeKan sources l
 | Capability | WeKan | v1 (`main-v1`) | v2 (`main`) |
 |---|:--:|---|---|
 | **— Storage backends / databases —** | | | |
-| SQLite (embedded, single file) | ✅ (this stack) | ✅ `internal/backends/sqlite` — the tested target | ❌ no `internal/backends` |
-| PostgreSQL (vanilla, no extension) | — | ✅ `internal/backends/postgresql` (untested here) | ❌ requires the DocumentDB extension |
+| SQLite (embedded, single file) | ✅ (this stack) | ✅ **complete & the only tested target**: full CRUD, single/compound/unique + capped collections, and the **only** backend that persists & round-trips this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) via `sqlite/metadata` + `sqlite/collection.go`. All `integration/` tests run here | ❌ no `internal/backends` |
+| PostgreSQL (vanilla, no extension) | — | ✅ complete & mature (`internal/backends/postgresql`: full CRUD, indexes, capped) but **untested in this stack**; new index-option round-tripping **not** threaded (0 refs) | ❌ requires the DocumentDB extension |
 | PostgreSQL + DocumentDB extension | — | ❌ | ✅ the only engine (`internal/documentdb/`) |
-| MySQL | — | ⚠️ `internal/backends/mysql` (partial) | ❌ |
-| SAP HANA | — | ⚠️ `internal/backends/hana` (partial) | ❌ |
+| MySQL | — | ⚠️ partial/experimental (`internal/backends/mysql`): implements the full `Collection` interface (CRUD/indexes/stats/compact) but is a beta backend; new index options not threaded | ❌ |
+| SAP HANA | — | ⚠️ experimental (`internal/backends/hana`): CRUD as string-built SQL keyed on `_id`, `Compact` is a no-op, column-mode collections "not supported yet", no `metadata`/`insert.go`; new index options not threaded | ❌ |
 | Embeddable / no external DB server | ✅ | ✅ (SQLite in-process) | ❌ (needs PostgreSQL) |
 | MongoDB wire target | — | ~5.0 (reports FCV 7.0) | 5.0+ |
 | **— CRUD & cursors —** | | | |
@@ -112,11 +112,11 @@ backends). Source paths in `v1` cells are relative to this repo; WeKan sources l
 | Single-field, compound, unique (incl. compound-unique) | ✅ [`server/lib/mongoStartup.js`](https://github.com/wekan/wekan/blob/main/server/lib/mongoStartup.js) | ✅ `msg_createindexes.go` | ✅ (`createIndexes` supported) |
 | `sparse` | — | ⚠️ accepted, silently ignored (*"to make Meteor apps work"*) | ✅ᴰ |
 | `expireAfterSeconds` (**TTL**) | — | ✅ createIndexes + listIndexes + background reaper (`handler.go runTTLCleanup`) | ✅ (`ttl-indexes` guide) |
-| **text** (`"text"` key, `weights` / `default_language` / `language_override` / `textIndexVersion`) | — | ⚠️ accepted, stored & round-tripped via listIndexes; **no real inverted index** (see `$text`) · `query_text_test.go` | ✅ᴰ (full-text-search guides) |
-| `hidden` | — | ⚠️ accepted/stored/reported; **not** hidden from the planner · `createindexes_options_test.go` | ✅ᴰ |
-| `collation` | — | ⚠️ accepted/stored/reported; **no** locale-aware collation · `createindexes_options_test.go` | ✅ᴰ |
-| `partialFilterExpression` | — | ⚠️ accepted/stored/reported; index **not** restricted to matching docs · `createindexes_options_test.go` | ✅ᴰ |
-| `2dsphere` (`"2dsphere"` key + `2dsphereIndexVersion`) | — | ⚠️ accepted/stored/reported; **no** geospatial queries · `createindexes_options_test.go` | ✅ᴰ |
+| **text** (`"text"` key, `weights` / `default_language` / `language_override` / `textIndexVersion`) | — | ⚠️ **SQLite only**: accepted, stored & round-tripped via listIndexes; **no real inverted index** (see `$text`). On PostgreSQL/MySQL/HANA the option is accepted by the handler but not persisted/reported · `query_text_test.go` | ✅ᴰ (full-text-search guides) |
+| `hidden` | — | ⚠️ **SQLite only**: accepted/stored/reported (not hidden from the planner); other backends accept but don't round-trip · `createindexes_options_test.go` | ✅ᴰ |
+| `collation` | — | ⚠️ **SQLite only**: accepted/stored/reported (no locale-aware collation); other backends accept but don't round-trip · `createindexes_options_test.go` | ✅ᴰ |
+| `partialFilterExpression` | — | ⚠️ **SQLite only**: accepted/stored/reported (index not restricted to matching docs); other backends accept but don't round-trip · `createindexes_options_test.go` | ✅ᴰ |
+| `2dsphere` (`"2dsphere"` key + `2dsphereIndexVersion`) | — | ⚠️ **SQLite only**: accepted/stored/reported (no geospatial queries); other backends accept but don't round-trip · `createindexes_options_test.go` | ✅ᴰ |
 | `storageEngine` `bits` `min` `max` `bucketSize` `wildcardProjection` | — | ❌ `ErrNotImplemented` | ✅ᴰ |
 | **— Reactivity (Meteor pub/sub) —** | | | |
 | `polling` (poll-and-diff) — primary supported path | ✅ [`start-wekan.sh`](https://github.com/wekan/wekan/blob/main/start-wekan.sh) | ✅ (~2000 ms latency; no oplog dependency) | ✅ |
@@ -140,10 +140,37 @@ backends). Source paths in `v1` cells are relative to this repo; WeKan sources l
 | GridFS storage / commands | — (attachments on filesystem) | ⚠️ driver convention over `fs.files`/`fs.chunks` CRUD | ✅ (same driver convention) |
 | `mapReduce` | — | ❌ not registered | ❌ not registered (no handler) |
 
-**Backends note.** In v1 the whole matrix is implemented in the portable Go layer
-(`internal/handler/…`), so it applies to any `internal/backends/*` engine — but **only
-SQLite is exercised/tested in this stack**. MySQL and SAP HANA are partial backends;
-vanilla PostgreSQL is complete but untested here.
+**Backends note — what actually differs per v1 backend (SQLite / PostgreSQL / MySQL /
+SAP HANA).** v1 splits into two layers, and only one of them is backend-specific:
+
+- **Handler layer** (`internal/handler/…`, `internal/handler/common/…`) — *all* of the
+  query filter operators, aggregation stages, aggregation expression operators, window
+  operators, `$where`/`$function`/`$text`, the session/transaction/`replSetInitiate`
+  compatibility commands, index-option **parsing/validation**, and the TTL reaper
+  (`handler.go runTTLCleanup`, which deletes via the backend's `DeleteAll`). This layer
+  runs in Go on documents *after* the backend returns them, so it is **backend-
+  independent**: every non-storage matrix row above behaves identically on SQLite,
+  PostgreSQL, MySQL and HANA. Only SQLite is *tested* here, but the code path is shared.
+- **Storage layer** (`internal/backends/{sqlite,postgresql,mysql,hana}`) — raw CRUD,
+  cursors, capped collections, and index **persistence**. This is where the backends
+  differ:
+  - **SQLite** — complete; the reference/tested target; the **only** backend wired to
+    persist & round-trip this fork's new index options (text `weights`/`default_language`,
+    `hidden`, `collation`, `partialFilterExpression`, `2dsphere`).
+  - **PostgreSQL (vanilla)** — complete and mature, but untested here and **not** wired
+    for the new index-option round-tripping.
+  - **MySQL** — beta/partial: full interface, usable CRUD, but not production-hardened
+    and not wired for the new index options.
+  - **SAP HANA** — experimental: string-built SQL keyed on `_id`, `Compact` no-op,
+    column-mode collections unimplemented, no `metadata`/`insert.go`; not wired for the
+    new index options.
+
+  So the index-option rows marked "**SQLite only**" above are the main per-backend
+  divergence introduced by this fork; the `createIndexes` call still *succeeds* on the
+  other backends (a plain index is created), it just doesn't store/report the extra
+  option. Everything else in the matrix is either backend-independent (handler layer)
+  or basic CRUD that all four backends provide (SQLite/PostgreSQL fully, MySQL beta,
+  HANA experimental).
 
 **v2 delegation note (why so many `✅ᴰ`).** v2 is a thin proxy: `msg_aggregate.go`
 forwards the pipeline to DocumentDB without parsing stages, and query operators are
@@ -169,6 +196,15 @@ Both feature columns were checked against the branches' real code (2026-07):
   option handling; and `commands.go`. Correction applied vs. an earlier draft:
   `replSetGetStatus` is **not** implemented in v1 (`❌`, not `⚠️`); `$where` is a
   genuine goja implementation (`✅`, matching `$function`).
+- **v1 per-backend** — checked `internal/backends/{sqlite,postgresql,mysql,hana}`. All
+  four implement the same `backends.Collection` interface, so the handler layer (every
+  non-storage matrix row) works on any of them. The fork's new index options
+  (`TextOptions`/`Hidden`/`Collation`/`PartialFilterExpression`/`Sphere2D` on
+  `backends.IndexInfo`) are referenced **only** in `sqlite/` (2 files); PostgreSQL,
+  MySQL and HANA have **0** references, so those options are SQLite-only for
+  storage/round-trip. SQLite and PostgreSQL are complete backends; MySQL is beta; HANA
+  is experimental (column-mode collections unsupported, `Compact` no-op, no
+  `metadata`/`insert.go`).
 - **v2 (`main`)** — verified that there is **no `internal/backends`** (only
   `internal/documentdb/`), that `msg_aggregate.go` forwards pipelines untouched, and
   from v2's own `website/docs/migration/compatibility.md`. Corrections applied vs. an
