@@ -40,6 +40,16 @@ type IndexInfo struct {
 	Unique             bool   `json:"unique"`
 	// TextOptions, when non-nil, marks this as a text index and carries its options.
 	TextOptions *TextIndexOptions `json:"textOptions,omitempty"`
+	// Hidden, when true, marks the index as hidden. Stored and reported but not enforced.
+	Hidden bool `json:"hidden,omitempty"`
+	// Collation, when set, holds the sjson-marshaled collation document. Stored and reported
+	// but not enforced.
+	Collation json.RawMessage `json:"collation,omitempty"`
+	// PartialFilterExpression, when set, holds the sjson-marshaled partial filter document.
+	// Stored and reported but not enforced.
+	PartialFilterExpression json.RawMessage `json:"partialFilterExpression,omitempty"`
+	// Sphere2DIndexVersion, when non-zero, is the 2dsphereIndexVersion option of a 2dsphere index.
+	Sphere2DIndexVersion int32 `json:"sphere2dIndexVersion,omitempty"`
 }
 
 // TextIndexOptions holds the options of a MongoDB text index. Note that FerretDB
@@ -58,6 +68,8 @@ type IndexKeyPair struct {
 	Descending bool   `json:"descending"`
 	// Text marks this key as a text index field (its requested value was "text").
 	Text bool `json:"text,omitempty"`
+	// Sphere2D marks this key as a 2dsphere index field (its requested value was "2dsphere").
+	Sphere2D bool `json:"sphere2d,omitempty"`
 }
 
 // deepCopy returns a deep copy.
@@ -66,10 +78,20 @@ func (s Settings) deepCopy() Settings {
 
 	for i, index := range s.Indexes {
 		indexes[i] = IndexInfo{
-			Name:               index.Name,
-			Key:                slices.Clone(index.Key),
-			ExpireAfterSeconds: index.ExpireAfterSeconds,
-			Unique:             index.Unique,
+			Name:                 index.Name,
+			Key:                  slices.Clone(index.Key),
+			ExpireAfterSeconds:   index.ExpireAfterSeconds,
+			Unique:               index.Unique,
+			Hidden:               index.Hidden,
+			Sphere2DIndexVersion: index.Sphere2DIndexVersion,
+		}
+
+		if index.Collation != nil {
+			indexes[i].Collation = slices.Clone(index.Collation)
+		}
+
+		if index.PartialFilterExpression != nil {
+			indexes[i].PartialFilterExpression = slices.Clone(index.PartialFilterExpression)
 		}
 
 		if index.TextOptions != nil {

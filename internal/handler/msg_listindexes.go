@@ -86,12 +86,23 @@ func (h *Handler) MsgListIndexes(connCtx context.Context, msg *wire.OpMsg) (*wir
 
 		var isText bool
 
+		var isSphere2D bool
+
 		for _, key := range index.Key {
 			if key.Text {
 				isText = true
 
 				// Text index fields are reported with the string value "text".
 				indexKey.Set(key.Field, "text")
+
+				continue
+			}
+
+			if key.Sphere2D {
+				isSphere2D = true
+
+				// 2dsphere index fields are reported with the string value "2dsphere".
+				indexKey.Set(key.Field, "2dsphere")
 
 				continue
 			}
@@ -161,6 +172,30 @@ func (h *Handler) MsgListIndexes(connCtx context.Context, msg *wire.OpMsg) (*wir
 			indexDoc.Set("default_language", defaultLanguage)
 			indexDoc.Set("language_override", languageOverride)
 			indexDoc.Set("textIndexVersion", textIndexVersion)
+		}
+
+		if isSphere2D {
+			// 2dsphere indexes report their version, defaulting like MongoDB does.
+			sphereVersion := int32(3)
+			if index.Sphere2DIndexVersion != 0 {
+				sphereVersion = index.Sphere2DIndexVersion
+			}
+
+			indexDoc.Set("2dsphereIndexVersion", sphereVersion)
+		}
+
+		// Hidden, collation and partialFilterExpression are stored and reported but
+		// not enforced by FerretDB.
+		if index.Hidden {
+			indexDoc.Set("hidden", true)
+		}
+
+		if index.Collation != nil {
+			indexDoc.Set("collation", index.Collation)
+		}
+
+		if index.PartialFilterExpression != nil {
+			indexDoc.Set("partialFilterExpression", index.PartialFilterExpression)
 		}
 
 		firstBatch.Append(indexDoc)

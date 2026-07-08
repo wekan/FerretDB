@@ -475,10 +475,12 @@ func (c *collection) ListIndexes(ctx context.Context, params *backends.ListIndex
 
 	for i, index := range coll.Settings.Indexes {
 		res.Indexes[i] = backends.IndexInfo{
-			Name:               index.Name,
-			Unique:             index.Unique,
-			ExpireAfterSeconds: index.ExpireAfterSeconds,
-			Key:                make([]backends.IndexKeyPair, len(index.Key)),
+			Name:                 index.Name,
+			Unique:               index.Unique,
+			ExpireAfterSeconds:   index.ExpireAfterSeconds,
+			Hidden:               index.Hidden,
+			Sphere2DIndexVersion: index.Sphere2DIndexVersion,
+			Key:                  make([]backends.IndexKeyPair, len(index.Key)),
 		}
 
 		if index.TextOptions != nil {
@@ -490,11 +492,30 @@ func (c *collection) ListIndexes(ctx context.Context, params *backends.ListIndex
 			}
 		}
 
+		if index.Collation != nil {
+			collation, err := sjson.Unmarshal(index.Collation)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			res.Indexes[i].Collation = collation
+		}
+
+		if index.PartialFilterExpression != nil {
+			filter, err := sjson.Unmarshal(index.PartialFilterExpression)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			res.Indexes[i].PartialFilterExpression = filter
+		}
+
 		for j, key := range index.Key {
 			res.Indexes[i].Key[j] = backends.IndexKeyPair{
 				Field:      key.Field,
 				Descending: key.Descending,
 				Text:       key.Text,
+				Sphere2D:   key.Sphere2D,
 			}
 		}
 	}
@@ -511,10 +532,12 @@ func (c *collection) CreateIndexes(ctx context.Context, params *backends.CreateI
 	indexes := make([]metadata.IndexInfo, len(params.Indexes))
 	for i, index := range params.Indexes {
 		indexes[i] = metadata.IndexInfo{
-			Name:               index.Name,
-			Key:                make([]metadata.IndexKeyPair, len(index.Key)),
-			ExpireAfterSeconds: index.ExpireAfterSeconds,
-			Unique:             index.Unique,
+			Name:                 index.Name,
+			Key:                  make([]metadata.IndexKeyPair, len(index.Key)),
+			ExpireAfterSeconds:   index.ExpireAfterSeconds,
+			Unique:               index.Unique,
+			Hidden:               index.Hidden,
+			Sphere2DIndexVersion: index.Sphere2DIndexVersion,
 		}
 
 		if index.TextOptions != nil {
@@ -526,11 +549,30 @@ func (c *collection) CreateIndexes(ctx context.Context, params *backends.CreateI
 			}
 		}
 
+		if index.Collation != nil {
+			b, err := sjson.Marshal(index.Collation)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			indexes[i].Collation = b
+		}
+
+		if index.PartialFilterExpression != nil {
+			b, err := sjson.Marshal(index.PartialFilterExpression)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			indexes[i].PartialFilterExpression = b
+		}
+
 		for j, key := range index.Key {
 			indexes[i].Key[j] = metadata.IndexKeyPair{
 				Field:      key.Field,
 				Descending: key.Descending,
 				Text:       key.Text,
+				Sphere2D:   key.Sphere2D,
 			}
 		}
 	}

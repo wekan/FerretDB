@@ -494,9 +494,70 @@ func processIndex(command string, indexDoc *types.Document) (*backends.IndexInfo
 
 			index.TextOptions.TextIndexVersion = int32(version)
 
-		case "partialFilterExpression", "hidden", "storageEngine",
-			"2dsphereIndexVersion",
-			"bits", "min", "max", "bucketSize", "collation", "wildcardProjection":
+		case "hidden":
+			// Stored and reported through listIndexes, but the query planner does not
+			// hide the index.
+			v := must.NotFail(indexDoc.Get("hidden"))
+
+			hidden, ok := v.(bool)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'hidden' option must be specified as a boolean",
+					command,
+				)
+			}
+
+			index.Hidden = hidden
+
+		case "collation":
+			// The raw collation document is stored and reported through listIndexes,
+			// but FerretDB does not apply locale-aware collation.
+			v := must.NotFail(indexDoc.Get("collation"))
+
+			collation, ok := v.(*types.Document)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'collation' option must be specified as an object",
+					command,
+				)
+			}
+
+			index.Collation = collation
+
+		case "partialFilterExpression":
+			// The raw partial filter document is stored and reported through listIndexes,
+			// but FerretDB does not restrict the index to matching documents.
+			v := must.NotFail(indexDoc.Get("partialFilterExpression"))
+
+			filter, ok := v.(*types.Document)
+			if !ok {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'partialFilterExpression' option must be specified as an object",
+					command,
+				)
+			}
+
+			index.PartialFilterExpression = filter
+
+		case "2dsphereIndexVersion":
+			v := must.NotFail(indexDoc.Get("2dsphereIndexVersion"))
+
+			version, err := handlerparams.GetWholeNumberParam(v)
+			if err != nil {
+				return nil, handlererrors.NewCommandErrorMsgWithArgument(
+					handlererrors.ErrTypeMismatch,
+					"'2dsphereIndexVersion' option must be specified as a number",
+					command,
+				)
+			}
+
+			index.Sphere2DIndexVersion = int32(version)
+
+		case "storageEngine",
+			"bits", "min", "max", "bucketSize", "wildcardProjection":
 			return nil, handlererrors.NewCommandErrorMsgWithArgument(
 				handlererrors.ErrNotImplemented,
 				fmt.Sprintf("Index option %q is not implemented yet", opt),
@@ -552,6 +613,17 @@ func processIndexKey(command string, keyDoc *types.Document) ([]backends.IndexKe
 			res = append(res, backends.IndexKeyPair{
 				Field: field,
 				Text:  true,
+			})
+
+			continue
+		}
+
+		// 2dsphere indexes use the string value "2dsphere" instead of a numeric direction.
+		// FerretDB stores and reports the key but does not support geospatial queries.
+		if s, ok := order.(string); ok && s == "2dsphere" {
+			res = append(res, backends.IndexKeyPair{
+				Field:    field,
+				Sphere2D: true,
 			})
 
 			continue

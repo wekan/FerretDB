@@ -380,6 +380,17 @@ type IndexInfo struct {
 	Unique             bool
 	// TextOptions, when non-nil, marks this as a text index and carries its options.
 	TextOptions *TextIndexOptions
+	// Hidden, when true, marks the index as hidden. FerretDB stores and reports this
+	// flag through listIndexes but does not hide the index from the query planner.
+	Hidden bool
+	// Collation, when non-nil, is the raw collation document supplied at index creation.
+	// FerretDB stores and reports it through listIndexes but does not apply the collation.
+	Collation *types.Document
+	// PartialFilterExpression, when non-nil, is the raw partial filter document supplied at
+	// index creation. FerretDB stores and reports it but does not filter the index by it.
+	PartialFilterExpression *types.Document
+	// Sphere2DIndexVersion, when non-zero, is the 2dsphereIndexVersion option of a 2dsphere index.
+	Sphere2DIndexVersion int32
 }
 
 // TextIndexOptions holds the options of a MongoDB text index. FerretDB stores these
@@ -397,6 +408,9 @@ type IndexKeyPair struct {
 	Descending bool
 	// Text marks this key as a text index field (its requested value was "text").
 	Text bool
+	// Sphere2D marks this key as a 2dsphere index field (its requested value was "2dsphere").
+	// FerretDB stores and reports it but does not support geospatial queries.
+	Sphere2D bool
 }
 
 // ListIndexes returns a list of collection indexes.
