@@ -16,4 +16,8 @@ tmp/
 vendor/
 website/build/
 
+# build.sh: local Go toolchain and SQLite data dir
+.goroot/
+state/
+
 **/testdata/fuzz/
