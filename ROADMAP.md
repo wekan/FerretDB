@@ -232,7 +232,9 @@ they support different databases.
 | Aggregation expression operators | large subset (≈all common ones after this branch) | ✅ full (DocumentDB) |
 | `$lookup` (cross-collection) | ✅ basic equality-join (this branch) | ✅ full |
 | TTL indexes (`expireAfterSeconds`) | ✅ this branch (SQLite reaper) | ✅ (DocumentDB) |
-| Text search (`$text`) / geospatial | ❌ | ✅ (DocumentDB) |
+| Text search (`$text`) | ⚠️ partial in this fork (text indexes accepted/reported; `$text` matches terms against string fields, no inverted index/scoring) | ✅ (DocumentDB) |
+| Geospatial (`2dsphere` / `$near`) | ❌ (`2dsphere` index accepted/reported but no geo queries) | ✅ (DocumentDB) |
+| Server-side JavaScript (`$where` / `$function`) | ✅ this fork (embedded goja engine) | ⚠️ (limited) |
 | Transactions / sessions | ⚠️ compatibility no-ops in this fork (sessions accepted, transaction commands return `{ok:1}`, no real atomicity/isolation) | ✅ (`msg_startsession.go`, via PostgreSQL) |
 | Change streams | ❌ (basic oplog tailing only) | evolving (via DocumentDB) |
 | Compatibility maintenance | must be written in Go (this fork) | inherited from the DocumentDB project |
