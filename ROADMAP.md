@@ -1,8 +1,13 @@
-# WeKan on FerretDB v1 (SQLite) — Compatibility Roadmap
+# WeKan on FerretDB — Compatibility Roadmap
 
 This roadmap tracks what is needed to run [WeKan](https://github.com/wekan/wekan)
 (Meteor 3 / MongoDB) on **FerretDB v1.24.2 with the SQLite backend** (this repo,
-`main-v1` branch).
+`main-v1` branch), and compares that against **FerretDB v2** (`main`, PostgreSQL +
+DocumentDB).
+
+Everything is consolidated into the single **[Compatibility matrix](#compatibility-matrix)**
+below: every capability, by category, with whether WeKan uses it, the status in v1
+and v2, what is missing, and which tests cover it.
 
 **Assumptions**
 
@@ -16,233 +21,166 @@ This roadmap tracks what is needed to run [WeKan](https://github.com/wekan/wekan
   has already been **verified working** against this FerretDB v1.24.2 SQLite build
   with the MongoDB wire driver.
 
-**Legend:** `[x]` = supported / already works · `[ ]` = missing / to do.
-FerretDB sources are relative paths in this repo; WeKan sources link to
+---
+
+## Legend
+
+**WeKan** — does WeKan depend on this feature?
+`✅` uses it · `⚙️` admin/metrics only (off the hot path) · `—` not used by WeKan.
+
+**v1 (main-v1)** / **v2 (main)** — implementation status:
+`✅` full · `⚠️` partial or compatibility-only (see note) · `❌` not implemented · `—` n/a.
+
+Notes in the v1 column name the covering integration test (in `integration/`) where
+one exists. Unless stated otherwise, **v1 feature rows are exercised on the SQLite
+backend** in this stack; the Go compatibility layer is backend-independent, but only
+SQLite is run in CI here (PostgreSQL is untested here; MySQL/HANA are partial
+backends). v2 rows are inherited from DocumentDB and covered by v2's own suite.
+
+Source paths in `v1` cells are relative to this repo; WeKan sources link to
 `github.com/wekan/wekan`.
 
 ---
 
-## 1) MongoDB features WeKan uses
+## Compatibility matrix
 
-What WeKan actually depends on (from the WeKan repo). Checked = confirmed in use.
+| Capability | WeKan | v1 (`main-v1`) | v2 (`main`) |
+|---|:--:|---|---|
+| **— Storage backends / databases —** | | | |
+| SQLite (embedded, single file) | ✅ (this stack) | ✅ `internal/backends/sqlite` — the tested target | ❌ not supported |
+| PostgreSQL (vanilla, no extension) | — | ✅ `internal/backends/postgresql` (untested here) | ❌ requires the DocumentDB extension |
+| PostgreSQL + DocumentDB extension | — | ❌ | ✅ the only engine |
+| MySQL | — | ⚠️ `internal/backends/mysql` (partial) | ❌ |
+| SAP HANA | — | ⚠️ `internal/backends/hana` (partial) | ❌ |
+| Embeddable / no external DB server | ✅ | ✅ (SQLite in-process) | ❌ (needs PostgreSQL) |
+| MongoDB wire target | — | ~5.0 (reports FCV 7.0) | 5.0+ |
+| **— CRUD & cursors —** | | | |
+| `find` / `insert` / `update` / `delete` | ✅ | ✅ `msg_find.go` / `msg_insert.go` / `msg_update.go` / `msg_delete.go` · upstream suite | ✅ |
+| `findAndModify`, `findOneAndUpdate` (`$inc` counters, `upsert`, `returnDocument`) | ✅ [`models/counters.js`](https://github.com/wekan/wekan/blob/main/models/counters.js) | ✅ `msg_findandmodify.go` — **verified** | ✅ |
+| `updateOne` `$setOnInsert` + `upsert` (race-safe card numbering) | ✅ [`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js) | ✅ | ✅ |
+| `count`, `distinct`, `getMore`, `killCursors` | ✅ | ✅ | ✅ |
+| `rawCollection()` (node-mongodb driver) | ✅ | ✅ | ✅ |
+| **— Update operators —** | | | |
+| `$set` `$unset` `$inc` `$push` `$pull` `$addToSet` `$rename` `$pop` `$mul` `$min` `$max` `$currentDate` `$bit` | ✅ (`$set`/`$unset`/`$push`/`$pull`/`$addToSet`/`$inc`/`$rename`) | ✅ upstream suite | ✅ |
+| `$each` + `$slice` / `$sort` / `$position` push-modifiers | ✅ | ✅ `update_array_operators.go` · `update_push_modifiers_test.go` | ✅ |
+| `$setOnInsert` | ✅ | ✅ | ✅ |
+| `$pullAll` | ✅ [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js) | ✅ `update_pullall_test.go` | ✅ |
+| **— Query filter operators —** | | | |
+| `$eq` `$ne` `$gt` `$gte` `$lt` `$lte` `$in` `$nin` `$exists` `$type` `$size` `$all` `$elemMatch` `$mod` `$bits*` | ✅ (`$in`/`$gte`/`$ne`/`$exists`/`$size`) | ✅ `filter.go` · upstream suite | ✅ |
+| `$regex` incl. `$options:'i'`, `$not:{$regex}` (**WeKan's entire search**) | ✅ [`client/lib/filter.js`](https://github.com/wekan/wekan/blob/main/client/lib/filter.js) | ✅ `filterFieldRegex` | ✅ |
+| `$and` `$or` `$nor` `$not` | ✅ (`$or`/`$not`) | ✅ | ✅ |
+| `$expr` | — | ✅ `filterExprOperator` | ✅ |
+| `$where` (server-side JavaScript) | — | ⚠️ full-ish via embedded goja engine; `this` bound to doc, expression or function form (`filterWhereOperator`) · `query_where_test.go` | ⚠️ limited (DocumentDB server-side JS) |
+| `$text` | — | ⚠️ partial (`filterTextOperator`): matches `$search` terms against the doc's string fields (recurses into sub-docs/arrays); multi-term OR, case-insensitive whole-word, `$caseSensitive`, quoted phrases, leading `-` negation. No stemming, no scoring, no `$meta:"textScore"`, does not consult the text index · `query_text_test.go` | ✅ (DocumentDB) |
+| geospatial (`$near` / `$geoWithin`) | — | ❌ | ✅ (DocumentDB) |
+| **— Aggregation stages —** | | | |
+| `$match` `$group` `$project` `$sort` `$limit` `$skip` `$unwind` `$addFields` `$set` `$unset` `$count` `$collStats` | ⚙️ [`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js) | ✅ `stages/…` | ✅ |
+| `$lookup` (basic equality-join `{from,localField,foreignField,as}`) | ⚙️ (Prometheus "top boards") | ⚠️ equality-join only; `pipeline`/`let` sub-form `ErrNotImplemented` · `aggregate_lookup_test.go` | ✅ full |
+| `$replaceRoot` `$replaceWith` `$sortByCount` `$sample` `$facet` `$unionWith` | — | ✅ `aggregate_stages_extra_test.go`, `aggregate_facet_test.go`, `aggregate_unionwith_test.go` | ✅ |
+| `$bucket` `$bucketAuto` | — | ⚠️ (`$bucketAuto` `granularity` `ErrNotImplemented`) · `aggregate_bucket_test.go` | ✅ |
+| `$setWindowFields` | — | ⚠️ stage + window ops (see window-operator rows) · `aggregate_setwindowfields_test.go` | ✅ |
+| `$graphLookup` `$merge` `$out` `$geoNear` `$changeStream` | — | ❌ `ErrNotImplemented` | ✅ (`$changeStream` evolving) |
+| **— Aggregation expression operators —** | | | |
+| WeKan-used: `$map` `$objectToArray` `$ifNull` `$anyElementTrue` `$eq` `$ne` `$or` | ⚙️ [`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) | ✅ `aggregate_expr_operators_test.go` | ✅ |
+| Comparison/boolean/conditional: `$cmp` `$gt…$lte` `$and` `$not` `$cond` `$switch` `$allElementsTrue` | — | ✅ `aggregate_expr_bool_test.go` | ✅ |
+| Arithmetic: `$add` `$subtract` `$multiply` `$divide` `$mod` `$abs` `$ceil` `$floor` `$trunc` `$round` `$pow` `$sqrt` `$exp` `$ln` `$log` `$max` `$min` `$avg` | — | ✅ `aggregate_expr_arithmetic_test.go` | ✅ |
+| String: `$concat` `$toUpper` `$toLower` `$strLen*` `$substr*` `$split` `$trim*` `$indexOf*` `$replaceOne` `$replaceAll` `$regexMatch` | — | ✅ `aggregate_expr_string_test.go` | ✅ |
+| Array: `$size` `$arrayElemAt` `$concatArrays` `$isArray` `$in` `$reverseArray` `$slice` `$range` `$indexOfArray` `$arrayToObject` `$filter` `$reduce` `$sortArray` `$set*` `$zip` | — | ✅ `aggregate_expr_array_test.go` | ✅ |
+| Type-conversion: `$toString` `$toInt` `$toLong` `$toDouble` `$toBool` `$toObjectId` `$toDate` `$convert` `$isNumber` `$literal` `$let` `$getField` `$setField` `$unsetField` `$binarySize` `$rand` | — | ✅ `aggregate_expr_convert_test.go` | ✅ |
+| Date: `$year`…`$millisecond` `$isoWeek*` `$dateToString` `$dateFromString` `$dateTo/FromParts` `$dateAdd` `$dateSubtract` `$dateDiff` `$dateTrunc` | — | ✅ `aggregate_expr_date_test.go` | ✅ |
+| Trigonometric / hyperbolic / angle / `$log10`: `$sin` `$cos` `$tan` `$asin` `$acos` `$atan` `$atan2` `$sinh` `$cosh` `$tanh` `$asinh` `$acosh` `$atanh` `$degreesToRadians` `$radiansToDegrees` `$log10` | — | ✅ (return `double`) · `aggregate_expr_trig_test.go` | ✅ |
+| `$bsonSize` | — | ✅ (BSON byte size as `int32`; `null`→`null`; type error otherwise) · `aggregate_expr_bsonsize_test.go` | ✅ |
+| `$function` (server-side JavaScript, `{body,args,lang:"js"}`) | — | ✅ via embedded goja engine (`operators/function.go`) · `aggregate_expr_function_test.go` | ⚠️ limited |
+| `$toDecimal` | — | ❌ v1's `internal/types` has **no `Decimal128` type**; would need a new BSON type through the whole stack | ✅ |
+| `$meta` | — | ❌ needs per-query metadata plumbing (text score / index key / record id) v1 does not produce | ✅ |
+| **— Window operators (inside `$setWindowFields`) —** | | | |
+| `$rank` `$denseRank` `$documentNumber` `$shift` (require `sortBy`) | — | ✅ · `aggregate_setwindowfields_test.go` | ✅ |
+| Window accumulators `$sum` `$avg` `$min` `$max` `$count` `$push` `$first` `$last` `$stdDevPop` `$stdDevSamp` (full-partition or `window:{documents:[l,u]}`) | — | ✅ · `aggregate_setwindowfields_test.go` | ✅ |
+| `$derivative` `$integral` `$expMovingAvg` `$covariancePop` `$covarianceSamp` `$linearFill` `$locf` `$minN`/`$maxN`, `range` windows | — | ❌ deferred (return not-implemented) — need numeric/interpolation machinery not yet plumbed | ✅ |
+| **— Indexes —** | | | |
+| Single-field, compound, unique (incl. compound-unique) | ✅ [`server/lib/mongoStartup.js`](https://github.com/wekan/wekan/blob/main/server/lib/mongoStartup.js) | ✅ `msg_createindexes.go` | ✅ |
+| `sparse` | — | ⚠️ accepted, silently ignored (*"to make Meteor apps work"*) | ✅ |
+| `expireAfterSeconds` (**TTL**) | — | ✅ createIndexes + listIndexes + background reaper (`handler.go runTTLCleanup`) | ✅ |
+| **text** (`"text"` key, `weights` / `default_language` / `language_override` / `textIndexVersion`) | — | ⚠️ accepted, stored & round-tripped via listIndexes (weights default 1/field); **no real inverted index** (see `$text`) · `query_text_test.go` | ✅ |
+| `hidden` | — | ⚠️ accepted/stored/reported; **not** hidden from the planner · `createindexes_options_test.go` | ✅ |
+| `collation` | — | ⚠️ accepted/stored/reported; **no** locale-aware collation · `createindexes_options_test.go` | ✅ |
+| `partialFilterExpression` | — | ⚠️ accepted/stored/reported; index **not** restricted to matching docs · `createindexes_options_test.go` | ✅ |
+| `2dsphere` (`"2dsphere"` key + `2dsphereIndexVersion`) | — | ⚠️ accepted/stored/reported; **no** geospatial queries · `createindexes_options_test.go` | ✅ |
+| `storageEngine` `bits` `min` `max` `bucketSize` `wildcardProjection` | — | ❌ `ErrNotImplemented` | ✅ |
+| **— Reactivity (Meteor pub/sub) —** | | | |
+| `polling` (poll-and-diff) — primary supported path | ✅ [`start-wekan.sh`](https://github.com/wekan/wekan/blob/main/start-wekan.sh) | ✅ (~2000 ms latency; no oplog dependency) | ✅ |
+| Capped collections + tailable / awaitData cursors | ⚙️ | ✅ SQLite backend (`msg_find.go`, `msg_getmore.go`) | ✅ |
+| Basic OpLog tailing (`local.oplog.rs` i/u/d) | ⚙️ (Admin Panel introspection only) | ⚠️ tailing-only via `backends/decorators/oplog/`; capped oplog created manually + `FERRETDB_REPL_SET_NAME` | ⚠️ |
+| Change streams (`$changeStream` / `watch`) | — | ❌ ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)) → use `METEOR_REACTIVITY_ORDER=polling` | ⚠️ evolving (DocumentDB) |
+| Real replication / elected primary | — | ❌ (`replSetInitiate` is a no-op — see Admin) | ✅ |
+| **— Sessions / transactions —** | | | |
+| `startSession` | — | ⚠️ compat: returns a session record with a generated UUID (`msg_startsession.go`) · `sessions_transactions_test.go` | ✅ |
+| `commitTransaction` / `abortTransaction` | — | ⚠️ compat no-op `{ok:1}`; **no** atomicity/isolation, `abort` does not roll back · `sessions_transactions_test.go` | ✅ |
+| `endSessions` `refreshSessions` `killSessions` `killAllSessions` `killAllSessionsByPattern` | — | ⚠️ compat no-op `{ok:1}` (`msg_endsessions.go`) | ✅ |
+| Retryable-write / session fields (`lsid` `txnNumber` `autocommit` `startTransaction` `stmtId` `stmtIds`) | — | ⚠️ accepted & ignored on insert/update/delete/findAndModify · `sessions_transactions_test.go` | ✅ |
+| Real multi-document transactions | — | ❌ every write auto-commits (SQLite backend) | ✅ (via PostgreSQL) |
+| **— Admin / diagnostic —** | | | |
+| `serverStatus` `buildInfo` `hello`/`ismaster` `ping` `collStats` `dbStats` | ✅ | ✅ | ✅ |
+| `listCollections` `listDatabases` `listIndexes` `createIndexes` `dropIndexes` `create` `drop` `compact` | ✅ | ✅ | ✅ |
+| `getParameter` | ✅ [`meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js) | ✅ `msg_getparameter.go` (verified, `TestCommandsAdministrationGetParameter`) | ✅ |
+| `replSetInitiate` | — | ⚠️ compat no-op `{ok:1}` (echoes config `_id`); **no** real replica set (`msg_replsetinitiate.go`) · `replsetinitiate_test.go` | ✅ |
+| `replSetGetStatus` | ⚙️ (GridFS admin tooling; skippable with `fs`) | ⚠️ | ✅ |
+| **— Not required by WeKan —** | | | |
+| GridFS storage / commands | — (attachments on filesystem) | ⚠️ present but out of scope | ✅ |
+| `mapReduce` | — | ❌ | ⚠️ |
 
-### CRUD & atomic operations
-- [x] `find` / `insert` / `update` / `delete`
-- [x] `findOneAndUpdate` with `$inc` + `{ upsert: true, returnDocument: 'after' }` — atomic counters ([`models/counters.js`](https://github.com/wekan/wekan/blob/main/models/counters.js))
-- [x] `updateOne` with `$setOnInsert` + `upsert` — race-safe per-board card numbering ([`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
-- [x] `rawCollection()` access (node-mongodb driver) for the above and index creation
-
-### Update operators
-- [x] `$set` (pervasive, ~765 sites), `$unset` (~42)
-- [x] `$pull` (~72), `$push` (~46), `$addToSet` (~38)
-- [x] `$each` (~7), `$slice` (~4), `$sort` update-modifier (1) — with `$push`/`$addToSet`
-- [x] `$setOnInsert` (~44, upserts), `$inc` (3), `$rename` (1), `$pullAll` (1, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js))
-- Not used: `$pop`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
-
-### Query operators
-- [x] `$regex` incl. `$options: 'i'` and `$not: { $regex: … }` — **WeKan's entire search/filter is regex-based** ([`client/lib/filter.js`](https://github.com/wekan/wekan/blob/main/client/lib/filter.js), [`models/boards.js`](https://github.com/wekan/wekan/blob/main/models/boards.js))
-- [x] `$in`, `$gte`, `$ne`, `$or`, `$not`, `$exists`, `$size`
-- Not used by WeKan: `$expr`, geospatial (`$near`/`$geoWithin`), `collation` (`$where` and `$text` are unused by WeKan but now implemented — `$where` via the embedded goja JavaScript engine, `$text` as a partial substring/word matcher)
-
-### Aggregation pipelines (3 sites, server-side admin/metrics only — not on the hot path)
-- [x] Stages: `$match`, `$group` (`$sum`), `$sort`, `$project`, `$addFields`, `$count`, **`$lookup`**
-- [x] Expression operators: `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$or`, `$eq`, `$ne`
-- Sites: [`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js) (Prometheus "top boards"), [`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) (attachment storage stats)
-
-### Indexes
-- [x] Single-field indexes ([`server/lib/mongoStartup.js`](https://github.com/wekan/wekan/blob/main/server/lib/mongoStartup.js) `ensureIndex()`)
-- [x] Compound indexes (e.g. `{ boardId: 1, createdAt: -1 }`)
-- [x] Unique indexes (e.g. boards, invitation codes)
-- Not used: geospatial indexes. **TTL** (`expireAfterSeconds`) and **text** indexes are unused by WeKan but now implemented (text indexes only pragmatically — the options are stored and round-tripped, but no real inverted index is built)
-
-### Reactivity (Meteor pub/sub)
-- [x] Configurable driver order via `METEOR_REACTIVITY_ORDER` = `changeStreams,oplog,polling` ([`start-wekan.sh`](https://github.com/wekan/wekan/blob/main/start-wekan.sh))
-- [x] **`polling` (poll-and-diff) is a first-class fallback** — no hard oplog/change-stream dependency (~2000 ms latency without oplog)
-- [x] Oplog is only *introspected* for the Admin Panel, never required ([`server/statistics.js`](https://github.com/wekan/wekan/blob/main/server/statistics.js))
-
-### Admin / diagnostic commands
-- [x] `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
-- [x] `compact`, `replSetGetStatus` — GridFS admin tooling only (skippable with `fs` attachments)
-
-### Not used at all (so not required from FerretDB)
-- [x] Multi-document transactions / sessions (`startSession`, `withTransaction`) — WeKan does not use them, but the fork now accepts sessions and the transaction commands as compatibility no-ops (each write auto-commits; no real atomicity/isolation) so MongoDB drivers do not error
-- [ ] ~~Capped collections~~ — none created by WeKan
-- [x] Full-text search (`$text` / text indexes) — WeKan uses `$regex` instead, but both are now implemented partially: text indexes are accepted and round-tripped, and `$text` matches search terms against a document's string fields (no stemming, no relevance scoring, no `$meta: "textScore"`)
-- [ ] ~~GridFS~~ — attachments on filesystem
-- [ ] ~~TTL indexes, geospatial, `$where`, `mapReduce`, `collation`~~ — none
-
----
-
-## 2) What FerretDB v1 already implements
-
-From this repo (`internal/handler/…`, `website/docs/reference/supported-commands.md`).
-
-### CRUD & cursors — implemented
-- [x] `find`, `insert`, `update`, `delete` (`internal/handler/msg_find.go`, `msg_insert.go`, `msg_update.go`, `msg_delete.go`)
-- [x] `findAndModify` — query/sort/remove/update/new/upsert (`msg_findandmodify.go`)
-- [x] `count`, `distinct`, `getMore`, `killCursors`
-
-### Update operators — implemented
-- [x] `$set`, `$unset`, `$inc`, `$push`, `$pull`, `$addToSet`, `$pop`, `$rename`, `$mul`, `$min`, `$max`, `$currentDate`, `$bit`
-- [x] `$each` supported; modifiers `$slice`, `$sort`, `$position` implemented in `internal/handler/common/update_array_operators.go`
-- [x] `$pullAll` — implemented in `internal/handler/common/update_array_operators.go`
-
-### Query filter operators — implemented (`internal/handler/common/filter.go`)
-- [x] `$and`, `$or`, `$nor`, `$not`, `$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`
-- [x] `$in`, `$nin`, `$exists`, `$type`, `$size`, `$all`, `$elemMatch`, `$mod`, `$bitsAllSet`
-- [x] **`$regex`** with `$options` (`filterFieldRegex` / `filterFieldExprRegex`)
-- [x] **`$where`** — implemented via the embedded pure-Go goja JavaScript engine; evaluates a JS expression or function against each document with `this` bound to the document (`filterWhereOperator` / `operators.EvalWhere`)
-- [x] **`$text`** — implemented partially (`filterTextOperator`): matches `$search` terms directly against a document's string fields (recursing into sub-documents and arrays) with multi-term OR, case-insensitive whole-word matching, `$caseSensitive`, double-quoted phrases and leading `-` negation; `$language`/`$diacriticSensitive` are accepted and ignored. No stemming, no relevance scoring, no `$meta: "textScore"` (does not consult the collection's text index)
-
-### Aggregation — partial (`internal/handler/common/aggregations/stages/stages.go`)
-- [x] Stages: `$addFields`, `$collStats`, `$count`, `$group`, `$limit`, `$match`, `$project`, `$set`, `$skip`, `$sort`, `$unset`, `$unwind`
-- [x] Stage: `$lookup` (basic equality-join form `{ from, localField, foreignField, as }` used by WeKan; the `pipeline`/`let` sub-form returns `ErrNotImplemented`)
-- [x] Stages: `$replaceRoot`, `$replaceWith`, `$sortByCount`, `$sample`, `$facet`, `$unionWith` (short `"<coll>"` form and object `{ coll, pipeline }` form; injected like `$lookup`)
-- [x] Stages: `$bucket`, `$bucketAuto` (`$bucketAuto` `granularity` option returns `ErrNotImplemented`)
-- [x] Accumulator/operator `$sum`, `$count`
-- [x] Stage: `$setWindowFields` (`internal/handler/common/aggregations/stages/setwindowfields.go`) — partitions by `partitionBy`, sorts each partition by `sortBy`, and computes `output` fields with window operators. Implemented window operators: `$rank`, `$denseRank`, `$documentNumber` and `$shift` (rank/position, `sortBy` required) and the window accumulators `$sum`, `$avg`, `$min`, `$max`, `$count`, `$push`, `$first`, `$last`, `$stdDevPop`, `$stdDevSamp` over the default full-partition window or an explicit `window: {documents: [lower, upper]}` (integer offsets plus the `"unbounded"`/`"current"` keywords). Deferred (return `ErrNotImplemented`): `$derivative`, `$integral`, `$expMovingAvg`, `$covariancePop`, `$covarianceSamp`, `$linearFill`, `$locf`, `$minN`/`$maxN` and `range` windows — these need extra numeric/interpolation machinery that is not yet plumbed through v1
-- [ ] Stages: `$graphLookup`, `$merge`, `$out`, `$changeStream`, `$geoNear`, … (return `ErrNotImplemented`)
-- [x] Aggregation expression operators used by WeKan: `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray`, `$map`
-- [x] Comparison/boolean/conditional expression operators: `$cmp`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$not`, `$cond`, `$switch`, `$allElementsTrue`
-- [x] Arithmetic expression operators: `$add`, `$subtract`, `$multiply`, `$divide`, `$mod`, `$abs`, `$ceil`, `$floor`, `$trunc`, `$round`, `$pow`, `$sqrt`, `$exp`, `$ln`, `$log`, `$max`, `$min`, `$avg`
-- [x] String expression operators: `$concat`, `$toUpper`, `$toLower`, `$strLenCP`, `$strLenBytes`, `$strcasecmp`, `$substr`, `$substrCP`, `$substrBytes`, `$split`, `$trim`, `$ltrim`, `$rtrim`, `$indexOfCP`, `$indexOfBytes`, `$replaceOne`, `$replaceAll`, `$regexMatch`
-- [x] Array expression operators: `$size`, `$arrayElemAt`, `$concatArrays`, `$isArray`, `$in`, `$reverseArray`, `$slice`, `$range`, `$indexOfArray`, `$arrayToObject`, `$filter`, `$reduce`, `$sortArray`, `$setUnion`, `$setIntersection`, `$setDifference`, `$setEquals`, `$setIsSubset`, `$zip`
-- [x] Type-conversion and related expression operators: `$toString`, `$toInt`, `$toLong`, `$toDouble`, `$toBool`, `$toObjectId`, `$toDate`, `$convert`, `$isNumber`, `$literal`, `$let`, `$getField`, `$setField`, `$unsetField`, `$binarySize`, `$rand`
-- [x] Date expression operators: `$year`, `$month`, `$dayOfMonth`, `$hour`, `$minute`, `$second`, `$millisecond`, `$dayOfWeek`, `$dayOfYear`, `$week`, `$isoDayOfWeek`, `$isoWeek`, `$isoWeekYear`, `$dateToString`, `$dateFromString`, `$dateToParts`, `$dateFromParts`, `$dateAdd`, `$dateSubtract`, `$dateDiff`, `$dateTrunc`
-- [x] Trigonometric, hyperbolic, angle-conversion and `$log10` expression operators: `$sin`, `$cos`, `$tan`, `$asin`, `$acos`, `$atan`, `$atan2`, `$sinh`, `$cosh`, `$tanh`, `$asinh`, `$acosh`, `$atanh`, `$degreesToRadians`, `$radiansToDegrees`, `$log10` (all return a `double`)
-- [x] Data-size expression operator: `$bsonSize` (returns the size in bytes of the BSON encoding of a document as an `int32`, `null` for a `null` argument, and a type-mismatch error for a non-document argument)
-- [x] Server-side JavaScript expression operator: `$function` (`{body, args, lang: "js"}`) — implemented via the embedded pure-Go goja JavaScript engine; evaluates the `args` aggregation expressions and runs the user-supplied JS function over them (`internal/handler/common/aggregations/operators/function.go`)
-- [ ] Remaining **aggregation expression operators** — a few niche ones still unimplemented: `$toDecimal` (v1's `internal/types` has no `Decimal128` type, so it cannot return a correct `decimal` value without adding a new BSON type through the whole stack), `$meta` (requires per-query metadata plumbing — text score / index key / record id — that the v1 aggregation pipeline does not produce) — these remain in `unsupportedOperators`. The `$setWindowFields`-only window operators (`$rank`, `$denseRank`, `$documentNumber`, `$shift` and the window accumulators including `$stdDevPop`/`$stdDevSamp`) are now implemented directly inside the `$setWindowFields` stage; the remaining window operators (`$derivative`, `$integral`, `$expMovingAvg`, `$covariancePop`, `$covarianceSamp`, `$linearFill`, `$locf`, `$minN`/`$maxN`) are still deferred
-
-### Indexes — partial (`internal/handler/msg_createindexes.go`, `website/docs/indexes.md`)
-- [x] Single-field, **compound**, and **unique** indexes (incl. compound-unique)
-- [x] `sparse` accepted (silently ignored — comment: *"Ignore for now to make Meteor apps work"*)
-- [x] `expireAfterSeconds` (**TTL**) indexes — parsed by createIndexes, reported by listIndexes, and enforced by a background reaper (`internal/handler/handler.go` `runTTLCleanup`)
-- [x] **text** indexes (`"text"` key value with `weights`/`default_language`/`language_override`/`textIndexVersion`) — accepted by createIndexes and stored/round-tripped through listIndexes (weights default to 1 per field); pragmatic only, no real inverted/full-text index is built (see the `$text` query operator)
-- [x] `hidden`, `collation`, `partialFilterExpression`, `2dsphere` (`"2dsphere"` key value with `2dsphereIndexVersion`) — accepted by createIndexes and stored/round-tripped through listIndexes; accepted and reported only, **not enforced**: no planner-hiding of `hidden` indexes, no locale-aware collation, no partial-index filtering and no geospatial queries
-- [ ] `storageEngine`, `bits`, `min`, `max`, `bucketSize`, `wildcardProjection` — `ErrNotImplemented`
-
-### Reactivity — limited
-- [x] **Tailable / awaitData cursors** on **capped collections** (poll-based; `msg_find.go`, `msg_getmore.go`)
-- [x] Capped collections in the **SQLite backend** (`internal/backends/sqlite/database.go`, `insert.go`, `query.go`)
-- [x] **Basic OpLog tailing** via `internal/backends/decorators/oplog/` — writes `local.oplog.rs` records (i/u/d)
-- [ ] **Change streams** (`$changeStream` / `watch`) — not supported ([issue #1415](https://github.com/FerretDB/FerretDB/issues/1415))
-- [ ] Real **replication** — still not supported; oplog is tailing-only, the capped `local.oplog.rs` must be created **manually** and `FERRETDB_REPL_SET_NAME` set (`website/docs/configuration/oplog-support.md`). The `replSetInitiate` command is now accepted as a compatibility no-op (see the Admin / diagnostic section) but sets up no real replica set
-
-### Sessions / transactions — implemented as compatibility no-ops
-- [x] `startSession`, `commitTransaction`, `abortTransaction`, retryable writes — this fork now implements them as compatibility commands (`internal/handler/msg_startsession.go`, `msg_committransaction.go`, `msg_aborttransaction.go`, `msg_endsessions.go`, registered in `internal/handler/commands.go`). `startSession` returns a session record with a generated UUID; `commitTransaction`, `abortTransaction`, `endSessions`, `refreshSessions`, `killSessions`, `killAllSessions` and `killAllSessionsByPattern` return `{ok: 1}`. Write commands accept and ignore the retryable-write / session fields (`lsid`, `txnNumber`, `autocommit`, `startTransaction`, `stmtId`, `stmtIds`). IMPORTANT: these are NO-OP compatibility commands — there are still no real multi-document transactions with the SQLite backend, every write auto-commits on its own, and the commands provide no atomicity or isolation (`abortTransaction` does not roll back writes); logical sessions carry no server-side state
-
-### Admin / diagnostic — implemented
-- [x] `serverStatus`, `buildInfo`, `hello`/`ismaster`, `ping`, `collStats`, `dbStats`
-- [x] `listCollections`, `listDatabases`, `listIndexes`, `createIndexes`, `dropIndexes`, `create`, `drop`, `compact`
-- [x] `getParameter` — implemented (`internal/handler/msg_getparameter.go`; returns `authenticationMechanisms`, `featureCompatibilityVersion`, etc.; verified on SQLite by `TestCommandsAdministrationGetParameter`)
-- [x] `replSetInitiate` — implemented as a **compatibility no-op** (`internal/handler/msg_replsetinitiate.go`): accepted with or without a config document and returns `{ok: 1}` (echoing the config `_id` / set name when supplied) so tools and drivers that bootstrap a replica set do not hard-fail. IMPORTANT: it does **not** set up real replication — no oplog is created, no primary is elected and the topology is unchanged; the oplog remains tailing-only and must still be configured manually (see the Reactivity section)
-
----
-
-## 3) Missing from FerretDB v1 to run WeKan on FerretDB v1 SQLite
-
-Gap analysis: WeKan needs (§1) vs FerretDB has (§2). `[x]` = already works, no action.
-`[ ]` = gap to close (in FerretDB) or configure around (in WeKan).
-
-### ✅ Already satisfied — WeKan core runs on FerretDB v1 SQLite today
-- [x] Core CRUD + `findOneAndUpdate($inc)` atomic counters (**verified** against this build)
-- [x] All update operators WeKan uses: `$set/$unset/$push/$pull/$addToSet/$setOnInsert/$inc/$rename`
-- [x] All query operators WeKan uses, incl. **`$regex` + `$options:'i'`** and `$not:{$regex}` (WeKan search)
-- [x] Single-field, compound, and unique indexes
-- [x] `sparse` index option (silently ignored — harmless for WeKan)
-- [x] Admin/startup commands: `serverStatus`, `buildInfo`, `hello`, `listCollections`, `createIndexes`
-
-### ✅ Admin-only aggregation gaps — now implemented in this branch (core kanban always worked)
-- [x] **`$lookup` aggregation stage** (basic equality-join form `{ from, localField, foreignField, as }`) → unblocks Prometheus `/metrics` "top boards by activity" ([`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js)). The `pipeline`/`let` sub-form is still unimplemented.
-- [x] **Aggregation expression operators** `$map`, `$objectToArray`, `$ifNull`, `$anyElementTrue`, `$eq`, `$ne`, `$or` → previously broke attachment storage stats ([`server/models/attachmentStorageSettings.js`](https://github.com/wekan/wekan/blob/main/server/models/attachmentStorageSettings.js) `countByStorageSafe` / `countGridFsStoredSafe`); now implemented.
-- [x] **Server-side JavaScript** — the `$where` query operator and the `$function` aggregation expression operator are now implemented via the embedded pure-Go goja JavaScript engine (unused by WeKan, but available for MongoDB compatibility).
-
-### 🔁 Reactivity — configure WeKan around the gap
-- [ ] **Change streams unsupported** → set `METEOR_REACTIVITY_ORDER=polling` (poll-and-diff, ~2000 ms latency). This is the primary supported path. *(FerretDB to-do: implement change streams — [#1415](https://github.com/FerretDB/FerretDB/issues/1415).)*
-- [ ] **No real replication oplog** → optional lower-latency path needs manual setup: create capped `local.oplog.rs`, set `FERRETDB_REPL_SET_NAME`, point `MONGO_OPLOG_URL` at it, and use `METEOR_REACTIVITY_ORDER=oplog,polling`. Needs end-to-end validation with Meteor's oplog tailer.
-
-### 🔎 To verify (partial support — likely fine, confirm under load)
-- [x] **`$push`/`$addToSet` with `$each` + `$slice`/`$sort`** — the `$push` modifiers `$slice`, `$sort` and `$position` are implemented in `internal/handler/common/update_array_operators.go` and covered by integration tests (`integration/update_push_modifiers_test.go`). WeKan sites ([`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js), [`server/propagateOrgTeamMembers.js`](https://github.com/wekan/wekan/blob/main/server/propagateOrgTeamMembers.js)).
-- [x] **`$pullAll`** (1 site, [`server/models/integrations.js`](https://github.com/wekan/wekan/blob/main/server/models/integrations.js)) — implemented and covered by integration tests (`integration/update_pullall_test.go`).
-- [x] **`getParameter`** — already implemented (`internal/handler/msg_getparameter.go`); verified working on SQLite, so WeKan startup ([`models/lib/meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js)) is fine.
-
-### 🚫 Not needed (WeKan doesn't use them; no action)
-- [x] Transactions/sessions, capped collections, TTL indexes, geospatial, `collation`, `mapReduce` — unused by WeKan (`$where`, `$text` and text indexes are likewise unused by WeKan but now implemented: `$where` via the embedded goja JavaScript engine, and `$text`/text indexes partially — search terms are matched against string fields and index options are stored, but no real inverted index is built)
-- [x] GridFS commands (`replSetGetStatus`, GridFS `compact`) — attachments on filesystem
+**Backends note.** In v1 the whole matrix above is implemented in the portable Go
+layer (`internal/handler/…`), so it applies to any `internal/backends/*` engine —
+but **only SQLite is exercised/tested in this stack**. MySQL and SAP HANA are partial
+backends; vanilla PostgreSQL is complete but untested here. In v2 there is a single
+engine (PostgreSQL + DocumentDB), so "supported" always means "on that engine".
 
 ---
 
 ## Bottom line
 
 WeKan's **core functionality runs on FerretDB v1.24.2 SQLite** with
-`METEOR_REACTIVITY_ORDER=polling` and filesystem attachments. No blocking gaps
-exist for boards/cards/lists/CRUD/search.
+`METEOR_REACTIVITY_ORDER=polling` and filesystem attachments — no blocking gaps for
+boards/cards/lists/CRUD/search. The admin-only aggregation gaps (Prometheus
+`/metrics` "top boards" via `$lookup`; attachment-stats via `$map`/`$objectToArray`/
+`$ifNull`/`$anyElementTrue`/`$eq`/`$ne`/`$or`) are closed and tested.
 
-The admin-only aggregation gaps are now **closed** in this branch: the `$lookup`
-stage (basic equality-join) and the `$eq`/`$ne`/`$or`/`$ifNull`/`$anyElementTrue`/
-`$objectToArray`/`$map` expression operators are implemented and tested, so the
-Prometheus `/metrics` and attachment-stats aggregations work. The `$push`
-`$slice`/`$sort`/`$position` modifiers and `$pullAll` are likewise implemented/covered.
+The one real gap for WeKan is **low-latency reactivity**: change streams are
+unsupported ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)); use
+`METEOR_REACTIVITY_ORDER=polling`, or set up basic oplog tailing manually. A
+configuration choice, not a blocker.
 
-The only remaining gap is:
-
-1. **Low-latency reactivity** — change streams are unsupported
-   ([#1415](https://github.com/FerretDB/FerretDB/issues/1415)); use
-   `METEOR_REACTIVITY_ORDER=polling`, or set up basic oplog tailing manually.
-   A configuration choice, not a blocker.
+Beyond WeKan's needs, this branch also adds broad MongoDB compatibility (trigonometry,
+`$bsonSize`, `$where`/`$function` server-side JS, `$setWindowFields`, text/`hidden`/
+`collation`/`partialFilterExpression`/`2dsphere` index options, session/transaction
+compat commands, `replSetInitiate`) — see the matrix for exact full/partial status.
 
 A ready-to-run stack is provided in `docker-compose.yml` (+ `Dockerfile`):
 `docker compose up --build` builds FerretDB v1 (SQLite) and runs WeKan against it.
 
-A handful of **partial** update-operator modifiers (`$each`+`$slice`/`$sort`,
-`$pullAll`) should be validated end-to-end.
-
 ---
 
-## FerretDB v1 vs v2
+## FerretDB v1 vs v2 — why the matrix differs
 
-The two FerretDB lines have fundamentally different architectures, which is why
-they support different databases.
+The two FerretDB lines have fundamentally different architectures, which is why they
+support different databases:
 
-- **v1** (`main-v1` here, module `github.com/FerretDB/FerretDB`) implements the
+- **v1** (`main-v1`, module `github.com/FerretDB/FerretDB`) implements the
   MongoDB-compatibility layer **itself, in Go** (`internal/handler/…` parses and
-  executes commands; `internal/handler/common/aggregations/…` implements operators
-  and stages), on top of a **pluggable storage layer** (`internal/backends/{sqlite,
-  postgresql, mysql, hana}`). Compatibility is *partial* but portable — any backend
-  a Go driver can talk to. This branch has greatly expanded that Go layer.
+  executes commands; `internal/handler/common/aggregations/…` implements operators and
+  stages), on top of a **pluggable storage layer** (`internal/backends/{sqlite,
+  postgresql, mysql, hana}`). Compatibility is *partial* but portable — any backend a
+  Go driver can talk to. This branch has greatly expanded that Go layer.
 - **v2** (`main`, module `github.com/FerretDB/FerretDB/v2`) is a **thin proxy** that
   translates the MongoDB wire protocol to SQL and delegates all compatibility to
   **PostgreSQL + the [DocumentDB extension](https://github.com/documentdb/documentdb)**
-  (`internal/documentdb/…`). There is **no `internal/backends`** — PostgreSQL (with
-  the extension) is the only engine. Compatibility is *far more complete* because
-  DocumentDB does the heavy lifting, but it is Postgres-extension-bound.
+  (`internal/documentdb/…`). There is **no `internal/backends`** — PostgreSQL (with the
+  extension) is the only engine. Compatibility is *far more complete* because DocumentDB
+  does the heavy lifting, but it is Postgres-extension-bound.
 
-| Capability | v1 (`main-v1`) | v2 (`main`) |
-|---|---|---|
-| Architecture | Go compatibility layer over pluggable backends | Wire→SQL proxy delegating to DocumentDB |
-| **SQLite** (embedded, single file) | ✅ `internal/backends/sqlite` | ❌ not supported |
-| **PostgreSQL** (vanilla, no extension) | ✅ `internal/backends/postgresql` | ❌ requires the DocumentDB extension |
-| **PostgreSQL + DocumentDB extension** | ❌ | ✅ the only engine |
-| **MySQL** | ✅ `internal/backends/mysql` (partial) | ❌ |
-| **SAP HANA** | ✅ `internal/backends/hana` (partial) | ❌ |
-| Embeddable / no external DB server | ✅ (SQLite in-process) | ❌ (needs PostgreSQL) |
-| MongoDB wire target | ~5.0 (reports FCV 7.0) | 5.0+ |
-| Aggregation stages | partial — greatly expanded in this branch | ✅ full (DocumentDB) |
-| Aggregation expression operators | large subset (≈all common ones after this branch) | ✅ full (DocumentDB) |
-| `$lookup` (cross-collection) | ✅ basic equality-join (this branch) | ✅ full |
-| TTL indexes (`expireAfterSeconds`) | ✅ this branch (SQLite reaper) | ✅ (DocumentDB) |
-| Text search (`$text`) | ⚠️ partial in this fork (text indexes accepted/reported; `$text` matches terms against string fields, no inverted index/scoring) | ✅ (DocumentDB) |
-| Geospatial (`2dsphere` / `$near`) | ❌ (`2dsphere` index accepted/reported but no geo queries) | ✅ (DocumentDB) |
-| Server-side JavaScript (`$where` / `$function`) | ✅ this fork (embedded goja engine) | ⚠️ (limited) |
-| Transactions / sessions | ⚠️ compatibility no-ops in this fork (sessions accepted, transaction commands return `{ok:1}`, no real atomicity/isolation) | ✅ (`msg_startsession.go`, via PostgreSQL) |
-| Change streams | ❌ (basic oplog tailing only) | evolving (via DocumentDB) |
-| Compatibility maintenance | must be written in Go (this fork) | inherited from the DocumentDB project |
-| Deployment weight | light (one binary + a data file) | heavier (PostgreSQL + DocumentDB extension) |
-
-**Takeaway:** v1 is the only line that runs on **SQLite / MySQL / SAP HANA /
-vanilla PostgreSQL** and is embeddable; v2 is the only line with **near-complete
-MongoDB compatibility** (transactions, full aggregation, text/geo) — but only on
+**Takeaway:** v1 is the only line that runs on **SQLite / MySQL / SAP HANA / vanilla
+PostgreSQL** and is embeddable; v2 is the only line with **near-complete MongoDB
+compatibility** (real transactions, full aggregation, text/geo) — but only on
 PostgreSQL + DocumentDB.
 
 ---
@@ -272,8 +210,9 @@ engine, sharing everything above the engine boundary.
    CRUD / aggregate / index ops) with two implementations:
    - **`documentdb`** — v2's current path (PostgreSQL + DocumentDB): full features.
    - **`go`** — v1's Go compatibility layer (`internal/handler/common/…`, now with
-     this branch's ~110 operators, the added stages, and TTL) over
-     `internal/backends/{sqlite, postgresql, mysql, hana}`: portable, partial.
+     this branch's expanded operators, stages, window functions, text/index options
+     and session/transaction compat) over `internal/backends/{sqlite, postgresql,
+     mysql, hana}`: portable, partial.
 
 3. **Engine/back-end selection from the connection target.** Choose the engine
    from a scheme or env var, e.g. `FERRETDB_ENGINE` or the URL:
@@ -289,13 +228,13 @@ engine, sharing everything above the engine boundary.
    chooses `METEOR_REACTIVITY_ORDER=polling` when change streams are absent. The
    `go` engine advertises the reduced set; `documentdb` advertises the full set.
 
-5. **Incremental convergence.** Close `go`-engine gaps (the `[ ]` items in §2)
-   against the shared conformance suite so SQLite/MySQL/Hana parity approaches
-   DocumentDB. Features impractical to reimplement portably in Go — multi-document
-   **transactions**, **change streams**, **text/geo search** — stay
-   `documentdb`-only and are surfaced as unavailable via capability flags rather
-   than silently failing. v1's partial **MySQL** and **SAP HANA** backends are
-   carried forward under the `go` engine and completed as needed.
+5. **Incremental convergence.** Close `go`-engine gaps (the `⚠️`/`❌` v1 cells in the
+   matrix) against the shared conformance suite so SQLite/MySQL/Hana parity approaches
+   DocumentDB. Features impractical to reimplement portably in Go — real multi-document
+   **transactions**, **change streams**, **text/geo search** — stay `documentdb`-only
+   and are surfaced as unavailable via capability flags rather than silently failing.
+   v1's partial **MySQL** and **SAP HANA** backends are carried forward under the `go`
+   engine and completed as needed.
 
 ### Alternatives considered
 
