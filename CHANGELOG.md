@@ -6,6 +6,7 @@
 
 ### New Features 🎉
 
+- Implement the `$setWindowFields` aggregation stage together with the window operators `$rank`, `$denseRank`, `$documentNumber` and `$shift` (rank/position, requiring `sortBy`) and the window accumulators `$sum`, `$avg`, `$min`, `$max`, `$count`, `$push`, `$first`, `$last`, `$stdDevPop` and `$stdDevSamp` (over the default full-partition window or an explicit `window: {documents: [lower, upper]}` with integer offsets and the `"unbounded"`/`"current"` keywords). The window operators `$derivative`, `$integral`, `$expMovingAvg`, `$covariancePop`, `$covarianceSamp`, `$linearFill`, `$locf`, `$minN`/`$maxN` and `range` windows are deferred and return a clear not-implemented error by @xet7 in https://github.com/wekan/FerretDB/commit/540de307697b74ed6f6dcb1ae0bffb499d039081 . Thanks to xet7.
 - Implement the `$slice`, `$sort` and `$position` modifiers for the `$push` update operator (used by WeKan) by @xet7. Thanks to xet7.
 - Implement the `$eq`, `$ne`, `$or`, `$ifNull`, `$anyElementTrue`, `$objectToArray` and `$map` aggregation expression operators used by WeKan by @xet7. Thanks to xet7.
 - Implement the `$cmp`, `$gt`, `$gte`, `$lt`, `$lte`, `$and`, `$not`, `$cond`, `$switch` and `$allElementsTrue` aggregation expression operators by @xet7. Thanks to xet7.
