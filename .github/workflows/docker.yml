@@ -77,11 +77,17 @@ jobs:
           plats=""
           for d in ferretdb/*/; do
             name="$(basename "$d")"
-            # Only Linux binaries (no .exe / mac / bsd) map to a Docker platform.
-            [ -f "ferretdb/$name/ferretdb-$name" ] || continue
-            p="$(map "$name")"; [ -n "$p" ] || continue
+            p=""
+            [ -f "ferretdb/$name/ferretdb-$name" ] && p="$(map "$name")"
+            if [ -z "$p" ]; then
+              # Not a Linux binary we publish (windows .exe / mac / bsd / unknown):
+              # drop it so it never enters the Docker build context.
+              rm -rf "ferretdb/$name"
+              continue
+            fi
             plats="${plats:+$plats,}$p"
           done
+          rm -f ferretdb/README.md
           [ -n "$plats" ] || { echo "::error::no linux binaries found in ferretdb.zip"; exit 1; }
           echo "Platforms: $plats"
           echo "PLATFORMS=$plats" >> "$GITHUB_ENV"
@@ -104,16 +110,36 @@ jobs:
           login quay.io   "$QUAY_AUTH"
           login ghcr.io   "$GHCR_AUTH"
 
-      - name: Build and push multi-arch image from the release binaries
+      - name: Build and push multi-arch image to each registry (independently)
+        # Push to each registry in its own buildx call so one registry's failure
+        # (e.g. a misconfigured Quay robot) does NOT block the others. The build
+        # is just a binary copy and BuildKit caches it, so the 2nd/3rd pushes are
+        # near-instant. Any failure is reported and fails the job at the end, but
+        # the registries that worked are still published.
         run: |
-          docker buildx build \
-            --file Dockerfile.release \
-            --platform "$PLATFORMS" \
-            -t wekanteam/ferretdb:${VERSION} \
-            -t wekanteam/ferretdb:latest \
-            -t quay.io/wekan/ferretdb:${VERSION} \
-            -t quay.io/wekan/ferretdb:latest \
-            -t ghcr.io/wekan/ferretdb:${VERSION} \
-            -t ghcr.io/wekan/ferretdb:latest \
-            --push \
-            .
+          set -uo pipefail
+          fail=0
+          push() {
+            label="$1"; shift
+            echo "::group::Push to $label"
+            if docker buildx build \
+                 --file Dockerfile.release \
+                 --platform "$PLATFORMS" \
+                 "$@" \
+                 --push \
+                 . ; then
+              echo "$label: OK"
+            else
+              echo "::error::Push to $label failed"
+              fail=1
+            fi
+            echo "::endgroup::"
+          }
+          push "Docker Hub" -t wekanteam/ferretdb:${VERSION}      -t wekanteam/ferretdb:latest
+          push "Quay.io"    -t quay.io/wekan/ferretdb:${VERSION}  -t quay.io/wekan/ferretdb:latest
+          push "GHCR"       -t ghcr.io/wekan/ferretdb:${VERSION}  -t ghcr.io/wekan/ferretdb:latest
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::One or more registry pushes failed (see groups above)."
+            exit 1
+          fi
+          echo "All registry pushes succeeded."
