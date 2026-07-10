@@ -9,6 +9,7 @@
 #   ./build.sh zip                     # build ferretdb.zip, sequential (default)
 #   ./build.sh zip-seq                 # build ferretdb.zip, one platform at a time
 #   ./build.sh zip-par                 # build ferretdb.zip, all platforms in parallel
+#   ./build.sh release [version]       # push + trigger release-all.yml on GitHub Actions
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
 #   ./build.sh test-par [N]            # integration tests, parallel with N workers
@@ -350,6 +351,38 @@ act_clean() {
   info "Clean done. (Local Go toolchain in ./.goroot kept; delete it manually to remove.)"
 }
 
+# ---- release (trigger GitHub Actions) ------------------------------------
+# Like wekan/wekan's releases/release-all.sh: nothing is built locally — this
+# pushes the current branch and triggers .github/workflows/release-all.yml, which
+# builds ferretdb.zip for all platforms, publishes the GitHub Release, and pushes
+# the multi-arch FerretDB Docker image to all registries.
+#   act_release [version]   (empty version => the workflow uses `git describe`)
+act_release() {
+  command -v gh >/dev/null 2>&1 || {
+    err "'gh' (GitHub CLI) is required and must be authenticated: run 'gh auth login'."
+    return 1
+  }
+  local branch version
+  branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main-v1)"
+  version="${1:-}"
+  if [ -z "$version" ] && [ -t 0 ]; then
+    printf "Release tag (e.g. v1.24.2-wekan1; empty = git describe on the runner): "
+    read -r version
+  fi
+
+  info "Pushing '$branch' so the workflow builds the latest commit ..."
+  git push origin "$branch" || warn "git push reported no changes / failed; continuing to trigger."
+
+  info "Triggering release-all.yml on '$branch'${version:+ (version $version)} ..."
+  if [ -n "$version" ]; then
+    gh workflow run release-all.yml --ref "$branch" -f version="$version" || return 1
+  else
+    gh workflow run release-all.yml --ref "$branch" || return 1
+  fi
+  info "Triggered. Track progress at: https://github.com/wekan/FerretDB/actions"
+  info "Requires the DOCKERHUB_AUTH / QUAY_AUTH / GHCR_AUTH secrets in this repo."
+}
+
 # ---- menu ----------------------------------------------------------------
 menu() {
   while true; do
@@ -367,6 +400,8 @@ menu() {
  10) Clean build artifacts
  11) Build ferretdb.zip           — SEQUENTIAL (all platforms, one at a time)
  12) Build ferretdb.zip           — PARALLEL (all platforms at once)
+ 13) Release via GitHub Actions   (push + trigger release-all.yml: zip, GitHub
+                                    Release, multi-arch Docker to all registries)
   g) Show / install Go toolchain
   0) Exit
 EOF
@@ -387,6 +422,7 @@ EOF
       10) act_clean ;;
       11) act_zip seq ;;
       12) act_zip par ;;
+      13) act_release ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -403,6 +439,7 @@ case "${1:-}" in
   zip)        act_zip seq ;;
   zip-seq)    act_zip seq ;;
   zip-par)    act_zip par ;;
+  release)    shift; act_release "${1:-}" ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
   test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
@@ -413,6 +450,6 @@ case "${1:-}" in
   clean)      act_clean ;;
   goenv)      act_goenv ;;
   -h|--help|help)
-    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) err "Unknown command: $1"; err "Run '$0 --help' for usage."; exit 2 ;;
 esac
