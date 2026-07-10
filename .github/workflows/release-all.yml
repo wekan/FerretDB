@@ -2,8 +2,10 @@ name: Release All (FerretDB v1)
 
 # Manually triggered. Builds FerretDB v1 (wekan/FerretDB, SQLite backend) for
 # every platform into ferretdb.zip (via build.sh) and publishes a GitHub Release
-# with it at https://github.com/wekan/FerretDB/releases, using the release notes
-# for that version taken from CHANGELOG.md.
+# with it at https://github.com/wekan/FerretDB/releases. The release notes are:
+#   1. a fixed header line,
+#   2. "Platforms: ..." listing every arch present in ferretdb.zip, and
+#   3. the CHANGELOG.md section for that version.
 #
 # The multi-arch Docker image is built by a SEPARATE workflow, docker.yml, which
 # repackages the prebuilt binaries from the newest release into images and pushes
@@ -56,36 +58,56 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
-      - name: Extract release notes from CHANGELOG.md
-        id: notes
-        run: |
-          set -euo pipefail
-          V="${{ steps.ver.outputs.version }}"
-          NOTES_FILE="release-notes.md"
-          # Print the section from the "## [<version>]" header up to the next
-          # "## [" header. The version may contain regex-special "." — matched
-          # literally here is close enough for real tags.
-          awk -v ver="$V" '
-            $0 ~ ("^## \\[" ver "\\]") { inblock=1; next }
-            inblock && /^## \[/ { exit }
-            inblock { print }
-          ' CHANGELOG.md > "$NOTES_FILE"
-          # Trim leading/trailing blank lines.
-          sed -i -e '/./,$!d' "$NOTES_FILE"
-          if [ ! -s "$NOTES_FILE" ]; then
-            echo "::warning::No CHANGELOG.md section found for $V; using a generic note."
-            printf 'FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork.\n' > "$NOTES_FILE"
-          fi
-          echo "----- release notes for $V -----"
-          cat "$NOTES_FILE"
-          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
-
       - name: Build ferretdb.zip for all platforms
         # build.sh cross-compiles every platform Go + modernc.org/sqlite support
         # into ferretdb.zip (ferretdb/<arch>/ferretdb-<arch>[.exe] + README).
         # Sequential to stay within the runner's memory (16 concurrent Go builds
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
         run: ./build.sh zip-seq
+
+      - name: Compose release notes (header + platforms + CHANGELOG section)
+        id: notes
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          command -v unzip >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
+
+          # 1. Every arch present in ferretdb.zip (a "ferretdb/<arch>/..." entry),
+          #    listed in build.sh's canonical order with any extras appended.
+          present="$(unzip -Z1 ferretdb.zip | sed -n 's#^ferretdb/\([^/]*\)/.*#\1#p' | sort -u)"
+          order="amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-arm64"
+          plats=""
+          for a in $order; do
+            printf '%s\n' "$present" | grep -qx "$a" && plats="${plats:+$plats, }$a"
+          done
+          for a in $present; do
+            printf ' %s ' "$order" | grep -q " $a " || plats="${plats:+$plats, }$a"
+          done
+
+          # 2. CHANGELOG section for this version: "## [<version>]" up to the next
+          #    "## [" header, trimmed of leading/trailing blank lines.
+          awk -v ver="$V" '
+            $0 ~ ("^## \\[" ver "\\]") { inblock=1; next }
+            inblock && /^## \[/ { exit }
+            inblock { print }
+          ' CHANGELOG.md > changelog-section.md
+          sed -i -e '/./,$!d' changelog-section.md
+          if [ ! -s changelog-section.md ]; then
+            echo "::warning::No CHANGELOG.md section found for $V."
+          fi
+
+          # 3. Assemble: header line, Platforms line, then the CHANGELOG section.
+          {
+            echo "FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork."
+            echo ""
+            echo "Platforms: $plats"
+            echo ""
+            cat changelog-section.md
+          } > release-notes.md
+
+          echo "----- release notes for $V -----"
+          cat release-notes.md
+          echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
 
       - name: Create/update GitHub Release with ferretdb.zip
         env:
