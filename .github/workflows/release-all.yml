@@ -115,12 +115,16 @@ jobs:
           login ghcr.io   "$GHCR_AUTH"
 
       - name: Build and push multi-arch FerretDB image
-        # The Dockerfile builds FerretDB from source with CGO disabled, so buildx
-        # cross-compiles for each platform. Pushes the release version tag plus
-        # latest to all three registries.
+        # The Dockerfile cross-compiles FerretDB from source on the native build
+        # platform (CGO disabled => pure Go), so buildx emits every architecture
+        # ferretdb.zip ships WITHOUT QEMU-emulating the compiler. The final image
+        # is FROM scratch, so all these arches produce a valid image. Pushes the
+        # release version tag plus latest to all three registries.
+        #   armhf = linux/arm/v7, armel = linux/arm/v5, i386 = linux/386.
+        #   linux/loong64 needs a recent buildx/containerd; drop it if unsupported.
         run: |
           docker buildx build \
-            --platform linux/amd64,linux/arm64,linux/ppc64le,linux/s390x,linux/riscv64 \
+            --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v5,linux/386,linux/ppc64le,linux/s390x,linux/riscv64,linux/loong64 \
             -t wekanteam/ferretdb:${VERSION} \
             -t wekanteam/ferretdb:latest \
             -t quay.io/wekan/ferretdb:${VERSION} \
