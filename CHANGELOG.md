@@ -2,6 +2,16 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB v1 release
+
+Changes made after the v1.25.0 release, not yet released.
+
+### Other Changes 🤖
+
+- Publish the FerretDB Docker image for every architecture that `ferretdb.zip` ships. The image build was QEMU-emulating the Go toolchain per target, which limited it to five arches (amd64, arm64, ppc64le, s390x, riscv64). Because FerretDB is pure Go with CGO disabled and the final image is `FROM scratch`, the build stage now runs natively on the build platform and cross-compiles (`GOOS`/`GOARCH`/`GOARM` taken from buildx's `TARGET*` args), so buildx emits every Linux architecture in the zip — `linux/amd64`, `linux/arm64`, `linux/arm/v7` (armhf), `linux/arm/v5` (armel), `linux/386` (i386), `linux/ppc64le`, `linux/s390x`, `linux/riscv64`, `linux/loong64` — without emulating the compiler by @xet7 in https://github.com/wekan/FerretDB/commit/fc316435821ec2c4fde962e29ec0099604ccc88b . Thanks to xet7.
+- Split Docker publishing into a separate `docker.yml` workflow and remove the Docker job from `release-all.yml`. `docker.yml` builds the multi-arch image from the PREBUILT binaries in the newest (or a chosen) GitHub Release's `ferretdb.zip` — no recompilation and no QEMU — deriving the platform list from the Linux binaries actually present in the release and pushing `:<version>` and `:latest` to Docker Hub, Quay.io and GHCR (the same `DOCKERHUB_AUTH` / `QUAY_AUTH` / `GHCR_AUTH` secrets). Adds `Dockerfile.release`, which selects the prebuilt binary matching the target platform into a `FROM scratch` image, plus a per-Dockerfile `Dockerfile.release.dockerignore` so it does not disturb the source build's context. `release-all.yml` now only builds `ferretdb.zip` and publishes the Release by @xet7 in https://github.com/wekan/FerretDB/commit/1c6de77071b912759f0746c93d9e2de832c28fd7 . Thanks to xet7.
+- Build the GitHub Release notes in `release-all.yml` from three parts: a fixed header line (`FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork.`), then a `Platforms: ...` line listing every architecture present in `ferretdb.zip` (read from its `ferretdb/<arch>/` entries, in `build.sh`'s canonical order with any extras appended), then the `CHANGELOG.md` `## [<version>]` section for the release. `ferretdb.zip` is built before the notes are composed so the platform list reflects exactly what shipped by @xet7 in https://github.com/wekan/FerretDB/commit/549edcc62b00875e6b6681373efb61e6815462fd . Thanks to xet7.
+
 ## [v1.25.0](https://github.com/wekan/FerretDB/releases/tag/v1.25.0) (2026-07-10)
 
 ### New Features 🎉
