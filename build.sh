@@ -6,6 +6,9 @@
 #   ./build.sh              # interactive menu
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
 #   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
+#   ./build.sh zip                     # build ferretdb.zip, sequential (default)
+#   ./build.sh zip-seq                 # build ferretdb.zip, one platform at a time
+#   ./build.sh zip-par                 # build ferretdb.zip, all platforms in parallel
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
 #   ./build.sh test-par [N]            # integration tests, parallel with N workers
@@ -94,6 +97,12 @@ go_env() {
   # keep module graph writable so first build can resolve deps
   export GOFLAGS="${GOFLAGS:-} -mod=mod"
   export FERRETDB_TELEMETRY=disable
+  # Put Go's build scratch dir ($WORK) on the same (large) disk as the repo
+  # instead of the default $TMPDIR — /tmp is often a small tmpfs, and building
+  # many targets in parallel (option 12) can otherwise fail with
+  # "no space left on device". Kept under tmp/ (gitignored).
+  export GOTMPDIR="${GOTMPDIR:-$ROOT/tmp/go}"
+  mkdir -p "$GOTMPDIR"
 }
 
 # ---- actions -------------------------------------------------------------
@@ -138,6 +147,133 @@ act_run() {
   FERRETDB_LISTEN_ADDR="$LISTEN_ADDR" \
   FERRETDB_TELEMETRY=disable \
     exec ./bin/ferretdb
+}
+
+# ---- ferretdb.zip (cross-compile for every platform) ---------------------
+# WeKan-style arch name + GOOS + GOARCH + GOARM. .exe suffix is added only for
+# Windows; every other platform's binary has no extension. This is the same set
+# the WeKan release workflow (release-all.yml build-ferretdb) produces, so the
+# zip built here matches the released ferretdb.zip. Targets that a platform can't
+# compile (e.g. an arch modernc.org/sqlite has no port for) are skipped.
+FERRETDB_ZIP_TARGETS=(
+  "amd64 linux amd64 "
+  "arm64 linux arm64 "
+  "armhf linux arm 7"
+  "armel linux arm 5"
+  "i386 linux 386 "
+  "ppc64le linux ppc64le "
+  "s390x linux s390x "
+  "riscv64 linux riscv64 "
+  "loong64 linux loong64 "
+  "win64 windows amd64 "
+  "win-arm64 windows arm64 "
+  "win32 windows 386 "
+  "mac-amd64 darwin amd64 "
+  "mac-arm64 darwin arm64 "
+  "freebsd-amd64 freebsd amd64 "
+  "freebsd-arm64 freebsd arm64 "
+)
+
+# build_ferretdb_target <name> <goos> <goarch> <goarm> <out-dir> <report-dir>
+# Builds one target; on success writes the (executable) binary into
+# <out-dir>/<name>/ and records <name> in <report-dir>/built.list, else skips and
+# records it in <report-dir>/failed.list. Safe to run concurrently.
+build_ferretdb_target() {
+  local name="$1" goos="$2" goarch="$3" goarm="$4" out="$5" rep="$6"
+  local ext=""; [ "$goos" = windows ] && ext=".exe"
+  mkdir -p "$out/$name"
+  if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
+       go build -trimpath -o "$out/$name/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+    chmod +x "$out/$name/ferretdb-$name$ext"
+    printf '%s\n' "$name" >> "$rep/built.list"
+    info "  built   $name"
+  else
+    printf '%s\n' "$name" >> "$rep/failed.list"
+    warn "  skipped $name (does not compile) — see $rep/$name.log"
+    tail -3 "$rep/$name.log" | sed 's/^/        /' >&2 || true
+    rm -rf "$out/$name"
+  fi
+}
+
+# act_zip <seq|par> — cross-compile FerretDB (SQLite) for all platforms into
+# ./ferretdb.zip with the layout ferretdb/<arch>/ferretdb-<arch>[.exe] + README.md
+act_zip() {
+  local mode="${1:-seq}"
+  go_env
+  command -v zip >/dev/null 2>&1 || { err "'zip' is required (apt-get install zip)"; return 1; }
+
+  info "Generating version info (build/version) ..."
+  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
+  local fver; fver="$(cat build/version/version.txt 2>/dev/null || echo unknown)"
+  info "FerretDB version: $fver"
+
+  local stage="$ROOT/tmp/ferretdb-zip"
+  rm -rf "$stage"; mkdir -p "$stage/ferretdb"
+  local out="$stage/ferretdb"          # becomes ferretdb/ inside the zip
+  : > "$stage/built.list"; : > "$stage/failed.list"
+
+  # Prime the module + build cache once (resolve deps, compile shared std/deps)
+  # so the parallel builds below don't all race downloading/compiling at once.
+  info "Priming build cache (this resolves modules on first run) ..."
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/ferretdb 2>/dev/null || true
+
+  if [ "$mode" = par ]; then
+    info "Cross-compiling FerretDB for all platforms — PARALLEL ..."
+    local pids=()
+    for t in "${FERRETDB_ZIP_TARGETS[@]}"; do
+      # shellcheck disable=SC2086
+      set -- $t
+      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$stage" &
+      pids+=($!)
+    done
+    wait "${pids[@]}" 2>/dev/null || true
+  else
+    info "Cross-compiling FerretDB for all platforms — SEQUENTIAL ..."
+    for t in "${FERRETDB_ZIP_TARGETS[@]}"; do
+      # shellcheck disable=SC2086
+      set -- $t
+      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$stage"
+    done
+  fi
+
+  {
+    echo "# FerretDB v1 (SQLite) for WeKan"
+    echo
+    echo "FerretDB v1 binaries compiled from the WeKan fork:"
+    echo "https://github.com/wekan/FerretDB"
+    echo
+    echo "FerretDB is an open-source, MongoDB-compatible database. These builds use"
+    echo "the embedded pure-Go SQLite backend, so each binary is a single"
+    echo "self-contained MongoDB-compatible server that needs no external database."
+    echo
+    echo "Version: $fver"
+    echo
+    echo "## Layout"
+    echo
+    echo "    ferretdb/<arch>/ferretdb-<arch>        (Linux/macOS/BSD)"
+    echo "    ferretdb/<arch>/ferretdb-<arch>.exe    (Windows)"
+    echo
+    echo "Included in this build: $(tr '\n' ' ' < "$stage/built.list")"
+    echo
+    echo "## Run"
+    echo
+    echo "    ferretdb-<arch> --handler=sqlite --sqlite-url=file:./ferretdb-sqlite/ \\"
+    echo "      --listen-addr=127.0.0.1:27017 --telemetry=disable"
+    echo
+    echo "Then point WeKan at it: MONGO_URL=mongodb://127.0.0.1:27017/wekan"
+    echo
+    echo "Telemetry is disabled by the flag above (FerretDB also honors DO_NOT_TRACK=1)."
+  } > "$out/README.md"
+
+  rm -f "$ROOT/ferretdb.zip"
+  ( cd "$stage" && zip -qr "$ROOT/ferretdb.zip" ferretdb )
+  info "Created $ROOT/ferretdb.zip"
+  info "Built:   $(tr '\n' ' ' < "$stage/built.list")"
+  if [ -s "$stage/failed.list" ]; then
+    warn "Skipped: $(tr '\n' ' ' < "$stage/failed.list")"
+  fi
+  echo
+  unzip -l "$ROOT/ferretdb.zip"
 }
 
 # number of parallel test workers; override with TEST_PARALLEL.
@@ -226,6 +362,8 @@ menu() {
   8) Lint / vet
   9) Build & run with Docker      (docker compose up --build)
  10) Clean build artifacts
+ 11) Build ferretdb.zip           — SEQUENTIAL (all platforms, one at a time)
+ 12) Build ferretdb.zip           — PARALLEL (all platforms at once)
   g) Show / install Go toolchain
   0) Exit
 EOF
@@ -244,6 +382,8 @@ EOF
       8) act_lint ;;
       9) act_docker ;;
       10) act_clean ;;
+      11) act_zip seq ;;
+      12) act_zip par ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -257,6 +397,9 @@ case "${1:-}" in
   deps)       act_deps ;;
   build)      act_build ;;
   run)        act_run ;;
+  zip)        act_zip seq ;;
+  zip-seq)    act_zip seq ;;
+  zip-par)    act_zip par ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
   test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
@@ -267,6 +410,6 @@ case "${1:-}" in
   clean)      act_clean ;;
   goenv)      act_goenv ;;
   -h|--help|help)
-    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) err "Unknown command: $1"; err "Run '$0 --help' for usage."; exit 2 ;;
 esac
