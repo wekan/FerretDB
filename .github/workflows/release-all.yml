@@ -1,42 +1,38 @@
 name: Release All (FerretDB v1)
 
-# Manually triggered. Does a full FerretDB v1 (wekan/FerretDB, SQLite backend)
-# release:
-#   1. Builds FerretDB for every platform into ferretdb.zip (via build.sh) and
-#      publishes a GitHub Release with it at
-#      https://github.com/wekan/FerretDB/releases
-#   2. Builds and pushes a multi-arch FerretDB Docker image to Docker Hub,
-#      Quay.io and GHCR.
+# Manually triggered. Builds FerretDB v1 (wekan/FerretDB, SQLite backend) for
+# every platform into ferretdb.zip (via build.sh) and publishes a GitHub Release
+# with it at https://github.com/wekan/FerretDB/releases, using the release notes
+# for that version taken from CHANGELOG.md.
 #
-# Registry credentials use the SAME secrets as the wekan/wekan repo — each is
-# base64("username:token"):
-#   DOCKERHUB_AUTH   Docker Hub
-#   QUAY_AUTH        Quay.io
-#   GHCR_AUTH        ghcr.io
-# (Add these secrets to this repo too; see releases/create-github-secrets.sh in
-#  wekan/wekan.)
+# The multi-arch Docker image is built by a SEPARATE workflow, docker.yml, which
+# repackages the prebuilt binaries from the newest release into images and pushes
+# them to Docker Hub, Quay.io and GHCR (no recompilation).
 #
 # Usage:
-#   gh workflow run release-all.yml -f version=v1.24.2-wekan1
+#   gh workflow run release-all.yml -f version=v1.25.0
 #   # leave version empty to derive it from `git describe`
+#
+# The CHANGELOG.md section for the version must be headed like
+#   ## [v1.25.0](...) (YYYY-MM-DD)
+# (the leading "## [<version>]" is what is matched).
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag, e.g. v1.24.2-wekan1 (empty = git describe)'
+        description: 'Release tag, e.g. v1.25.0 (empty = git describe)'
         required: false
         type: string
 
 permissions:
   contents: write
-  packages: write
 
 env:
   GO_VERSION: '1.25.0'
 
 jobs:
-  # ─── 1. Build ferretdb.zip (all platforms) and publish the GitHub Release ────
+  # Build ferretdb.zip (all platforms) and publish the GitHub Release.
   release:
     runs-on: ubuntu-latest
     outputs:
@@ -60,6 +56,30 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
+      - name: Extract release notes from CHANGELOG.md
+        id: notes
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          NOTES_FILE="release-notes.md"
+          # Print the section from the "## [<version>]" header up to the next
+          # "## [" header. The version may contain regex-special "." — matched
+          # literally here is close enough for real tags.
+          awk -v ver="$V" '
+            $0 ~ ("^## \\[" ver "\\]") { inblock=1; next }
+            inblock && /^## \[/ { exit }
+            inblock { print }
+          ' CHANGELOG.md > "$NOTES_FILE"
+          # Trim leading/trailing blank lines.
+          sed -i -e '/./,$!d' "$NOTES_FILE"
+          if [ ! -s "$NOTES_FILE" ]; then
+            echo "::warning::No CHANGELOG.md section found for $V; using a generic note."
+            printf 'FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork.\n' > "$NOTES_FILE"
+          fi
+          echo "----- release notes for $V -----"
+          cat "$NOTES_FILE"
+          echo "notes_file=$NOTES_FILE" >> "$GITHUB_OUTPUT"
+
       - name: Build ferretdb.zip for all platforms
         # build.sh cross-compiles every platform Go + modernc.org/sqlite support
         # into ferretdb.zip (ferretdb/<arch>/ferretdb-<arch>[.exe] + README).
@@ -73,63 +93,12 @@ jobs:
         run: |
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"
+          NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
           if gh release view "$V" >/dev/null 2>&1; then
             gh release upload "$V" ferretdb.zip --clobber
+            gh release edit "$V" --title "$V" --notes-file "$NOTES_FILE"
           else
             gh release create "$V" ferretdb.zip \
               --title "$V" \
-              --notes "FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork."
+              --notes-file "$NOTES_FILE"
           fi
-
-  # ─── 2. Build and push the multi-arch FerretDB image to all registries ───────
-  docker:
-    needs: release
-    runs-on: ubuntu-latest
-    env:
-      VERSION: ${{ needs.release.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to Docker Hub, Quay.io and GHCR
-        env:
-          DOCKERHUB_AUTH: ${{ secrets.DOCKERHUB_AUTH }}
-          QUAY_AUTH: ${{ secrets.QUAY_AUTH }}
-          GHCR_AUTH: ${{ secrets.GHCR_AUTH }}
-        run: |
-          login() {
-            # $1 = registry host, $2 = base64("user:token")
-            local host="$1" creds user token
-            creds="$(printf '%s' "$2" | base64 -d)"
-            user="${creds%%:*}"
-            token="${creds#*:}"
-            printf '%s' "$token" | docker login "$host" -u "$user" --password-stdin
-          }
-          login docker.io "$DOCKERHUB_AUTH"
-          login quay.io   "$QUAY_AUTH"
-          login ghcr.io   "$GHCR_AUTH"
-
-      - name: Build and push multi-arch FerretDB image
-        # The Dockerfile cross-compiles FerretDB from source on the native build
-        # platform (CGO disabled => pure Go), so buildx emits every architecture
-        # ferretdb.zip ships WITHOUT QEMU-emulating the compiler. The final image
-        # is FROM scratch, so all these arches produce a valid image. Pushes the
-        # release version tag plus latest to all three registries.
-        #   armhf = linux/arm/v7, armel = linux/arm/v5, i386 = linux/386.
-        #   linux/loong64 needs a recent buildx/containerd; drop it if unsupported.
-        run: |
-          docker buildx build \
-            --platform linux/amd64,linux/arm64,linux/arm/v7,linux/arm/v5,linux/386,linux/ppc64le,linux/s390x,linux/riscv64,linux/loong64 \
-            -t wekanteam/ferretdb:${VERSION} \
-            -t wekanteam/ferretdb:latest \
-            -t quay.io/wekan/ferretdb:${VERSION} \
-            -t quay.io/wekan/ferretdb:latest \
-            -t ghcr.io/wekan/ferretdb:${VERSION} \
-            -t ghcr.io/wekan/ferretdb:latest \
-            --push \
-            .

@@ -1,0 +1,7 @@
+# Build context for Dockerfile.release: only the extracted release binaries
+# (ferretdb/<arch>/ferretdb-<arch>) and the passwd/group files for the scratch
+# image. Everything else (source tree, .git, the .zip) is excluded. This is a
+# per-Dockerfile ignore file so it does not affect the source build's .dockerignore.
+**
+!ferretdb
+!build/ferretdb

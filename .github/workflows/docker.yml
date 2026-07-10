@@ -1,0 +1,119 @@
+name: Docker (from release binaries)
+
+# Builds the FerretDB multi-arch Docker image from the PREBUILT binaries in a
+# GitHub Release's ferretdb.zip (no compilation) and pushes it to Docker Hub,
+# Quay.io and GHCR — the same registries release-all.yml used to. Because the
+# binaries are already built, buildx just repackages the right one per target
+# into a FROM scratch image, with NO QEMU. The platform list is derived from the
+# Linux binaries actually present in the release, so it covers every platform in
+# the zip (amd64, arm64, armhf, armel, i386, ppc64le, s390x, riscv64, loong64).
+#
+# Registry credentials are the SAME base64("username:token") secrets as wekan/wekan:
+#   DOCKERHUB_AUTH   Docker Hub
+#   QUAY_AUTH        Quay.io
+#   GHCR_AUTH        ghcr.io
+#
+# Usage:
+#   gh workflow run docker.yml                     # newest release
+#   gh workflow run docker.yml -f version=v1.25.0  # a specific release
+# Also runs when a Release is published (note: a release created by the default
+# GITHUB_TOKEN does not trigger this — dispatch it manually or use a PAT).
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to use (empty = newest release)'
+        required: false
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve release tag and download ferretdb.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.release.tag_name }}"
+          [ -n "$TAG" ] || TAG="${{ inputs.version }}"
+          if [ -z "$TAG" ]; then
+            TAG="$(gh release list --limit 1 --json tagName --jq '.[0].tagName')"
+          fi
+          [ -n "$TAG" ] && [ "$TAG" != "null" ] || { echo "::error::no release tag found"; exit 1; }
+          echo "Using release: $TAG"
+          echo "VERSION=$TAG" >> "$GITHUB_ENV"
+          command -v unzip >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p ferretdb.zip --clobber
+          unzip -o ferretdb.zip
+
+      - name: Compute platform list from the binaries in the release
+        run: |
+          set -euo pipefail
+          map() { case "$1" in
+            amd64)   echo linux/amd64 ;;
+            arm64)   echo linux/arm64 ;;
+            armhf)   echo linux/arm/v7 ;;
+            armel)   echo linux/arm/v5 ;;
+            i386)    echo linux/386 ;;
+            ppc64le) echo linux/ppc64le ;;
+            s390x)   echo linux/s390x ;;
+            riscv64) echo linux/riscv64 ;;
+            loong64) echo linux/loong64 ;;
+            *)       echo "" ;;
+          esac; }
+          plats=""
+          for d in ferretdb/*/; do
+            name="$(basename "$d")"
+            # Only Linux binaries (no .exe / mac / bsd) map to a Docker platform.
+            [ -f "ferretdb/$name/ferretdb-$name" ] || continue
+            p="$(map "$name")"; [ -n "$p" ] || continue
+            plats="${plats:+$plats,}$p"
+          done
+          [ -n "$plats" ] || { echo "::error::no linux binaries found in ferretdb.zip"; exit 1; }
+          echo "Platforms: $plats"
+          echo "PLATFORMS=$plats" >> "$GITHUB_ENV"
+
+      - name: Log in to Docker Hub, Quay.io and GHCR
+        env:
+          DOCKERHUB_AUTH: ${{ secrets.DOCKERHUB_AUTH }}
+          QUAY_AUTH: ${{ secrets.QUAY_AUTH }}
+          GHCR_AUTH: ${{ secrets.GHCR_AUTH }}
+        run: |
+          login() {
+            # $1 = registry host, $2 = base64("user:token")
+            local host="$1" creds user token
+            creds="$(printf '%s' "$2" | base64 -d)"
+            user="${creds%%:*}"
+            token="${creds#*:}"
+            printf '%s' "$token" | docker login "$host" -u "$user" --password-stdin
+          }
+          login docker.io "$DOCKERHUB_AUTH"
+          login quay.io   "$QUAY_AUTH"
+          login ghcr.io   "$GHCR_AUTH"
+
+      - name: Build and push multi-arch image from the release binaries
+        run: |
+          docker buildx build \
+            --file Dockerfile.release \
+            --platform "$PLATFORMS" \
+            -t wekanteam/ferretdb:${VERSION} \
+            -t wekanteam/ferretdb:latest \
+            -t quay.io/wekan/ferretdb:${VERSION} \
+            -t quay.io/wekan/ferretdb:latest \
+            -t ghcr.io/wekan/ferretdb:${VERSION} \
+            -t ghcr.io/wekan/ferretdb:latest \
+            --push \
+            .
