@@ -322,8 +322,11 @@ act_test_one() {
 
 act_unit() {
   go_env
-  info "Running unit tests (./internal/...) ..."
-  go test -count=1 -short ./internal/... ./cmd/...
+  # The ferretdb_debug build tag enables the debug-only assertions that some unit
+  # tests require (e.g. TestCheckError asserts debugbuild.Enabled); it is the tag
+  # FerretDB's own `task test-unit` builds with.
+  info "Running unit tests (./internal/... ./cmd/..., -tags ferretdb_debug) ..."
+  go test -count=1 -short -tags=ferretdb_debug ./internal/... ./cmd/...
 }
 
 act_lint() {
