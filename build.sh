@@ -9,7 +9,8 @@
 #   ./build.sh zip                     # build ferretdb.zip, sequential (default)
 #   ./build.sh zip-seq                 # build ferretdb.zip, one platform at a time
 #   ./build.sh zip-par                 # build ferretdb.zip, all platforms in parallel
-#   ./build.sh release [version]       # push + trigger release-all.yml on GitHub Actions
+#   ./build.sh release [version]       # trigger release-all.yml (zip + GitHub Release)
+#   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
 #   ./build.sh test-par [N]            # integration tests, parallel with N workers
@@ -351,36 +352,55 @@ act_clean() {
   info "Clean done. (Local Go toolchain in ./.goroot kept; delete it manually to remove.)"
 }
 
-# ---- release (trigger GitHub Actions) ------------------------------------
-# Like wekan/wekan's releases/release-all.sh: nothing is built locally — this
-# pushes the current branch and triggers .github/workflows/release-all.yml, which
-# builds ferretdb.zip for all platforms, publishes the GitHub Release, and pushes
-# the multi-arch FerretDB Docker image to all registries.
-#   act_release [version]   (empty version => the workflow uses `git describe`)
-act_release() {
+# ---- run GitHub Actions workflows ----------------------------------------
+# Push the current branch (so the remote has the workflow file + latest commit)
+# and trigger a workflow via `gh`. Both FerretDB workflows take an optional
+# `version` input, so this shared helper handles both.
+#   trigger_workflow <workflow-file> [version]
+trigger_workflow() {
   command -v gh >/dev/null 2>&1 || {
     err "'gh' (GitHub CLI) is required and must be authenticated: run 'gh auth login'."
     return 1
   }
-  local branch version
+  local wf="$1" version="${2:-}" branch
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main-v1)"
-  version="${1:-}"
-  if [ -z "$version" ] && [ -t 0 ]; then
-    printf "Release tag (e.g. v1.24.2-wekan1; empty = git describe on the runner): "
-    read -r version
-  fi
 
-  info "Pushing '$branch' so the workflow builds the latest commit ..."
+  info "Pushing '$branch' so the workflow runs the latest committed version ..."
   git push origin "$branch" || warn "git push reported no changes / failed; continuing to trigger."
 
-  info "Triggering release-all.yml on '$branch'${version:+ (version $version)} ..."
+  info "Triggering $wf on '$branch'${version:+ (version $version)} ..."
   if [ -n "$version" ]; then
-    gh workflow run release-all.yml --ref "$branch" -f version="$version" || return 1
+    gh workflow run "$wf" --ref "$branch" -f version="$version" || return 1
   else
-    gh workflow run release-all.yml --ref "$branch" || return 1
+    gh workflow run "$wf" --ref "$branch" || return 1
   fi
   info "Triggered. Track progress at: https://github.com/wekan/FerretDB/actions"
   info "Requires the DOCKERHUB_AUTH / QUAY_AUTH / GHCR_AUTH secrets in this repo."
+}
+
+# release-all.yml: build ferretdb.zip for all platforms + publish the GitHub
+# Release (with notes from CHANGELOG.md). Nothing is built locally.
+#   act_release [version]   (empty version => the workflow uses `git describe`)
+act_release() {
+  local version="${1:-}"
+  if [ -z "$version" ] && [ -t 0 ]; then
+    printf "Release tag (e.g. v1.25.0; empty = git describe on the runner): "
+    read -r version
+  fi
+  trigger_workflow release-all.yml "$version"
+}
+
+# docker.yml: build the multi-arch FerretDB Docker image from the prebuilt
+# binaries in a GitHub Release's ferretdb.zip and push to Docker Hub, Quay.io and
+# GHCR. Does NOT recompile — run this after a release exists.
+#   act_release_docker [version]   (empty version => the newest release)
+act_release_docker() {
+  local version="${1:-}"
+  if [ -z "$version" ] && [ -t 0 ]; then
+    printf "Release tag to build the image from (empty = newest release): "
+    read -r version
+  fi
+  trigger_workflow docker.yml "$version"
 }
 
 # ---- menu ----------------------------------------------------------------
@@ -400,8 +420,10 @@ menu() {
  10) Clean build artifacts
  11) Build ferretdb.zip           — SEQUENTIAL (all platforms, one at a time)
  12) Build ferretdb.zip           — PARALLEL (all platforms at once)
- 13) Release via GitHub Actions   (push + trigger release-all.yml: zip, GitHub
-                                    Release, multi-arch Docker to all registries)
+ 13) Release via GitHub Actions   (trigger release-all.yml: build ferretdb.zip +
+                                    publish GitHub Release with CHANGELOG notes)
+ 14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
+                                    release binaries -> Docker Hub, Quay.io, GHCR)
   g) Show / install Go toolchain
   0) Exit
 EOF
@@ -423,6 +445,7 @@ EOF
       11) act_zip seq ;;
       12) act_zip par ;;
       13) act_release ;;
+      14) act_release_docker ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -440,6 +463,7 @@ case "${1:-}" in
   zip-seq)    act_zip seq ;;
   zip-par)    act_zip par ;;
   release)    shift; act_release "${1:-}" ;;
+  docker-release) shift; act_release_docker "${1:-}" ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
   test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
