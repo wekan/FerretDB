@@ -1,10 +1,13 @@
 name: Release All (FerretDB v1)
 
 # Manually triggered. Builds FerretDB v1 (wekan/FerretDB, SQLite backend) for
-# every platform into ferretdb.zip (via build.sh) and publishes a GitHub Release
-# with it at https://github.com/wekan/FerretDB/releases. The release notes are:
+# every platform (via build.sh) into ./dist/ as individual per-arch binaries
+# (ferretdb-<arch>[.exe]) and publishes a GitHub Release with each binary attached
+# separately — NO ferretdb.zip — at https://github.com/wekan/FerretDB/releases, so
+# each consumer downloads only the one binary for the platform it targets. The
+# release notes are:
 #   1. a fixed header line,
-#   2. "Platforms: ..." listing every arch present in ferretdb.zip, and
+#   2. "Platforms: ..." listing every arch built into ./dist/, and
 #   3. the CHANGELOG.md section for that version.
 #
 # The multi-arch Docker image is built by a SEPARATE workflow, docker.yml, which
@@ -31,10 +34,10 @@ permissions:
   contents: write
 
 env:
-  GO_VERSION: '1.25.0'
+  GO_VERSION: '1.25.11'
 
 jobs:
-  # Build ferretdb.zip (all platforms) and publish the GitHub Release.
+  # Build the per-arch binaries (all platforms) and publish the GitHub Release.
   release:
     runs-on: ubuntu-latest
     outputs:
@@ -58,23 +61,22 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
-      - name: Build ferretdb.zip for all platforms
+      - name: Build per-arch binaries for all platforms
         # build.sh cross-compiles every platform Go + modernc.org/sqlite support
-        # into ferretdb.zip (ferretdb/<arch>/ferretdb-<arch>[.exe] + README).
+        # into ./dist/ as individual ferretdb-<arch>[.exe] binaries (+ README).
         # Sequential to stay within the runner's memory (16 concurrent Go builds
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
-        run: ./build.sh zip-seq
+        run: ./build.sh dist-seq
 
       - name: Compose release notes (header + platforms + CHANGELOG section)
         id: notes
         run: |
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"
-          command -v unzip >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
 
-          # 1. Every arch present in ferretdb.zip (a "ferretdb/<arch>/..." entry),
+          # 1. Every arch built into ./dist/ (a "ferretdb-<arch>[.exe]" file),
           #    listed in build.sh's canonical order with any extras appended.
-          present="$(unzip -Z1 ferretdb.zip | sed -n 's#^ferretdb/\([^/]*\)/.*#\1#p' | sort -u)"
+          present="$(ls dist | sed -n 's#^ferretdb-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
           order="amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-arm64"
           plats=""
           for a in $order; do
@@ -98,7 +100,7 @@ jobs:
 
           # 3. Assemble: header line, Platforms line, then the CHANGELOG section.
           {
-            echo "FerretDB v1 (SQLite) multi-platform binaries — ferretdb.zip. Built by release-all.yml from the wekan/FerretDB fork."
+            echo "FerretDB v1 (SQLite) multi-platform binaries — one ferretdb-<arch>[.exe] asset per platform (no ferretdb.zip). Built by release-all.yml from the wekan/FerretDB fork."
             echo ""
             echo "Platforms: $plats"
             echo ""
@@ -109,18 +111,21 @@ jobs:
           cat release-notes.md
           echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Create/update GitHub Release with ferretdb.zip
+      - name: Create/update GitHub Release with the per-arch binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
+          # Attach every per-arch binary (and the README.md) from ./dist/ as an
+          # individual release asset; --clobber replaces same-named assets on re-run.
+          assets=(dist/ferretdb-* dist/README.md)
           if gh release view "$V" >/dev/null 2>&1; then
-            gh release upload "$V" ferretdb.zip --clobber
+            gh release upload "$V" "${assets[@]}" --clobber
             gh release edit "$V" --title "$V" --notes-file "$NOTES_FILE"
           else
-            gh release create "$V" ferretdb.zip \
+            gh release create "$V" "${assets[@]}" \
               --title "$V" \
               --notes-file "$NOTES_FILE"
           fi

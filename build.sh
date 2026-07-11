@@ -6,10 +6,10 @@
 #   ./build.sh              # interactive menu
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
 #   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
-#   ./build.sh zip                     # build ferretdb.zip, sequential (default)
-#   ./build.sh zip-seq                 # build ferretdb.zip, one platform at a time
-#   ./build.sh zip-par                 # build ferretdb.zip, all platforms in parallel
-#   ./build.sh release [version]       # trigger release-all.yml (zip + GitHub Release)
+#   ./build.sh dist                    # build all per-arch binaries, sequential (default)
+#   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
+#   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
+#   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
 #   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
@@ -23,7 +23,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-GO_VERSION="1.25.0"
+GO_VERSION="1.25.11"
 LOCAL_GOROOT="$ROOT/.goroot"
 STATE_DIR="$ROOT/state"
 SQLITE_TEST_DIR="$ROOT/tmp/sqlite-tests"
@@ -151,13 +151,14 @@ act_run() {
     exec ./bin/ferretdb
 }
 
-# ---- ferretdb.zip (cross-compile for every platform) ---------------------
+# ---- per-arch binaries (cross-compile for every platform) ----------------
 # WeKan-style arch name + GOOS + GOARCH + GOARM. .exe suffix is added only for
-# Windows; every other platform's binary has no extension. This is the same set
-# the WeKan release workflow (release-all.yml build-ferretdb) produces, so the
-# zip built here matches the released ferretdb.zip. Targets that a platform can't
-# compile (e.g. an arch modernc.org/sqlite has no port for) are skipped.
-FERRETDB_ZIP_TARGETS=(
+# Windows; every other platform's binary has no extension. Each target compiles
+# to a single self-contained binary named ferretdb-<arch>[.exe]; these are the
+# individual assets attached to the GitHub Release (no ferretdb.zip). Targets a
+# platform can't compile (e.g. an arch modernc.org/sqlite has no port for) are
+# skipped.
+FERRETDB_DIST_TARGETS=(
   "amd64 linux amd64 "
   "arm64 linux arm64 "
   "armhf linux arm 7"
@@ -177,42 +178,44 @@ FERRETDB_ZIP_TARGETS=(
 )
 
 # build_ferretdb_target <name> <goos> <goarch> <goarm> <out-dir> <report-dir>
-# Builds one target; on success writes the (executable) binary into
-# <out-dir>/<name>/ and records <name> in <report-dir>/built.list, else skips and
-# records it in <report-dir>/failed.list. Safe to run concurrently.
+# Builds one target; on success writes the (executable) binary as
+# <out-dir>/ferretdb-<name>[.exe] and records <name> in <report-dir>/built.list,
+# else skips and records it in <report-dir>/failed.list. Safe to run concurrently.
 build_ferretdb_target() {
   local name="$1" goos="$2" goarch="$3" goarm="$4" out="$5" rep="$6"
   local ext=""; [ "$goos" = windows ] && ext=".exe"
-  mkdir -p "$out/$name"
+  mkdir -p "$out"
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-       go build -trimpath -o "$out/$name/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
-    chmod +x "$out/$name/ferretdb-$name$ext"
+       go build -trimpath -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+    chmod +x "$out/ferretdb-$name$ext"
     printf '%s\n' "$name" >> "$rep/built.list"
     info "  built   $name"
   else
     printf '%s\n' "$name" >> "$rep/failed.list"
     warn "  skipped $name (does not compile) — see $rep/$name.log"
     tail -3 "$rep/$name.log" | sed 's/^/        /' >&2 || true
-    rm -rf "$out/$name"
+    rm -f "$out/ferretdb-$name$ext"
   fi
 }
 
-# act_zip <seq|par> — cross-compile FerretDB (SQLite) for all platforms into
-# ./ferretdb.zip with the layout ferretdb/<arch>/ferretdb-<arch>[.exe] + README.md
-act_zip() {
+# act_dist <seq|par> — cross-compile FerretDB (SQLite) for all platforms into
+# ./dist/ as individual, self-contained binaries named ferretdb-<arch>[.exe]
+# (plus a README.md). No ferretdb.zip is produced: the GitHub Release attaches
+# every binary separately, so each consumer downloads only the one binary for the
+# platform it targets.
+act_dist() {
   local mode="${1:-seq}"
   go_env
-  command -v zip >/dev/null 2>&1 || { err "'zip' is required (apt-get install zip)"; return 1; }
 
   info "Generating version info (build/version) ..."
   ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
   local fver; fver="$(cat build/version/version.txt 2>/dev/null || echo unknown)"
   info "FerretDB version: $fver"
 
-  local stage="$ROOT/tmp/ferretdb-zip"
-  rm -rf "$stage"; mkdir -p "$stage/ferretdb"
-  local out="$stage/ferretdb"          # becomes ferretdb/ inside the zip
-  : > "$stage/built.list"; : > "$stage/failed.list"
+  local out="$ROOT/dist"
+  local rep="$ROOT/tmp/ferretdb-dist"
+  rm -rf "$out" "$rep"; mkdir -p "$out" "$rep"
+  : > "$rep/built.list"; : > "$rep/failed.list"
 
   # Prime the module + build cache once (resolve deps, compile shared std/deps)
   # so the parallel builds below don't all race downloading/compiling at once.
@@ -222,19 +225,19 @@ act_zip() {
   if [ "$mode" = par ]; then
     info "Cross-compiling FerretDB for all platforms — PARALLEL ..."
     local pids=()
-    for t in "${FERRETDB_ZIP_TARGETS[@]}"; do
+    for t in "${FERRETDB_DIST_TARGETS[@]}"; do
       # shellcheck disable=SC2086
       set -- $t
-      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$stage" &
+      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$rep" &
       pids+=($!)
     done
     wait "${pids[@]}" 2>/dev/null || true
   else
     info "Cross-compiling FerretDB for all platforms — SEQUENTIAL ..."
-    for t in "${FERRETDB_ZIP_TARGETS[@]}"; do
+    for t in "${FERRETDB_DIST_TARGETS[@]}"; do
       # shellcheck disable=SC2086
       set -- $t
-      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$stage"
+      build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$rep"
     done
   fi
 
@@ -250,12 +253,18 @@ act_zip() {
     echo
     echo "Version: $fver"
     echo
-    echo "## Layout"
+    echo "## Assets"
     echo
-    echo "    ferretdb/<arch>/ferretdb-<arch>        (Linux/macOS/BSD)"
-    echo "    ferretdb/<arch>/ferretdb-<arch>.exe    (Windows)"
+    echo "Each platform is a separate release asset (no ferretdb.zip):"
     echo
-    echo "Included in this build: $(tr '\n' ' ' < "$stage/built.list")"
+    echo "    ferretdb-<arch>        (Linux/macOS/BSD)"
+    echo "    ferretdb-<arch>.exe    (Windows)"
+    echo
+    echo "Download only the one you need, e.g.:"
+    echo
+    echo "    curl -fSLO https://github.com/wekan/FerretDB/releases/latest/download/ferretdb-amd64"
+    echo
+    echo "Included in this build: $(tr '\n' ' ' < "$rep/built.list")"
     echo
     echo "## Run"
     echo
@@ -267,15 +276,13 @@ act_zip() {
     echo "Telemetry is disabled by the flag above (FerretDB also honors DO_NOT_TRACK=1)."
   } > "$out/README.md"
 
-  rm -f "$ROOT/ferretdb.zip"
-  ( cd "$stage" && zip -qr "$ROOT/ferretdb.zip" ferretdb )
-  info "Created $ROOT/ferretdb.zip"
-  info "Built:   $(tr '\n' ' ' < "$stage/built.list")"
-  if [ -s "$stage/failed.list" ]; then
-    warn "Skipped: $(tr '\n' ' ' < "$stage/failed.list")"
+  info "Created per-arch binaries under $out/"
+  info "Built:   $(tr '\n' ' ' < "$rep/built.list")"
+  if [ -s "$rep/failed.list" ]; then
+    warn "Skipped: $(tr '\n' ' ' < "$rep/failed.list")"
   fi
   echo
-  unzip -l "$ROOT/ferretdb.zip"
+  ls -la "$out"
 }
 
 # number of parallel test workers; override with TEST_PARALLEL.
@@ -378,8 +385,8 @@ trigger_workflow() {
   info "Requires the DOCKERHUB_AUTH / QUAY_AUTH / GHCR_AUTH secrets in this repo."
 }
 
-# release-all.yml: build ferretdb.zip for all platforms + publish the GitHub
-# Release (with notes from CHANGELOG.md). Nothing is built locally.
+# release-all.yml: build the per-arch binaries for all platforms + publish the
+# GitHub Release (with notes from CHANGELOG.md). Nothing is built locally.
 #   act_release [version]   (empty version => the workflow uses `git describe`)
 act_release() {
   local version="${1:-}"
@@ -391,8 +398,8 @@ act_release() {
 }
 
 # docker.yml: build the multi-arch FerretDB Docker image from the prebuilt
-# binaries in a GitHub Release's ferretdb.zip and push to Docker Hub, Quay.io and
-# GHCR. Does NOT recompile — run this after a release exists.
+# per-arch binaries attached to a GitHub Release and push to Docker Hub, Quay.io
+# and GHCR. Does NOT recompile — run this after a release exists.
 #   act_release_docker [version]   (empty version => the newest release)
 act_release_docker() {
   local version="${1:-}"
@@ -418,10 +425,10 @@ menu() {
   8) Lint / vet
   9) Build & run with Docker      (docker compose up --build)
  10) Clean build artifacts
- 11) Build ferretdb.zip           — SEQUENTIAL (all platforms, one at a time)
- 12) Build ferretdb.zip           — PARALLEL (all platforms at once)
- 13) Release via GitHub Actions   (trigger release-all.yml: build ferretdb.zip +
-                                    publish GitHub Release with CHANGELOG notes)
+ 11) Build per-arch binaries      — SEQUENTIAL (all platforms, one at a time)
+ 12) Build per-arch binaries      — PARALLEL (all platforms at once)
+ 13) Release via GitHub Actions   (trigger release-all.yml: build per-arch
+                                    binaries + publish GitHub Release w/ notes)
  14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
                                     release binaries -> Docker Hub, Quay.io, GHCR)
   g) Show / install Go toolchain
@@ -442,8 +449,8 @@ EOF
       8) act_lint ;;
       9) act_docker ;;
       10) act_clean ;;
-      11) act_zip seq ;;
-      12) act_zip par ;;
+      11) act_dist seq ;;
+      12) act_dist par ;;
       13) act_release ;;
       14) act_release_docker ;;
       g|G) act_goenv ;;
@@ -459,9 +466,9 @@ case "${1:-}" in
   deps)       act_deps ;;
   build)      act_build ;;
   run)        act_run ;;
-  zip)        act_zip seq ;;
-  zip-seq)    act_zip seq ;;
-  zip-par)    act_zip par ;;
+  dist)       act_dist seq ;;
+  dist-seq)   act_dist seq ;;
+  dist-par)   act_dist par ;;
   release)    shift; act_release "${1:-}" ;;
   docker-release) shift; act_release_docker "${1:-}" ;;
   test)       act_test par ;;

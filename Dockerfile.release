@@ -1,22 +1,22 @@
 # syntax=docker/dockerfile:1
 
-# Builds the FerretDB image from the PREBUILT binaries in a GitHub Release's
-# ferretdb.zip (extracted into ./ferretdb/<arch>/ferretdb-<arch>) — no compiling.
-# Used by .github/workflows/docker.yml. The pick stage runs on the native build
-# platform and just selects the binary matching the target platform, so buildx
-# emits every architecture present in the zip WITHOUT QEMU. Final image is FROM
-# scratch (architecture-agnostic).
+# Builds the FerretDB image from the PREBUILT per-arch binaries attached to a
+# GitHub Release (downloaded into ./dist/ferretdb-<arch>) — no compiling. Used by
+# .github/workflows/docker.yml. The pick stage runs on the native build platform
+# and just selects the binary matching the target platform, so buildx emits every
+# architecture present in ./dist WITHOUT QEMU. Final image is FROM scratch
+# (architecture-agnostic).
 #
-# See Dockerfile.release.dockerignore for the build context (the extracted
-# ferretdb/ dir + build/ferretdb passwd/group), and Dockerfile for the
-# build-from-source variant used by release-all.yml.
+# See Dockerfile.release.dockerignore for the build context (the ./dist dir +
+# build/ferretdb passwd/group), and Dockerfile for the build-from-source variant
+# used by release-all.yml.
 
 FROM --platform=$BUILDPLATFORM busybox AS pick
 ARG TARGETARCH
 ARG TARGETVARIANT
-COPY ferretdb /bins
+COPY dist /bins
 RUN set -eux; \
-    # Map the OCI target platform to the WeKan arch name used inside the zip.
+    # Map the OCI target platform to the WeKan arch name used in the binary name.
     case "${TARGETARCH}/${TARGETVARIANT}" in \
       amd64/*)   n=amd64 ;; \
       arm64/*)   n=arm64 ;; \
@@ -31,7 +31,7 @@ RUN set -eux; \
       loong64/*) n=loong64 ;; \
       *) echo "no prebuilt ferretdb for ${TARGETARCH}/${TARGETVARIANT}" >&2; exit 1 ;; \
     esac; \
-    cp "/bins/${n}/ferretdb-${n}" /ferretdb; \
+    cp "/bins/ferretdb-${n}" /ferretdb; \
     chmod 0755 /ferretdb; \
     mkdir -p /state; \
     chown 1000:1000 /state

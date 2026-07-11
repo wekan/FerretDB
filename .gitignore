@@ -20,7 +20,7 @@ website/build/
 .goroot/
 state/
 
-# build.sh: cross-compiled multi-platform FerretDB bundle (menu options 11/12)
-ferretdb.zip
+# build.sh: cross-compiled per-arch FerretDB binaries (menu options 11/12)
+dist/
 
 **/testdata/fuzz/

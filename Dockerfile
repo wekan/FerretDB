@@ -5,13 +5,13 @@
 #
 # The build stage runs NATIVELY on the build platform and cross-compiles to each
 # target platform with the Go toolchain (CGO disabled => pure Go => any GOARCH),
-# so buildx can emit every architecture that ferretdb.zip ships — amd64, arm64,
+# so buildx can emit every architecture the release ships — amd64, arm64,
 # arm/v7 (armhf), arm/v5 (armel), 386 (i386), ppc64le, s390x, riscv64, loong64 —
 # WITHOUT QEMU emulation of the compiler. The final image is FROM scratch, which
 # is architecture-agnostic.
 
 # build stage — native on $BUILDPLATFORM, cross-compiles for $TARGETPLATFORM
-FROM --platform=$BUILDPLATFORM golang:1.25 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.11 AS build
 
 # Provided automatically by buildx for the target platform.
 ARG TARGETOS

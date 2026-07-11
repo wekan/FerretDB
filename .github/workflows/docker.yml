@@ -1,12 +1,12 @@
 name: Docker (from release binaries)
 
-# Builds the FerretDB multi-arch Docker image from the PREBUILT binaries in a
-# GitHub Release's ferretdb.zip (no compilation) and pushes it to Docker Hub,
+# Builds the FerretDB multi-arch Docker image from the PREBUILT per-arch binaries
+# attached to a GitHub Release (no compilation) and pushes it to Docker Hub,
 # Quay.io and GHCR — the same registries release-all.yml used to. Because the
 # binaries are already built, buildx just repackages the right one per target
-# into a FROM scratch image, with NO QEMU. The platform list is derived from the
-# Linux binaries actually present in the release, so it covers every platform in
-# the zip (amd64, arm64, armhf, armel, i386, ppc64le, s390x, riscv64, loong64).
+# into a FROM scratch image, with NO QEMU. Only the Linux ferretdb-<arch> assets
+# are downloaded, so the platform list covers every Linux platform in the release
+# (amd64, arm64, armhf, armel, i386, ppc64le, s390x, riscv64, loong64).
 #
 # Registry credentials are the SAME base64("username:token") secrets as wekan/wekan:
 #   DOCKERHUB_AUTH   Docker Hub
@@ -42,7 +42,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Resolve release tag and download ferretdb.zip
+      - name: Resolve release tag and download the Linux per-arch binaries
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -55,11 +55,17 @@ jobs:
           [ -n "$TAG" ] && [ "$TAG" != "null" ] || { echo "::error::no release tag found"; exit 1; }
           echo "Using release: $TAG"
           echo "VERSION=$TAG" >> "$GITHUB_ENV"
-          command -v unzip >/dev/null 2>&1 || { sudo apt-get update -qq && sudo apt-get install -y -qq unzip; }
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -p ferretdb.zip --clobber
-          unzip -o ferretdb.zip
+          # Download only the Linux ferretdb-<arch> assets (each pattern is an exact
+          # name, so ferretdb-amd64 does not match ferretdb-mac-amd64). Missing
+          # arches are tolerated: whatever is present defines the platform list.
+          mkdir -p dist
+          for a in amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64; do
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              -p "ferretdb-$a" -D dist --clobber 2>/dev/null || true
+          done
+          echo "=== downloaded ==="; ls -la dist
 
-      - name: Compute platform list from the binaries in the release
+      - name: Compute platform list from the downloaded binaries
         run: |
           set -euo pipefail
           map() { case "$1" in
@@ -75,20 +81,14 @@ jobs:
             *)       echo "" ;;
           esac; }
           plats=""
-          for d in ferretdb/*/; do
-            name="$(basename "$d")"
-            p=""
-            [ -f "ferretdb/$name/ferretdb-$name" ] && p="$(map "$name")"
-            if [ -z "$p" ]; then
-              # Not a Linux binary we publish (windows .exe / mac / bsd / unknown):
-              # drop it so it never enters the Docker build context.
-              rm -rf "ferretdb/$name"
-              continue
-            fi
+          for f in dist/ferretdb-*; do
+            [ -f "$f" ] || continue
+            name="${f#dist/ferretdb-}"
+            p="$(map "$name")"
+            [ -n "$p" ] || continue
             plats="${plats:+$plats,}$p"
           done
-          rm -f ferretdb/README.md
-          [ -n "$plats" ] || { echo "::error::no linux binaries found in ferretdb.zip"; exit 1; }
+          [ -n "$plats" ] || { echo "::error::no linux ferretdb-<arch> binaries downloaded"; exit 1; }
           echo "Platforms: $plats"
           echo "PLATFORMS=$plats" >> "$GITHUB_ENV"
 
