@@ -105,7 +105,9 @@ var cli struct {
 		} `embed:"" prefix:"traces-"`
 	} `embed:"" prefix:"otel-"`
 
-	Telemetry telemetry.Flag `default:"undecided" help:"Enable or disable basic telemetry. See https://beacon.ferretdb.com."`
+	// WeKan fork: telemetry is disabled by default (was "undecided", which would
+	// otherwise start reporting to beacon.ferretdb.com after a delay).
+	Telemetry telemetry.Flag `default:"disable" help:"Enable or disable basic telemetry. See https://beacon.ferretdb.com."`
 
 	Test struct {
 		RecordsDir string `default:"" help:"Testing: directory for record files."`
@@ -248,7 +250,10 @@ func defaultLogLevel() slog.Level {
 		return slog.LevelDebug
 	}
 
-	return slog.LevelInfo
+	// WeKan fork: default to errors only, so normal operation (listening,
+	// per-connection/command info) does not produce log noise or overhead. Raise
+	// with --log-level=warn/info/debug when diagnosing a problem.
+	return slog.LevelError
 }
 
 // setupState setups state provider.
@@ -497,12 +502,15 @@ func run() {
 			ReportTimeout:  cli.Test.Telemetry.ReportTimeout,
 		}
 
-		r, err := telemetry.NewReporter(opts)
+		_, err := telemetry.NewReporter(opts)
 		if err != nil {
 			l.LogAttrs(ctx, logging.LevelFatal, "Failed to create telemetry reporter", logging.Error(err))
 		}
 
-		r.Run(ctx)
+		// WeKan fork: do NOT start the telemetry reporter loop. Telemetry is
+		// disabled by default (see the Telemetry flag above), so there is no
+		// reporting to beacon.ferretdb.com and no periodic report/ping overhead.
+		// r.Run(ctx)
 	}()
 
 	h, closeBackend, err := registry.NewHandler(cli.Handler, &registry.NewHandlerOpts{
