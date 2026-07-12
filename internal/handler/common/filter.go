@@ -1754,6 +1754,11 @@ func filterFieldExprElemMatch(doc *types.Document, filterKey, filterSuffix strin
 		)
 	}
 
+	// fieldForm is true when $elemMatch uses the document/field form ({field: value})
+	// rather than the operator form ({$gt: value}); it selects how the array elements
+	// are matched below.
+	fieldForm := false
+
 	for _, key := range expr.Keys() {
 		if slices.Contains([]string{"$text", "$where"}, key) {
 			return false, handlererrors.NewCommandErrorMsgWithArgument(
@@ -1781,12 +1786,12 @@ func filterFieldExprElemMatch(doc *types.Document, filterKey, filterSuffix strin
 			)
 		}
 
-		if expr.Len() > 1 && !strings.HasPrefix(key, "$") {
-			return false, handlererrors.NewCommandErrorMsgWithArgument(
-				handlererrors.ErrBadValue,
-				fmt.Sprintf("unknown operator: %s", key),
-				"$elemMatch",
-			)
+		if !strings.HasPrefix(key, "$") {
+			// Document/field form, e.g. {a: 1, b: 2}. It is matched below by testing
+			// whole array-element documents against the sub-query, so it must NOT be
+			// rejected here as an unknown operator (the previous behaviour, which broke
+			// common queries like {members: {$elemMatch: {userId: X, isActive: true}}}).
+			fieldForm = true
 		}
 	}
 
@@ -1795,9 +1800,40 @@ func filterFieldExprElemMatch(doc *types.Document, filterKey, filterSuffix strin
 		return false, nil
 	}
 
-	if _, ok := value.(*types.Array); !ok {
+	arr, ok := value.(*types.Array)
+	if !ok {
 		return false, nil
 	}
 
+	// Document/field form: {arr: {$elemMatch: {a: 1, b: 2}}} matches when the array
+	// contains a document element that satisfies the WHOLE sub-query on the same
+	// element. filterFieldExpr below only understands operator keys and would reject a
+	// plain field with "unknown operator: <field>", so match the elements here.
+	if fieldForm {
+		for i := 0; i < arr.Len(); i++ {
+			elem, err := arr.Get(i)
+			if err != nil {
+				return false, lazyerrors.Error(err)
+			}
+
+			elemDoc, ok := elem.(*types.Document)
+			if !ok {
+				continue
+			}
+
+			matches, err := FilterDocument(elemDoc, expr)
+			if err != nil {
+				return false, err
+			}
+
+			if matches {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	}
+
+	// Operator form, e.g. {$gt: value}: keep the existing behavior.
 	return filterFieldExpr(doc, filterKey, filterSuffix, expr)
 }
