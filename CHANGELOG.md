@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming
+
+### New Features 🎉
+
+- Implement the document/field form of the `$elemMatch` query operator (`{arr: {$elemMatch: {field: value, ...}}}`): match array elements that are documents satisfying the WHOLE sub-query on the SAME element. Previously only the operator form (`{arr: {$elemMatch: {$gt: value}}}`) worked — a multi-field field-form expression was rejected with `unknown operator: <field>` (`BadValue`), and a single field fell through to operator parsing and failed the same way. This broke common queries such as WeKan's board access check `{members: {$elemMatch: {userId: X, isActive: true}}}`: on the SQLite backend the board list returned no boards and private boards could not be opened (they worked on MongoDB), because the query was rejected before it ever looked at the data. `filterFieldExprElemMatch` now detects the field form (any non-`$` key) and matches each document array element with `FilterDocument`, leaving the operator form unchanged by @xet7 in https://github.com/wekan/FerretDB/commit/ad4cc23a5c6a0d41bfd16e2c0a8515fbd3ce3bde . Thanks to xet7.
+
 ## [v1.26.0](https://github.com/wekan/FerretDB/releases/tag/v1.26.0) (2026-07-11)
 
 ### Other Changes 🤖
