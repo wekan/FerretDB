@@ -17,6 +17,7 @@ package setup
 import (
 	"context"
 	"log/slog"
+	"net"
 	"os"
 	"runtime"
 	"slices"
@@ -75,13 +76,28 @@ func Startup() {
 		l.LogAttrs(ctx, logging.LevelFatal, "Failed to create debug handler", logging.Error(err))
 	}
 
-	ot, err := observability.NewOTelTraceExporter(&observability.OTelTraceExporterOpts{
-		Logger:  logging.WithName(l, "otel"),
-		Service: "integration-tests",
-		URL:     "http://127.0.0.1:4318/v1/traces",
-	})
-	if err != nil {
-		l.LogAttrs(ctx, logging.LevelFatal, "Failed to create Otel tracer", logging.Error(err))
+	// The OTel collector is OPTIONAL: FerretDB's own task tooling starts one in
+	// Docker, but running the tests directly (e.g. via build.sh options 4-6)
+	// usually has nothing listening on 127.0.0.1:4318 — and the exporter would
+	// then retry forever, flooding the test output with
+	// "traces export: Post http://127.0.0.1:4318/v1/traces: connection refused".
+	// Probe the collector once and skip trace exporting when it is not there;
+	// the tests themselves do not need traces.
+	var ot *observability.OTelTraceExporter
+
+	if conn, dialErr := net.DialTimeout("tcp", "127.0.0.1:4318", time.Second); dialErr == nil {
+		_ = conn.Close()
+
+		ot, err = observability.NewOTelTraceExporter(&observability.OTelTraceExporterOpts{
+			Logger:  logging.WithName(l, "otel"),
+			Service: "integration-tests",
+			URL:     "http://127.0.0.1:4318/v1/traces",
+		})
+		if err != nil {
+			l.LogAttrs(ctx, logging.LevelFatal, "Failed to create Otel tracer", logging.Error(err))
+		}
+	} else {
+		l.InfoContext(ctx, "No OTel collector on 127.0.0.1:4318; traces will not be exported")
 	}
 
 	ctx, shutdown = context.WithCancel(ctx)
@@ -93,12 +109,14 @@ func Startup() {
 		h.Serve(ctx)
 	}()
 
-	startupWG.Add(1)
+	if ot != nil {
+		startupWG.Add(1)
 
-	go func() {
-		defer startupWG.Done()
-		ot.Run(ctx)
-	}()
+		go func() {
+			defer startupWG.Done()
+			ot.Run(ctx)
+		}()
+	}
 
 	clientCtx, clientCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer clientCancel()
