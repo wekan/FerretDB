@@ -4,7 +4,13 @@
 
 ## Upcoming
 
+### New Features 🎉
+
+- Accept documents with literal dotted field names (`{"foo.bar": "baz"}`), like MongoDB 3.6+ (wekan/wekan#6473). `Document.ValidateData` rejected every document containing a `.` in any field key at any depth (*"invalid key: … (key must not contain '.' sign)"*), so during WeKan's MongoDB → FerretDB migration every such document — importers, CollectionFS-era metadata, third-party tools can all produce them — failed to insert and, because per-item migration errors are deliberately non-fatal, simply went missing. Dotted keys are now stored and round-tripped literally with MongoDB's own semantics: query and update paths still interpret `.` as a path separator, so a literal dotted key is not addressable by path (exactly as in MongoDB), and the other key rules (`$` prefix, duplicate keys, invalid UTF-8) still reject. Verified end-to-end against a live FerretDB on the SQLite backend with the mongodb driver: top-level and nested dotted keys insert and round-trip, `$set` of a subdocument containing a dotted key works, a dotted-path query does NOT match the literal key, and `$`-prefixed keys are still rejected by @xet7. Thanks to mueschel and xet7.
+
 ### Other Changes 🤖
+
+- Update the document validation tests for the dotted-key change (wekan/wekan#6473): `internal/types/document_validation_test.go` now pins that top-level, nested and array-embedded dotted keys are VALID (with negative cases proving `$`-prefixed dotted keys and duplicate dotted keys still reject), and the `Insert`/`Update` dotted-key diff cases in `integration/diff_05_document_validation_test.go` — which documented the old rejection as a difference from MongoDB — are replaced by a `DottedKeysAccepted` group asserting both databases now behave the same: insert + literal round-trip, nested `$set`, and the dotted-path-query-does-not-match-literal-key negative case. `go build ./cmd/... ./internal/...`, `go vet`, and the `internal/types`, `internal/backends/sqlite/...` and `internal/handler/common` test suites pass by @xet7. Thanks to xet7.
 
 - Add Go table tests, with negative cases, for the `$elemMatch` document/field form (`internal/handler/common/filter_elemmatch_test.go`) — the v1.27.0 fix that un-broke WeKan's board access check on the SQLite backend. Pins: the motivating query `{members: {$elemMatch: {userId: X, isActive: true}}}` matches only when the WHOLE sub-query holds on the SAME array element (satisfying it across two different elements must NOT match), single-field and nested-operator field forms, the operator form (`{$gt: value}`) unchanged, non-array/missing fields and non-document elements never match, and the error cases (`$elemMatch` needs an object; `$text` rejected; `$or` not implemented). Thanks to xet7.
 

@@ -50,9 +50,31 @@ func TestDocumentValidateData(t *testing.T) {
 				doc:    must.NotFail(NewDocument("$v", "bar")),
 				reason: errors.New(`invalid key: "$v" (key must not start with '$' sign)`),
 			},
+			// wekan/wekan#6473: dotted keys are VALID data documents — MongoDB 3.6+
+			// accepts them, and rejecting them silently dropped migrated documents.
 			"KeyContainsDotSign": {
-				doc:    must.NotFail(NewDocument("v.foo", "bar")),
-				reason: errors.New(`invalid key: "v.foo" (key must not contain '.' sign)`),
+				doc: must.NotFail(NewDocument("_id", "1", "v.foo", "bar")),
+			},
+			"NestedKeyContainsDotSign": {
+				doc: must.NotFail(NewDocument(
+					"_id", "1",
+					"v", must.NotFail(NewDocument("foo.bar", "baz")),
+				)),
+			},
+			"ArrayDocumentKeyContainsDotSign": {
+				doc: must.NotFail(NewDocument(
+					"_id", "1",
+					"v", must.NotFail(NewArray(must.NotFail(NewDocument("foo.bar", "baz")))),
+				)),
+			},
+			// Negative: allowing '.' must not loosen the OTHER key rules.
+			"DottedKeyStartingWithDollarStillRejected": {
+				doc:    must.NotFail(NewDocument("$v.foo", "bar")),
+				reason: errors.New(`invalid key: "$v.foo" (key must not start with '$' sign)`),
+			},
+			"DuplicateDottedKeysStillRejected": {
+				doc:    must.NotFail(NewDocument("_id", "1", "v.foo", "bar", "v.foo", "baz")),
+				reason: errors.New(`invalid key: "v.foo" (duplicate keys are not allowed)`),
 			},
 			"DuplicateKeys": {
 				doc:    must.NotFail(NewDocument("_id", "1", "foo", "bar", "foo", "baz")),

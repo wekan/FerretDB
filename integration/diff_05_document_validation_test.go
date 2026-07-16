@@ -49,14 +49,6 @@ func TestDiffDocumentValidation(t *testing.T) {
 					Message: `invalid key: "$foo" (key must not start with '$' sign)`,
 				}}},
 			},
-			"DotSign": {
-				doc: bson.D{{"foo.bar", "baz"}},
-				err: mongo.WriteException{WriteErrors: []mongo.WriteError{{
-					Index:   0,
-					Code:    2,
-					Message: `invalid key: "foo.bar" (key must not contain '.' sign)`,
-				}}},
-			},
 			"Infinity": {
 				doc: bson.D{{"foo", math.Inf(1)}},
 				err: mongo.WriteException{WriteErrors: []mongo.WriteError{{
@@ -88,39 +80,72 @@ func TestDiffDocumentValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("Update", func(t *testing.T) {
+	// wekan/wekan#6473: literal dotted field names are NO LONGER a diff from
+	// MongoDB — both accept them (MongoDB since 3.6). They must insert, update
+	// and round-trip intact, because data migrated from a real MongoDB can
+	// legitimately contain them; rejecting them silently dropped documents
+	// during the WeKan MongoDB -> FerretDB migration.
+	t.Run("DottedKeysAccepted", func(t *testing.T) {
 		t.Parallel()
 
-		for name, tc := range map[string]struct { //nolint:vet // used only for testing
-			filter bson.D
-			update bson.D
-			opts   *options.UpdateOptions
+		t.Run("Insert", func(t *testing.T) {
+			t.Parallel()
 
-			werr *mongo.WriteError
-		}{
-			"DotSign": {
-				filter: bson.D{},
-				update: bson.D{{"$set", bson.D{{"foo", bson.D{{"bar.baz", "qaz"}}}}}},
-				werr: &mongo.WriteError{
-					Code:    2,
-					Message: `invalid key: "bar.baz" (key must not contain '.' sign)`,
-				},
-			},
-		} {
-			name, tc := name, tc
-			t.Run(name, func(t *testing.T) {
-				t.Parallel()
+			doc := bson.D{{"_id", "dotted-insert"}, {"foo.bar", "baz"}}
+			_, err := collection.InsertOne(ctx, doc)
+			require.NoError(t, err)
 
-				_, err := collection.UpdateOne(ctx, tc.filter, tc.update, tc.opts)
+			// The dotted key must round-trip as a LITERAL key.
+			var actual bson.D
+			err = collection.FindOne(ctx, bson.D{{"_id", "dotted-insert"}}).Decode(&actual)
+			require.NoError(t, err)
+			assert.Equal(t, doc, actual)
+		})
 
-				if setup.IsMongoDB(t) {
-					require.NoError(t, err)
-					return
-				}
+		t.Run("InsertNested", func(t *testing.T) {
+			t.Parallel()
 
-				AssertEqualWriteError(t, *tc.werr, err)
-			})
-		}
+			doc := bson.D{{"_id", "dotted-nested"}, {"v", bson.D{{"foo.bar", "baz"}}}}
+			_, err := collection.InsertOne(ctx, doc)
+			require.NoError(t, err)
+
+			var actual bson.D
+			err = collection.FindOne(ctx, bson.D{{"_id", "dotted-nested"}}).Decode(&actual)
+			require.NoError(t, err)
+			assert.Equal(t, doc, actual)
+		})
+
+		t.Run("UpdateSetsNestedDocumentWithDottedKey", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := collection.InsertOne(ctx, bson.D{{"_id", "dotted-update"}})
+			require.NoError(t, err)
+
+			_, err = collection.UpdateOne(
+				ctx,
+				bson.D{{"_id", "dotted-update"}},
+				bson.D{{"$set", bson.D{{"foo", bson.D{{"bar.baz", "qaz"}}}}}},
+			)
+			require.NoError(t, err)
+
+			var actual bson.D
+			err = collection.FindOne(ctx, bson.D{{"_id", "dotted-update"}}).Decode(&actual)
+			require.NoError(t, err)
+			assert.Equal(t, bson.D{{"_id", "dotted-update"}, {"foo", bson.D{{"bar.baz", "qaz"}}}}, actual)
+		})
+
+		// Negative: a literal dotted key is stored, NOT expanded into a path —
+		// so a dotted-path query does not match it (MongoDB semantics), and the
+		// other key rules ('$' prefix) still reject.
+		t.Run("DottedPathQueryDoesNotMatchLiteralKey", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := collection.InsertOne(ctx, bson.D{{"_id", "dotted-nopath"}, {"one.two", 3}})
+			require.NoError(t, err)
+
+			err = collection.FindOne(ctx, bson.D{{"_id", "dotted-nopath"}, {"one.two", 3}}).Err()
+			assert.Equal(t, mongo.ErrNoDocuments, err)
+		})
 	})
 }
 

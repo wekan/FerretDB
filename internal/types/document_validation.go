@@ -92,9 +92,14 @@ func (d *Document) validateData(isTopLevel bool) error {
 			return newValidationError(ErrValidation, fmt.Errorf("invalid key: %q (key must not start with '$' sign)", key))
 		}
 
-		if strings.Contains(key, ".") {
-			return newValidationError(ErrValidation, fmt.Errorf("invalid key: %q (key must not contain '.' sign)", key))
-		}
+		// Keys containing '.' are deliberately ALLOWED (wekan/wekan#6473): MongoDB 3.6+
+		// accepts documents with literal dotted field names, and data migrated from a
+		// real MongoDB can legitimately contain them (importers, CollectionFS-era
+		// metadata, third-party tools). Rejecting them made every such document fail to
+		// insert during the WeKan MongoDB -> FerretDB migration, silently dropping data.
+		// As in MongoDB, query/update paths still interpret '.' as a path separator, so
+		// a literal dotted key is stored and round-tripped but not addressable by path —
+		// exactly MongoDB's own semantics.
 
 		if _, ok := duplicateChecker[key]; ok {
 			return newValidationError(ErrValidation, fmt.Errorf("invalid key: %q (duplicate keys are not allowed)", key))
