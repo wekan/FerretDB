@@ -27,6 +27,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.opentelemetry.io/otel"
+	otelsdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/FerretDB/FerretDB/internal/clientconn/connmetrics"
 	"github.com/FerretDB/FerretDB/internal/util/debug"
@@ -97,7 +99,16 @@ func Startup() {
 			l.LogAttrs(ctx, logging.LevelFatal, "Failed to create Otel tracer", logging.Error(err))
 		}
 	} else {
-		l.InfoContext(ctx, "No OTel collector on 127.0.0.1:4318; traces will not be exported")
+		l.InfoContext(ctx, "No OTel collector on 127.0.0.1:4318; traces are recorded but not exported")
+
+		// Tests that build query comments from span contexts (TestOtelComment)
+		// need VALID trace/span IDs, and the default global tracer provider is
+		// a no-op that produces zero IDs. Install a real SDK tracer provider
+		// WITHOUT any exporter: spans are recorded with valid contexts, nothing
+		// is sent anywhere, and nothing retries.
+		otel.SetTracerProvider(otelsdktrace.NewTracerProvider(
+			otelsdktrace.WithSampler(otelsdktrace.AlwaysSample()),
+		))
 	}
 
 	ctx, shutdown = context.WithCancel(ctx)
