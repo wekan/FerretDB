@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming
+
+### Other Changes 🤖
+
+- Add Go table tests, with negative cases, for the `$elemMatch` document/field form (`internal/handler/common/filter_elemmatch_test.go`) — the v1.27.0 fix that un-broke WeKan's board access check on the SQLite backend. Pins: the motivating query `{members: {$elemMatch: {userId: X, isActive: true}}}` matches only when the WHOLE sub-query holds on the SAME array element (satisfying it across two different elements must NOT match), single-field and nested-operator field forms, the operator form (`{$gt: value}`) unchanged, non-array/missing fields and non-document elements never match, and the error cases (`$elemMatch` needs an object; `$text` rejected; `$or` not implemented). Thanks to xet7.
+
 ## [v1.28.0](https://github.com/wekan/FerretDB/releases/tag/v1.28.0) (2026-07-16)
 
 ### New Features 🎉
