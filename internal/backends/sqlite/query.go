@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata"
+	"github.com/FerretDB/FerretDB/internal/handler/sjson"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
@@ -44,6 +45,94 @@ func prepareSelectClause(table, comment string, capped, onlyRecordIDs bool) stri
 	}
 
 	return fmt.Sprintf(`SELECT %s %s FROM %q`, comment, metadata.DefaultColumn, table)
+}
+
+// pushdownSafeString reports whether Go's encoding/json (used by sjson when the
+// document was stored) and SQLite's -> operator (which re-renders the stored
+// JSON when we compare against it) produce byte-identical serializations of s,
+// making a parameterized comparison on the -> expression exact. Go escapes
+// '<', '>', '&', U+2028 and U+2029 as \uXXXX while SQLite renders them raw,
+// and control-character escapes can differ, so values containing any of those
+// are not pushed down (the in-Go filter still handles them correctly).
+func pushdownSafeString(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == 0x7f || r == '<' || r == '>' || r == '&' || r == '\u2028' || r == '\u2029' {
+			return false
+		}
+	}
+
+	return true
+}
+
+// prepareWhereClause builds a WHERE clause selecting a SUPERSET of the documents
+// matching the given filter, from the filter's top-level string/ObjectID
+// equality conditions. Exact filtering still happens in Go afterwards
+// (common.FilterIterator re-applies the whole filter), so a superset is always
+// correct — but evaluating the cheap conditions inside SQLite avoids decoding
+// every document's sjson in Go, which was pinning the CPU on busy WeKan boards
+// (WeKan #6467, #6468: every {boardId: X} query decoded the whole collection).
+//
+// The expressions are built EXACTLY like Registry.indexesCreate builds its
+// expression indexes (_ferretdb_sjson->"field"), so SQLite can satisfy them from
+// an existing index: {_id: X} uses the unique _id index, and Mongo-level indexes
+// that WeKan declares (boardId, listId, ...) accelerate their fields too.
+//
+// Because Mongo equality {f: "x"} also matches documents where f is an ARRAY
+// containing "x", each non-_id condition keeps array values with an
+// index-friendly range arm: array JSON renders as "[...", so expr >= '[' AND
+// expr < '\' selects exactly the arrays, and the Go filter decides which of
+// them actually match. _id can never be an array, so it uses plain equality.
+func prepareWhereClause(filter *types.Document) (string, []any) {
+	if filter == nil || filter.Len() == 0 {
+		return "", nil
+	}
+
+	var conds []string
+	var args []any
+
+	for _, k := range filter.Keys() {
+		// dotted paths and operator expressions stay in the Go filter
+		if k == "" || strings.HasPrefix(k, "$") || strings.ContainsRune(k, '.') {
+			continue
+		}
+
+		v := must.NotFail(filter.Get(k))
+
+		switch val := v.(type) {
+		case string:
+			if !pushdownSafeString(val) {
+				continue
+			}
+		case types.ObjectID:
+			// hex-encoded by sjson; always byte-identical in both serializations
+		default:
+			continue
+		}
+
+		// the same expression Registry.indexesCreate indexes
+		expr := fmt.Sprintf(`%s->%s`, metadata.DefaultColumn, quoteJSONLabel(k))
+
+		if k == "_id" {
+			conds = append(conds, fmt.Sprintf(`%s = ?`, expr))
+		} else {
+			conds = append(conds, fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr))
+		}
+
+		args = append(args, string(must.NotFail(sjson.MarshalSingleValue(v))))
+	}
+
+	if len(conds) == 0 {
+		return "", nil
+	}
+
+	return ` WHERE ` + strings.Join(conds, ` AND `), args
+}
+
+// quoteJSONLabel quotes a field name for the -> operator the same way
+// Registry.indexesCreate does (%q), so the WHERE expression text matches the
+// expression-index text and SQLite's index matcher can pair them up.
+func quoteJSONLabel(field string) string {
+	return fmt.Sprintf("%q", field)
 }
 
 // prepareOrderByClause returns ORDER BY clause for given sort document.

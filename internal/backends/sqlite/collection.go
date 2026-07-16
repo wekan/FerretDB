@@ -67,19 +67,11 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 
 	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
 
-	var whereClause string
-	var args []any
-
-	// that logic should exist in one place
-	// TODO https://github.com/FerretDB/FerretDB/issues/3235
-	if params.Filter.Len() == 1 {
-		v, _ := params.Filter.Get("_id")
-		switch v.(type) {
-		case string, types.ObjectID:
-			whereClause = fmt.Sprintf(` WHERE %s = ?`, metadata.IDColumn)
-			args = []any{string(must.NotFail(sjson.MarshalSingleValue(v)))}
-		}
-	}
+	// WeKan #6467/#6468: push the filter's top-level equality conditions down to
+	// SQLite (superset semantics; the Go filter stays authoritative). Previously
+	// only a bare {_id: X} filter was pushed down, so every other query decoded
+	// the WHOLE collection in Go on every Meteor poll.
+	whereClause, args := prepareWhereClause(params.Filter)
 
 	q += whereClause
 	q += prepareOrderByClause(params.Sort)
@@ -101,8 +93,16 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 
 // InsertAll implements backends.Collection interface.
 func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllParams) (*backends.InsertAllResult, error) {
-	if _, err := c.r.CollectionCreate(ctx, &metadata.CollectionCreateParams{DBName: c.dbName, Name: c.name}); err != nil {
-		return nil, lazyerrors.Error(err)
+	// WeKan #6467: only take the registry's GLOBAL write lock when the collection
+	// does not exist yet. CollectionCreate write-locks the whole registry even
+	// when it is a no-op, so previously EVERY insert (sessions, activities, login
+	// tokens, ...) stalled all concurrent readers' RLocks — a steady stream of
+	// small Meteor writes kept every polling query futex-waiting. CollectionCreate
+	// is idempotent, so two racing first inserts are still safe.
+	if c.r.CollectionGet(ctx, c.dbName, c.name) == nil {
+		if _, err := c.r.CollectionCreate(ctx, &metadata.CollectionCreateParams{DBName: c.dbName, Name: c.name}); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
 	}
 
 	db := c.r.DatabaseGetExisting(ctx, c.dbName)
@@ -269,21 +269,10 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 
 	selectClause := prepareSelectClause(meta.TableName, "", meta.Capped(), false)
 
-	var filterPushdown bool
-	var whereClause string
-	var args []any
-
-	// that logic should exist in one place
-	// TODO https://github.com/FerretDB/FerretDB/issues/3235
-	if params.Filter.Len() == 1 {
-		v, _ := params.Filter.Get("_id")
-		switch v.(type) {
-		case string, types.ObjectID:
-			filterPushdown = true
-			whereClause = fmt.Sprintf(` WHERE %s = ?`, metadata.IDColumn)
-			args = []any{string(must.NotFail(sjson.MarshalSingleValue(v)))}
-		}
-	}
+	// WeKan #6467/#6468: same pushdown as Query — top-level equality conditions
+	// (superset semantics; the Go filter stays authoritative).
+	whereClause, args := prepareWhereClause(params.Filter)
+	filterPushdown := whereClause != ""
 
 	orderByClause := prepareOrderByClause(params.Sort)
 	sortPushdown := orderByClause != ""

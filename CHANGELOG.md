@@ -2,6 +2,14 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming
+
+### New Features 🎉
+
+- SQLite backend: push top-level string/ObjectID equality filters down to SQLite as WHERE clauses (wekan/wekan#6467, wekan/wekan#6468). Previously only a bare `{_id: X}` filter was pushed down, so essentially every real query — e.g. WeKan's `{boardId: X}` on 53k cards — did `SELECT _ferretdb_sjson FROM <table>` over the WHOLE collection and decoded every row's sjson in Go, on every Meteor poll. The WHERE expressions are built exactly like the expression indexes that `Registry.indexesCreate` creates (`_ferretdb_sjson->"field"`), so `_id` lookups now use the unique `_id` index and Mongo-level secondary indexes accelerate their fields. Superset semantics are preserved (the in-Go filter stays authoritative): array containment matches are kept via an index-friendly range arm, and string values whose Go-JSON and SQLite serializations could differ (`<`, `>`, `&`, control characters, U+2028/U+2029) are not pushed down. Thanks to xet7.
+- SQLite backend: cap the per-database connection pool at `2×GOMAXPROCS` (min 4, max 16) instead of 100/100. Meteor opens ~100 sockets, and letting them all run concurrent SQLite scans thrashed the pure-Go SQLite (modernc) allocator/WAL mutexes and the Go GC — a reported 821k futex + 530k nanosleep syscalls per 30 s and 250–400% CPU with 1–2 real users (wekan/wekan#6467). Queueing excess queries in database/sql is far cheaper. Thanks to xet7.
+- SQLite backend: `InsertAll` no longer takes the registry's GLOBAL write lock when the collection already exists — `CollectionCreate` write-locked the whole registry even as a no-op, so every small Meteor write (sessions, activities, login tokens) stalled all concurrent readers (wekan/wekan#6467). Thanks to xet7.
+
 ## [v1.27.0](https://github.com/wekan/FerretDB/releases/tag/v1.27.0) (2026-07-12)
 
 ### New Features 🎉
