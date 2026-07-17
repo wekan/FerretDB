@@ -40,36 +40,7 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 		return nil, lazyerrors.Error(err)
 	}
 
-	db.SetConnMaxIdleTime(0)
-	db.SetConnMaxLifetime(0)
-
-	// WeKan #6467: was 100/100. Meteor opens ~100 sockets, and letting all of
-	// them run SQLite queries CONCURRENTLY meant dozens of simultaneous scans
-	// fighting over the pure-Go SQLite (modernc) allocator/WAL mutexes and the Go
-	// GC on small machines — hundreds of thousands of futex calls per second and
-	// 250-400% CPU with 1-2 real users. SQLite serves one writer at a time and
-	// only NumCPU readers make progress anyway; queueing excess queries in
-	// database/sql is far cheaper than mutex thrash. Keep it proportional to the
-	// machine, capped where contention starts to dominate.
-	conns := 2 * runtime.GOMAXPROCS(0)
-	if conns < 4 {
-		conns = 4
-	}
-
-	if conns > 16 {
-		conns = 16
-	}
-
-	db.SetMaxIdleConns(conns)
-	db.SetMaxOpenConns(conns)
-
-	// Each connection to in-memory database uses its own database.
-	// See https://www.sqlite.org/inmemorydb.html.
-	// We don't want that.
-	if memory {
-		db.SetMaxIdleConns(1)
-		db.SetMaxOpenConns(1)
-	}
+	configurePool(db, memory)
 
 	if err = db.Ping(); err != nil {
 		_ = db.Close()
@@ -92,4 +63,57 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 	}
 
 	return fsql.WrapDB(db, name, l), nil
+}
+
+// idleConnLimit returns how many connections are kept WARM (idle) for a
+// SQLite-backed database, given GOMAXPROCS.
+//
+// WeKan #6467: together with the #6468 filter pushdown — which turned WeKan's
+// queries from whole-collection scans into indexed lookups — bounding the warm
+// set is what keeps the pure-Go SQLite (modernc) allocator/WAL mutexes and the
+// Go GC from thrashing (the reported 821k futex + 530k nanosleep syscalls per
+// 30s and 250-400% CPU with 1-2 real users). Proportional to the machine, with
+// a floor of 4 (small machines still get a usable pool) and a cap of 16 (where
+// contention starts to dominate). Non-positive GOMAXPROCS yields the floor.
+func idleConnLimit(gomaxprocs int) int {
+	idle := 2 * gomaxprocs
+
+	if idle < 4 {
+		idle = 4
+	}
+
+	if idle > 16 {
+		idle = 16
+	}
+
+	return idle
+}
+
+// configurePool applies the connection-pool limits to a SQLite-backed database.
+// Split out from openDB so the limits can be unit-tested.
+func configurePool(db *sql.DB, memory bool) {
+	db.SetConnMaxIdleTime(0)
+	db.SetConnMaxLifetime(0)
+
+	db.SetMaxIdleConns(idleConnLimit(runtime.GOMAXPROCS(0)))
+
+	// WeKan #6467/#6469: do NOT cap the number of connections that may be OPEN at
+	// once (an earlier fix set both idle and open to <=16, which regressed).
+	// Meteor keeps a server-side find cursor open between getMore round-trips, and
+	// each open cursor PINS one pooled connection for its entire lifetime. With a
+	// small open cap a handful of parked Meteor cursors exhausted the pool, so
+	// every other query — login-token lookups, board loads — blocked waiting for a
+	// free connection for minutes and logins failed with "Must be logged in".
+	// Leaving MaxOpenConns unlimited means connection checkout never starves;
+	// SQLite still serialises writers itself, and steady-state warm connections
+	// stay bounded by SetMaxIdleConns above.
+	db.SetMaxOpenConns(0)
+
+	// Each connection to in-memory database uses its own database.
+	// See https://www.sqlite.org/inmemorydb.html.
+	// We don't want that.
+	if memory {
+		db.SetMaxIdleConns(1)
+		db.SetMaxOpenConns(1)
+	}
 }

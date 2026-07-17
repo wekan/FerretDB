@@ -2,6 +2,16 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming
+
+### Fixed 🐛
+
+- SQLite backend: stop the connection pool from starving under WeKan's cursor load (wekan/wekan#6467, wekan/wekan#6469). The v1.28.0 CPU fix capped BOTH `MaxIdleConns` and `MaxOpenConns` at `2×GOMAXPROCS` (min 4, max 16). That was wrong for `MaxOpenConns`: Meteor keeps a server-side `find` cursor open between `getMore` round-trips, and in FerretDB each open cursor PINS one pooled connection for its entire lifetime. So a handful of parked Meteor cursors exhausted a 16-connection pool, and every other query — login-token lookups, board loads — then blocked waiting for a free connection. Operators saw boards take *minutes* to load and logins fail with *"Must be logged in"* even though CPU was back to normal (the #6468 pushdown had fixed that). `MaxOpenConns` is now left UNLIMITED so connection checkout never starves; SQLite still serialises writers itself, and the anti-thrash benefit is preserved by keeping only a small set of connections WARM via `MaxIdleConns` (still `2×GOMAXPROCS`, min 4, max 16) — which, together with the #6468 filter pushdown that turned WeKan's whole-collection scans into indexed lookups, is what actually keeps the pure-Go SQLite (modernc) allocator/WAL mutexes and the Go GC from thrashing. The in-memory backend is unchanged (still pinned to a single connection, as each in-memory connection is its own database) by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- Add Go tests, with negative cases, for the connection-pool limits (`internal/backends/sqlite/metadata/pool/opendb_test.go`). The pool sizing was extracted into `idleConnLimit(gomaxprocs)` and `configurePool(db, memory)` so it is unit-testable. `TestIdleConnLimit` pins the warm-pool sizing (proportional to `GOMAXPROCS`, floor 4, cap 16, and — negative cases — a non-positive `GOMAXPROCS` never yields less than 4, which would deadlock every query). `TestConfigurePoolDoesNotStarveCheckout` is the #6467/#6469 regression guard: it asserts `MaxOpenConnections == 0` (unlimited) and, behaviourally, checks out 32 connections simultaneously (double the old cap) and requires every checkout to succeed — with the regressed cap of 16 the 17th would block until the deadline. `TestConfigurePoolMemoryIsSingleConn` keeps the in-memory single-connection contract. Verified with Go 1.25.11: `go build ./internal/...` and `go vet ./internal/backends/sqlite/...` are clean and the full `internal/backends/sqlite/metadata/pool` suite passes by @xet7. Thanks to xet7.
+
 ## [v1.29.0](https://github.com/wekan/FerretDB/releases/tag/v1.29.0) (2026-07-17)
 
 ### New Features 🎉
