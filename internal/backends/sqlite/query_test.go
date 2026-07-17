@@ -17,6 +17,7 @@ package sqlite
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 
@@ -114,6 +115,9 @@ func TestPrepareWhereClause(t *testing.T) {
 	}
 	arrayArm := func(field string) string {
 		return fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr(field))
+	}
+	scalarExpr := func(field string) string {
+		return fmt.Sprintf(`%s->>%q`, metadata.DefaultColumn, field)
 	}
 
 	objectID := types.ObjectID{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c}
@@ -235,10 +239,31 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("title",
 				must.NotFail(types.NewDocument("$regex", "foo bar", "$options", "x")))),
 		},
-		"RangeNotPushed": {
-			// $lte on JSON text has the wrong ordering for numbers/dates; stays in Go.
-			filter: must.NotFail(types.NewDocument("dueAt",
+		// --- numeric/date range (WeKan's date filters), pushed via ->> ---
+		"RangeLtePushed": {
+			filter: must.NotFail(types.NewDocument("count",
 				must.NotFail(types.NewDocument("$lte", int64(100))))),
+			expectWhere: ` WHERE ` + scalarExpr("count") + ` <= ?`,
+			expectArgs:  []any{int64(100)},
+		},
+		"RangeDatePushed": {
+			// a date bound is compared as its Unix-millis (how sjson stores dates).
+			filter: must.NotFail(types.NewDocument("dueAt",
+				must.NotFail(types.NewDocument("$lte", time.UnixMilli(1700))))),
+			expectWhere: ` WHERE ` + scalarExpr("dueAt") + ` <= ?`,
+			expectArgs:  []any{int64(1700)},
+		},
+		"RangeBetweenPushed": {
+			// week filter shape {$gte: A, $lte: B}: both arms ANDed.
+			filter: must.NotFail(types.NewDocument("dueAt",
+				must.NotFail(types.NewDocument("$gte", int64(10), "$lte", int64(20))))),
+			expectWhere: ` WHERE (` + scalarExpr("dueAt") + ` >= ? AND ` + scalarExpr("dueAt") + ` <= ?)`,
+			expectArgs:  []any{int64(10), int64(20)},
+		},
+		"RangeStringBoundNotPushed": {
+			// string ranges have collation/serialization subtleties; stay in Go.
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$gt", "abc")))),
 		},
 	} {
 		name, tc := name, tc

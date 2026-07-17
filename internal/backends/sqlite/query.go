@@ -17,6 +17,7 @@ package sqlite
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata"
 	"github.com/FerretDB/FerretDB/internal/handler/sjson"
@@ -228,8 +229,6 @@ func operatorCondition(expr, key string, doc *types.Document) (string, []any, bo
 			pattern = p
 		case types.Regex:
 			pattern, options = p.Pattern, p.Options
-		default:
-			return "", nil, false
 		}
 
 		if optAny, err := doc.Get("$options"); err == nil {
@@ -238,10 +237,81 @@ func operatorCondition(expr, key string, doc *types.Document) (string, []any, bo
 			}
 		}
 
-		return regexCondition(expr, pattern, options)
+		if cond, condArgs, ok := regexCondition(expr, pattern, options); ok {
+			return cond, condArgs, true
+		}
 	}
 
-	return "", nil, false
+	// numeric/date range operators, extracted with ->> (see rangeConditions).
+	scalarExpr := fmt.Sprintf(`%s->>%s`, metadata.DefaultColumn, quoteJSONLabel(key))
+
+	return rangeConditions(scalarExpr, doc)
+}
+
+// rangeConditions pushes numeric/date range operators ($gt/$gte/$lt/$lte) using
+// the ->> (SQL value) accessor, so SQLite compares the extracted number
+// NUMERICALLY. The -> JSON-text accessor used for equality would compare
+// lexically ("10" < "9"), which is wrong for numbers and dates — which is
+// exactly why range was NOT pushed before. sjson stores int32/int64, doubles and
+// dates all as JSON numbers (a date as its Unix-millis), so ->> yields a
+// comparable value; a null/missing/string field yields NULL or a non-numeric
+// that the comparison excludes — matching Mongo's type-bracketed $lt/$gt, and the
+// Go filter stays authoritative regardless. Only NUMBER/DATE bounds are pushed;
+// string ranges (collation/serialization subtleties) stay in Go.
+func rangeConditions(scalarExpr string, doc *types.Document) (string, []any, bool) {
+	ops := [...]struct{ key, sqlOp string }{
+		{"$gt", ">"},
+		{"$gte", ">="},
+		{"$lt", "<"},
+		{"$lte", "<="},
+	}
+
+	var parts []string
+
+	var args []any
+
+	for _, op := range ops {
+		val, err := doc.Get(op.key)
+		if err != nil {
+			continue
+		}
+
+		arg, ok := numericBound(val)
+		if !ok {
+			continue
+		}
+
+		parts = append(parts, fmt.Sprintf(`%s %s ?`, scalarExpr, op.sqlOp))
+		args = append(args, arg)
+	}
+
+	switch len(parts) {
+	case 0:
+		return "", nil, false
+	case 1:
+		return parts[0], args, true
+	default:
+		// e.g. a week filter {$gte: A, $lte: B}: both arms ANDed.
+		return "(" + strings.Join(parts, " AND ") + ")", args, true
+	}
+}
+
+// numericBound returns the SQL argument for a range bound that can be compared
+// numerically by ->>, or ok=false for a non-number/date bound (left to Go). A
+// date is compared as its Unix-millis, matching how sjson stores it.
+func numericBound(v any) (any, bool) {
+	switch n := v.(type) {
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return n, true
+	case time.Time:
+		return n.UnixMilli(), true
+	default:
+		return nil, false
+	}
 }
 
 // inCondition pushes {field: {$in: [...]}} only when EVERY element is a
