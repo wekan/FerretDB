@@ -94,6 +94,67 @@ func TestCreateDrop(t *testing.T) {
 	testCollection(t, ctx, r, db, dbName, collectionName)
 }
 
+// TestCollectionCreateAdoptsOrphanTable is the regression test for WeKan #6476:
+// collectionCreate must ADOPT a physical table that exists on disk but whose
+// metadata row is gone (an orphan left by an interrupted migration or a crash),
+// instead of failing with `table "<db>.<coll>_<hash>" already exists`. That
+// error, raised from an upsert's CreateCollection, surfaced as an
+// unhandledRejection in WeKan's SyncedCron and crash-looped the server so its web
+// port never stayed open.
+func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	dbName := testutil.DatabaseName(t)
+
+	db, err := r.DatabaseGetOrCreate(ctx, dbName)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	collectionName := testutil.CollectionName(t)
+
+	// Create normally: physical table + metadata row + in-memory registration.
+	created, err := r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	c := r.CollectionGet(ctx, dbName, collectionName)
+	require.NotNil(t, c)
+	tableName := c.TableName
+
+	// Orphan the table: drop its metadata row and forget it in memory, but leave
+	// the physical table on disk — exactly the desync that #6476 hit.
+	_, err = db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %q WHERE table_name = ?", metadataTableName), tableName)
+	require.NoError(t, err)
+
+	r.rw.Lock()
+	delete(r.colls[dbName], collectionName)
+	r.rw.Unlock()
+
+	require.Nil(t, r.CollectionGet(ctx, dbName, collectionName), "collection must look absent after orphaning")
+
+	// Re-creating it (as an upsert's CreateCollection does) must SUCCEED by
+	// adopting the orphaned table, not error with "table already exists".
+	created, err = r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
+	require.NoError(t, err, "collectionCreate must adopt an orphaned physical table, not fail on it")
+	require.True(t, created)
+
+	c = r.CollectionGet(ctx, dbName, collectionName)
+	require.NotNil(t, c, "collection must be registered again")
+	require.Equal(t, tableName, c.TableName, "must re-adopt the SAME deterministic table")
+
+	// And the adopted collection must be usable (insert + read back).
+	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (%s) VALUES (?)", tableName, DefaultColumn), `{"_id":"x"}`)
+	require.NoError(t, err)
+}
+
 func TestCreateDropStress(t *testing.T) {
 	// Otherwise, the test might fail with "database schema has changed".
 	// That error code is SQLITE_SCHEMA (17).
