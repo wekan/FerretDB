@@ -180,6 +180,66 @@ func TestPrepareWhereClause(t *testing.T) {
 			// pushed comparison would wrongly exclude the matching document.
 			filter: must.NotFail(types.NewDocument("title", "a<b")),
 		},
+
+		// --- $in (WeKan's label filter {labelIds: {$in: [...]}}) ---
+		"InPushedNonID": {
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("l1", "l2")))))),
+			expectWhere: ` WHERE ` + fmt.Sprintf(
+				`(%[1]s IN (?, ?) OR (%[1]s >= '[' AND %[1]s < '\'))`, expr("labelIds")),
+			expectArgs: []any{`"l1"`, `"l2"`},
+		},
+		"InPushedID": {
+			filter: must.NotFail(types.NewDocument("_id",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
+			expectWhere: ` WHERE ` + expr("_id") + ` IN (?, ?)`,
+			expectArgs:  []any{`"a"`, `"b"`},
+		},
+		"InEmptyNotPushed": {
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray()))))),
+		},
+		"InUnsafeElementNotPushed": {
+			// a non-string element: dropping it would make IN a SUBSET, so nothing
+			// is pushed and the Go filter stays authoritative.
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("l1", int64(5))))))),
+		},
+		"InUnsafeStringNotPushed": {
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a<b")))))),
+		},
+
+		// --- $regex (WeKan's card-title filter {title: {$regex: text, $options: 'i'}}) ---
+		"RegexLiteralPushed": {
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$regex", "foo", "$options", "i")))),
+			expectWhere: ` WHERE ` + expr("title") + ` LIKE ?`,
+			expectArgs:  []any{`%foo%`},
+		},
+		"RegexLiteralWithSpacePushed": {
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$regex", "foo bar")))),
+			expectWhere: ` WHERE ` + expr("title") + ` LIKE ?`,
+			expectArgs:  []any{`%foo bar%`},
+		},
+		"RegexMetacharNotPushed": {
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$regex", "foo.*bar")))),
+		},
+		"RegexNonASCIINotPushed": {
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$regex", "café", "$options", "i")))),
+		},
+		"RegexExtendedOptionNotPushed": {
+			filter: must.NotFail(types.NewDocument("title",
+				must.NotFail(types.NewDocument("$regex", "foo bar", "$options", "x")))),
+		},
+		"RangeNotPushed": {
+			// $lte on JSON text has the wrong ordering for numbers/dates; stays in Go.
+			filter: must.NotFail(types.NewDocument("dueAt",
+				must.NotFail(types.NewDocument("$lte", int64(100))))),
+		},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {

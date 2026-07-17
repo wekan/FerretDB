@@ -64,6 +64,37 @@ func pushdownSafeString(s string) bool {
 	return true
 }
 
+// pushdownSafeLiteralSubstring reports whether s can be pushed to SQLite as a
+// LIKE substring for a `$regex` filter (WeKan #6467/#6468 follow-up: "Filter by
+// card title"). It must be a plain, ASCII, case-fold-safe LITERAL:
+//   - non-empty and all ASCII: SQLite's LIKE folds case only for ASCII A-Z, so
+//     for an ASCII literal `LIKE` is a correct SUPERSET of a case-insensitive Go
+//     regex; a non-ASCII literal could make LIKE MISS a match the Go 'i' regex
+//     keeps (\u00e9/\u00c9), which would drop a card \u2014 never allowed.
+//   - no regex metacharacters (so the literal means itself, not a pattern), and
+//   - no LIKE wildcards `%`/`_` (so we need no ESCAPE clause), and
+//   - pushdownSafeString (so the -> JSON serialization is byte-identical).
+// The Go filter still re-applies the real regex, so this only ever prunes rows
+// SQLite can prove cannot match \u2014 never the authority on what does.
+func pushdownSafeLiteralSubstring(s string) bool {
+	if s == "" {
+		return false
+	}
+
+	for _, r := range s {
+		if r > 0x7f {
+			return false
+		}
+
+		switch r {
+		case '.', '^', '$', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|', '\\', '%', '_':
+			return false
+		}
+	}
+
+	return pushdownSafeString(s)
+}
+
 // prepareWhereClause builds a WHERE clause selecting a SUPERSET of the documents
 // matching the given filter, from the filter's top-level string/ObjectID
 // equality conditions. Exact filtering still happens in Go afterwards
@@ -91,34 +122,20 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	var args []any
 
 	for _, k := range filter.Keys() {
-		// dotted paths and operator expressions stay in the Go filter
+		// dotted paths and $-operator top-level keys (e.g. $or) stay in the Go filter
 		if k == "" || strings.HasPrefix(k, "$") || strings.ContainsRune(k, '.') {
 			continue
 		}
 
 		v := must.NotFail(filter.Get(k))
 
-		switch val := v.(type) {
-		case string:
-			if !pushdownSafeString(val) {
-				continue
-			}
-		case types.ObjectID:
-			// hex-encoded by sjson; always byte-identical in both serializations
-		default:
-			continue
-		}
-
 		// the same expression Registry.indexesCreate indexes
 		expr := fmt.Sprintf(`%s->%s`, metadata.DefaultColumn, quoteJSONLabel(k))
 
-		if k == "_id" {
-			conds = append(conds, fmt.Sprintf(`%s = ?`, expr))
-		} else {
-			conds = append(conds, fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr))
+		if cond, condArgs, ok := pushdownFieldCondition(expr, k, v); ok {
+			conds = append(conds, cond)
+			args = append(args, condArgs...)
 		}
-
-		args = append(args, string(must.NotFail(sjson.MarshalSingleValue(v))))
 	}
 
 	if len(conds) == 0 {
@@ -126,6 +143,143 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	}
 
 	return ` WHERE ` + strings.Join(conds, ` AND `), args
+}
+
+// pushdownFieldCondition returns a WHERE condition (and its args) selecting a
+// SUPERSET of the documents matching {key: v}, or ok=false when v cannot be
+// pushed down (the Go filter then stays the sole authority for that field).
+//
+// Handled: scalar string/ObjectID equality, {$in: [...safe...]} (WeKan's label
+// filter) and {$regex: literal} (WeKan's card-title filter). Everything else —
+// ranges ($gt/$lte/…, unsafe on JSON-text ordering), $ne, non-ASCII or
+// non-literal regex, unsafe values — stays in Go.
+func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {
+	switch val := v.(type) {
+	case string:
+		if !pushdownSafeString(val) {
+			return "", nil, false
+		}
+
+		return equalityCondition(expr, key), []any{marshalPushdownValue(v)}, true
+
+	case types.ObjectID:
+		// hex-encoded by sjson; always byte-identical in both serializations
+		return equalityCondition(expr, key), []any{marshalPushdownValue(v)}, true
+
+	case types.Regex:
+		return regexCondition(expr, val.Pattern, val.Options)
+
+	case *types.Document:
+		return operatorCondition(expr, key, val)
+
+	default:
+		return "", nil, false
+	}
+}
+
+// marshalPushdownValue renders a value the same way it is stored, so a compared
+// -> expression matches byte-for-byte.
+func marshalPushdownValue(v any) any {
+	return string(must.NotFail(sjson.MarshalSingleValue(v)))
+}
+
+// equalityCondition matches {field: scalar}. Mongo equality on a non-_id field
+// also matches an ARRAY containing the value, so keep an index-friendly arm for
+// array values (array JSON starts with '['); _id is never an array.
+func equalityCondition(expr, key string) string {
+	if key == "_id" {
+		return fmt.Sprintf(`%s = ?`, expr)
+	}
+
+	return fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr)
+}
+
+// regexCondition pushes a plain literal {$regex} as a LIKE substring. LIKE on the
+// stored JSON text matches a substring anywhere (including inside a string array,
+// which the Go filter re-checks), and LIKE's ASCII case-insensitivity is a
+// superset of a case-insensitive regex for an ASCII literal. `x` options
+// (extended: whitespace changes meaning) are not pushed.
+func regexCondition(expr, pattern, options string) (string, []any, bool) {
+	if strings.ContainsRune(options, 'x') || !pushdownSafeLiteralSubstring(pattern) {
+		return "", nil, false
+	}
+
+	return fmt.Sprintf(`%s LIKE ?`, expr), []any{"%" + pattern + "%"}, true
+}
+
+// operatorCondition pushes {field: {$in: [...]}} / {field: {$regex: ...}} from an
+// operator expression. All operators in a field expression are ANDed, so pushing
+// a SUPERSET of any ONE of them is a valid superset of the whole expression —
+// coexisting operators ($ne, $nin, $options, …) do not make this unsafe.
+func operatorCondition(expr, key string, doc *types.Document) (string, []any, bool) {
+	if inAny, err := doc.Get("$in"); err == nil {
+		if arr, ok := inAny.(*types.Array); ok {
+			if cond, condArgs, ok := inCondition(expr, key, arr); ok {
+				return cond, condArgs, true
+			}
+		}
+	}
+
+	if reAny, err := doc.Get("$regex"); err == nil {
+		var pattern, options string
+
+		switch p := reAny.(type) {
+		case string:
+			pattern = p
+		case types.Regex:
+			pattern, options = p.Pattern, p.Options
+		default:
+			return "", nil, false
+		}
+
+		if optAny, err := doc.Get("$options"); err == nil {
+			if o, ok := optAny.(string); ok {
+				options = o
+			}
+		}
+
+		return regexCondition(expr, pattern, options)
+	}
+
+	return "", nil, false
+}
+
+// inCondition pushes {field: {$in: [...]}} only when EVERY element is a
+// pushdown-safe string or ObjectID — dropping any element would make IN a
+// SUBSET, not a superset, so it is all-or-nothing. Keeps the array-containment
+// arm for non-_id fields, exactly like equality.
+func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
+	if arr.Len() == 0 {
+		return "", nil, false
+	}
+
+	placeholders := make([]string, 0, arr.Len())
+	condArgs := make([]any, 0, arr.Len())
+
+	for i := 0; i < arr.Len(); i++ {
+		e := must.NotFail(arr.Get(i))
+
+		switch ev := e.(type) {
+		case string:
+			if !pushdownSafeString(ev) {
+				return "", nil, false
+			}
+		case types.ObjectID:
+		default:
+			return "", nil, false
+		}
+
+		placeholders = append(placeholders, "?")
+		condArgs = append(condArgs, marshalPushdownValue(e))
+	}
+
+	in := strings.Join(placeholders, ", ")
+
+	if key == "_id" {
+		return fmt.Sprintf(`%s IN (%s)`, expr, in), condArgs, true
+	}
+
+	return fmt.Sprintf(`(%[1]s IN (%[2]s) OR (%[1]s >= '[' AND %[1]s < '\'))`, expr, in), condArgs, true
 }
 
 // quoteJSONLabel quotes a field name for the -> operator the same way
