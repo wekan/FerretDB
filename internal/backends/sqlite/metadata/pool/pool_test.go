@@ -263,7 +263,7 @@ func TestDefaults(t *testing.T) {
 		"SELECT sqlite_version()":   "3.53.2",
 		"SELECT sqlite_source_id()": "2026-06-03 19:12:13 d6e03d8c777cfa2d35e3b60d8ec3e0187f3e9f99d8e2ee9cac695fd6fcdf1a24",
 		"PRAGMA auto_vacuum":        "0",
-		"PRAGMA busy_timeout":       "10000",
+		"PRAGMA busy_timeout":       "30000",
 		"PRAGMA encoding":           "UTF-8",
 		"PRAGMA journal_mode":       "wal",
 		"PRAGMA locking_mode":       "normal",
