@@ -8,6 +8,10 @@
 
 - SQLite backend: raise the default `busy_timeout` from 10s to 30s (wekan/wekan#6480). Under a heavy concurrent write load — e.g. a large WeKan 6.09 → v1 migration inserting hundreds of thousands of cards/activities while users log in — a login's `UPDATE` (WeKan's `login` method → collection2 `updateDocument` → the SQLite backend `UpdateAll`, which wraps its writes in `InTransaction`/`BeginTx`) could not acquire the single SQLite write lock within 10s and failed with `SQLITE_BUSY` ("database is locked (5)"), so **Sign In did nothing** and the same error appeared in the log/login screen. The error code is plain `SQLITE_BUSY (5)`, not an un-retryable snapshot conflict, so the busy handler simply ran out of time; FerretDB deliberately relies on `busy_timeout` rather than explicit retry loops (see `internal/backends/sqlite/sqlite.go`), so it is now given more room (30s) to let a contended write through instead of aborting. An operator-supplied `busy_timeout` `_pragma` still wins, and `SetMaxOpenConns(0)` (unlimited) means the longer wait cannot starve the connection pool. Docs (`website/docs/configuration/flags.md`) and the `parseURI` table tests updated to match by @xet7. Thanks to uusijani and xet7.
 
+### Other Changes 🤖
+
+- `build.sh`: add a "Release FerretDB" menu option (option 15, also `./build.sh release-ferretdb`). It first asks whether the newest version was added to `CHANGELOG.md` and, if not, exits with a reminder to update it; otherwise it asks for the new version number (e.g. `1.31`) and then commits everything, tags it `v<version>.0` and pushes the branch and the tag — `git add --all` → `git commit -m "vX.Y.0"` → `git push` → `git tag -a "vX.Y.0"` → `git push origin "vX.Y.0"` → `git push` — so cutting a release is a single guided menu step by @xet7. Thanks to xet7.
+
 ## [v1.31.0](https://github.com/wekan/FerretDB/releases/tag/v1.31.0) (2026-07-17)
 
 ### Fixed 🐛
