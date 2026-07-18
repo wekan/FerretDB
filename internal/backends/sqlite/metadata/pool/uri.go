@@ -101,8 +101,15 @@ func setDefaultValues(values url.Values) {
 
 	// the order is important: busy handler must be set before WAL is enabled
 
+	// 30s (was 10s): under a heavy concurrent write load — e.g. a large 6.09 ->
+	// v1 migration inserting hundreds of thousands of cards/activities while users
+	// log in — a login's UPDATE could not get the write lock within 10s and failed
+	// with SQLITE_BUSY ("database is locked (5)"), so Sign In did nothing (#6480).
+	// FerretDB relies on busy_timeout instead of explicit retries (see sqlite.go),
+	// so give the busy handler more room to let contended writes through. An
+	// operator-supplied busy_timeout _pragma still wins.
 	if !busyTimeout {
-		values.Add("_pragma", "busy_timeout(10000)")
+		values.Add("_pragma", "busy_timeout(30000)")
 	}
 
 	if !journalMode {
