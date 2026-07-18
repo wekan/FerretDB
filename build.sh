@@ -10,7 +10,7 @@
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
 #   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
-#   ./build.sh release-ferretdb        # confirm CHANGELOG, enter version, commit all + tag vX.Y.0 + push
+#   ./build.sh release-ferretdb        # confirm CHANGELOG, read version from its top, commit all + tag + push
 #   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
@@ -411,9 +411,10 @@ act_release_docker() {
   trigger_workflow docker.yml "$version"
 }
 
-# "Release FerretDB": after confirming CHANGELOG.md is up to date, ask for the
-# new version (e.g. 1.31), then commit everything, tag it v<version>.0 and push
-# the branch and the tag. Exits the script when done (or if CHANGELOG isn't ready).
+# "Release FerretDB": after confirming CHANGELOG.md is up to date, read the new
+# version from the top of CHANGELOG.md (the first "## [vX.Y.Z]" heading), then
+# commit everything, tag it with that version and push the branch and the tag.
+# Exits the script when done (or if CHANGELOG isn't ready / has no version).
 act_release_ferretdb() {
   printf "Did you newest version to CHANGELOG.md  (y/n) ? "
   read -r ans
@@ -422,18 +423,22 @@ act_release_ferretdb() {
     *) printf '%s\n' "Please first update CHANGELOG.md . Thanks !"; exit 0 ;;
   esac
 
-  printf "What is new version number, for example 1.31 ? "
-  read -r ver
-  if [ -z "$ver" ]; then
-    err "No version given. Aborting."
+  # Read the newest release version straight from the top of CHANGELOG.md — the
+  # first "## [vX.Y.Z] ..." heading — instead of asking for it.
+  local version
+  version="$(grep -m1 -oE '^##[[:space:]]+\[?v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md 2>/dev/null \
+             | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+  if [ -z "$version" ]; then
+    err "Could not read a version (vX.Y.Z) from the top of CHANGELOG.md. Aborting."
     exit 1
   fi
+  info "Releasing $version (read from CHANGELOG.md)"
 
   git add --all
-  git commit -m "v${ver}.0"
+  git commit -m "$version"
   git push
-  git tag -a "v${ver}.0" -m "v${ver}.0"
-  git push origin "v${ver}.0"
+  git tag -a "$version" -m "$version"
+  git push origin "$version"
   git push
   exit 0
 }
@@ -459,8 +464,8 @@ menu() {
                                     binaries + publish GitHub Release w/ notes)
  14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
                                     release binaries -> Docker Hub, Quay.io, GHCR)
- 15) Release FerretDB             (confirm CHANGELOG, enter version, then
-                                    commit all + tag vX.Y.0 + push)
+ 15) Release FerretDB             (confirm CHANGELOG, read version from its top,
+                                    then commit all + tag vX.Y.Z + push)
   g) Show / install Go toolchain
   0) Exit
 EOF

@@ -10,7 +10,7 @@
 
 ### Other Changes 🤖
 
-- `build.sh`: add a "Release FerretDB" menu option (option 15, also `./build.sh release-ferretdb`). It first asks whether the newest version was added to `CHANGELOG.md` and, if not, exits with a reminder to update it; otherwise it asks for the new version number (e.g. `1.31`) and then commits everything, tags it `v<version>.0` and pushes the branch and the tag — `git add --all` → `git commit -m "vX.Y.0"` → `git push` → `git tag -a "vX.Y.0"` → `git push origin "vX.Y.0"` → `git push` — so cutting a release is a single guided menu step by @xet7. Thanks to xet7.
+- `build.sh`: add a "Release FerretDB" menu option (option 15, also `./build.sh release-ferretdb`). It first asks whether the newest version was added to `CHANGELOG.md` and, if not, exits with a reminder to update it; otherwise it reads the new version straight from the top of `CHANGELOG.md` (the first `## [vX.Y.Z]` heading — no version prompt) and then commits everything, tags it with that version and pushes the branch and the tag — `git add --all` → `git commit -m "vX.Y.Z"` → `git push` → `git tag -a "vX.Y.Z"` → `git push origin "vX.Y.Z"` → `git push` — so cutting a release is a single guided menu step by @xet7. Thanks to xet7.
 
 ## [v1.31.0](https://github.com/wekan/FerretDB/releases/tag/v1.31.0) (2026-07-17)
 
