@@ -10,6 +10,7 @@
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
 #   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
+#   ./build.sh release-ferretdb        # confirm CHANGELOG, enter version, commit all + tag vX.Y.0 + push
 #   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
@@ -410,6 +411,33 @@ act_release_docker() {
   trigger_workflow docker.yml "$version"
 }
 
+# "Release FerretDB": after confirming CHANGELOG.md is up to date, ask for the
+# new version (e.g. 1.31), then commit everything, tag it v<version>.0 and push
+# the branch and the tag. Exits the script when done (or if CHANGELOG isn't ready).
+act_release_ferretdb() {
+  printf "Did you newest version to CHANGELOG.md  (y/n) ? "
+  read -r ans
+  case "${ans:-}" in
+    [yY]*) ;;
+    *) printf '%s\n' "Please first update CHANGELOG.md . Thanks !"; exit 0 ;;
+  esac
+
+  printf "What is new version number, for example 1.31 ? "
+  read -r ver
+  if [ -z "$ver" ]; then
+    err "No version given. Aborting."
+    exit 1
+  fi
+
+  git add --all
+  git commit -m "v${ver}.0"
+  git push
+  git tag -a "v${ver}.0" -m "v${ver}.0"
+  git push origin "v${ver}.0"
+  git push
+  exit 0
+}
+
 # ---- menu ----------------------------------------------------------------
 menu() {
   while true; do
@@ -431,6 +459,8 @@ menu() {
                                     binaries + publish GitHub Release w/ notes)
  14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
                                     release binaries -> Docker Hub, Quay.io, GHCR)
+ 15) Release FerretDB             (confirm CHANGELOG, enter version, then
+                                    commit all + tag vX.Y.0 + push)
   g) Show / install Go toolchain
   0) Exit
 EOF
@@ -453,6 +483,7 @@ EOF
       12) act_dist par ;;
       13) act_release ;;
       14) act_release_docker ;;
+      15) act_release_ferretdb ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -471,6 +502,7 @@ case "${1:-}" in
   dist-par)   act_dist par ;;
   release)    shift; act_release "${1:-}" ;;
   docker-release) shift; act_release_docker "${1:-}" ;;
+  release-ferretdb) act_release_ferretdb ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
   test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
