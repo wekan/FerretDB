@@ -25,6 +25,298 @@ validated against the actual code on the `main-v1` and `main` branches (see
 
 ---
 
+## Contents
+
+1. [Introduction — what this fork does](#introduction--what-this-fork-does)
+2. [Where FerretDB info is visible in WeKan](#where-ferretdb-info-is-visible-in-wekan)
+3. [FerretDB CLI options](#ferretdb-cli-options)
+4. [FerretDB settings (SQLite pragmas + environment variables)](#ferretdb-settings-sqlite-pragmas--environment-variables)
+5. [Features & fixes added AFTER xet7 forked FerretDB](#features--fixes-added-after-xet7-forked-ferretdb)
+6. [Features & fixes already present BEFORE the fork](#features--fixes-already-present-before-the-fork)
+7. [Compatibility matrix](#compatibility-matrix) — the detailed capability-by-capability reference
+
+---
+
+## Introduction — what this fork does
+
+**wekan/FerretDB** (this repo, `main-v1` branch) is a fork of **upstream FerretDB
+v1.24.2** whose job is to let [WeKan](https://github.com/wekan/wekan) — a Meteor 3
+app written against MongoDB — run on a single, embedded, **zero-dependency**
+database. FerretDB is a Go server that speaks the **MongoDB wire protocol** and
+translates it to a real storage backend; this fork ships and tests the **SQLite
+backend**, so WeKan gets a "MongoDB" that is just one file on disk
+(`WRITABLE_PATH/files/db/`), with no separate `mongod` process, replica set, or
+tuning to run.
+
+On top of upstream v1.24.2 the fork adds the pieces WeKan actually needs and the
+performance/robustness fixes that surfaced running a real WeKan workload:
+a completed **OpLog + single-node replica-set handshake** (so Meteor tails
+changes instead of poll-and-diff), **SQLite performance pragmas + connection-pool
+sizing + filter pushdown**, **slow-query logging**, crash/migration robustness,
+a large **aggregation / query-operator build-out**, richer **index options**,
+**session/transaction compatibility commands**, **telemetry lockdown**, and the
+fork's own build/release/Docker tooling. Every WeKan platform that defaults to
+FerretDB — the **Snap**, **Sandstorm**, the **Docker** image/compose, and the
+prebuilt **bundle** (`releases/ferretdb/start-wekan.sh` / `.bat`) — launches this
+binary with `--repl-set-name=rs0` and points WeKan at it, with polling kept as an
+automatic fallback.
+
+This document is both a **roadmap** (the compatibility matrix at the end tracks
+v1-vs-v2 capability status) and a **reference**: where to see FerretDB info inside
+WeKan, the CLI options and settings, and exactly what the fork changed.
+
+---
+
+## Where FerretDB info is visible in WeKan
+
+**Admin Panel → Info (Version page)** — WeKan's `getStatistics()` method
+([`server/statistics.js`](https://github.com/wekan/wekan/blob/main/server/statistics.js))
+runs `buildInfo` / `serverStatus` against the database and Meteor internals and
+renders this table
+([`client/components/settings/informationBody.jade`](https://github.com/wekan/wekan/blob/main/client/components/settings/informationBody.jade)):
+
+| Row | For FerretDB it shows |
+|---|---|
+| Database type | `FerretDB` (detected from `buildInfo.ferretdbVersion`/`ferretdb`) |
+| MongoDB compatible version | the MongoDB wire version FerretDB reports (~5.0 / FCV 7.0) |
+| Database commit | `buildInfo.gitVersion` |
+| **FerretDB version** | e.g. `v1.24.2-<n>-g<sha>` (fork build), from `buildInfo.ferretdbVersion` |
+| **FerretDB commit** | the fork's git commit |
+| MongoDB storage engine | `SQLite` (the embedded backend) |
+| **MongoDB Oplog enabled** | `true` when Meteor has a live oplog handle, else `false` |
+| **Reactivity mode** | the driver actually LIVE now: `oplog` / `changeStreams` / `polling` |
+| **Reactivity order** | the configured `METEOR_REACTIVITY_ORDER` (what was requested) |
+| **DDP transport** | the configured `DDP_TRANSPORT` |
+
+Read together, **Reactivity mode** (live) next to **Reactivity order** (requested)
+tell you whether OpLog actually came up or fell back to polling.
+
+**Admin Panel → Problems → Speed / Tests** — WeKan's event-log subsystem
+([`models/eventLog.js`](https://github.com/wekan/wekan/blob/main/models/eventLog.js))
+records performance and self-check problems (including slow HTTP requests and
+database errors FerretDB reports back to WeKan) into the existing WeKan database
+and surfaces per-area counts with an acknowledge button.
+
+**FerretDB server logs** — FerretDB logs to its process output (Snap:
+`journalctl` for the `wekan.ferretdb` service; Docker: `docker logs`; Sandstorm:
+the grain log; bundle: the terminal). The fork defaults the log level to **error**
+(quiet) but always emits a `slow query: <statement>` **WARN** line for any SQL
+statement at or above `FERRETDB_SLOW_QUERY_THRESHOLD` (default 1s) — the single
+most useful signal for "everything is slow" investigations.
+
+---
+
+## FerretDB CLI options
+
+The `ferretdb` binary uses Kong with `kong.DefaultEnvars("FERRETDB")`, so almost
+every flag `--foo-bar` also reads the environment variable `FERRETDB_FOO_BAR`.
+Defined in [`cmd/ferretdb/main.go`](cmd/ferretdb/main.go). Commands: `run`
+(default, runs the server) and `ping` (ping a running instance).
+
+**General**
+
+| Flag | Env var | Default | Purpose |
+|---|---|---|---|
+| `--handler` | `FERRETDB_HANDLER` | `postgresql` (WeKan uses `sqlite`) | Storage backend handler |
+| `--mode` | `FERRETDB_MODE` | `normal` | Operation mode |
+| `--state-dir` | `FERRETDB_STATE_DIR` | `.` | Directory holding `state.json` (instance UUID); `-` disables |
+| `--repl-set-name` | `FERRETDB_REPL_SET_NAME` | `""` | **Replica-set name — enables the OpLog + replica-set handshake** (WeKan sets `rs0`) |
+| `--version` | (n/a) | — | Print version and exit |
+
+**Backend URL (one per handler)**
+
+| Flag | Env var | Default | Purpose |
+|---|---|---|---|
+| `--sqlite-url` | `FERRETDB_SQLITE_URL` | `file:data/` | SQLite data **directory** URI (`file:`; must end with `/`) |
+| `--postgresql-url` | `FERRETDB_POSTGRESQL_URL` | `postgres://127.0.0.1:5432/ferretdb` | PostgreSQL URL |
+| `--mysql-url` | `FERRETDB_MYSQL_URL` | `mysql://127.0.0.1:3306/ferretdb` | MySQL URL (beta) |
+| `--hana-url` | `FERRETDB_HANA_URL` | — | SAP HANA URL (experimental) |
+
+**Listen / network**
+
+| Flag | Env var | Default | Purpose |
+|---|---|---|---|
+| `--listen-addr` | `FERRETDB_LISTEN_ADDR` | `127.0.0.1:27017` | Listen TCP address |
+| `--listen-unix` | `FERRETDB_LISTEN_UNIX` | `""` | Listen Unix-socket path |
+| `--listen-tls` | `FERRETDB_LISTEN_TLS` | `""` | Listen TLS address |
+| `--listen-tls-cert-file` / `--listen-tls-key-file` / `--listen-tls-ca-file` | `FERRETDB_LISTEN_TLS_*` | `""` | TLS cert / key / CA files |
+| `--proxy-addr`, `--proxy-tls-*` | `FERRETDB_PROXY_*` | `""` | Proxy address + TLS (proxy/diff modes) |
+
+**Logging / telemetry / debug**
+
+| Flag | Env var | Default | Purpose |
+|---|---|---|---|
+| `--log-level` | `FERRETDB_LOG_LEVEL` | **`error`** (fork default; upstream `info`) | `DEBUG`/`INFO`/`WARN`/`ERROR` |
+| `--log-format` | `FERRETDB_LOG_FORMAT` | `console` | `console`/`text`/`json` |
+| `--log-uuid` / `--no-log-uuid` | `FERRETDB_LOG_UUID` | `false` | Add instance UUID to log lines |
+| `--telemetry` | `FERRETDB_TELEMETRY` | **`disable`** (fork default; reporter never started) | Basic telemetry on/off |
+| `--debug-addr` | `FERRETDB_DEBUG_ADDR` | `127.0.0.1:8088` | HTTP metrics/profiling/probes; `-` disables |
+| `--metrics-uuid` / `--no-metrics-uuid` | `FERRETDB_METRICS_UUID` | `false` | Add instance UUID to metrics |
+| `--otel-traces-url` | `FERRETDB_OTEL_TRACES_URL` | `""` | OpenTelemetry OTLP/HTTP traces endpoint |
+
+**Setup / auth** (`--setup-database` requires `--test-enable-new-auth`, and
+`--setup-database`+`--setup-username` must be used together):
+`--setup-database`, `--setup-username`, `--setup-password`, `--setup-timeout`
+(`30s`) — env `FERRETDB_SETUP_*`.
+
+**Experimental / test** (`FERRETDB_TEST_*`): `--test-enable-new-auth`,
+`--test-disable-pushdown`, `--test-enable-nested-pushdown`,
+`--test-capped-cleanup-interval` (`1m`), `--test-capped-cleanup-percentage`
+(`10`), `--test-batch-size` (`100`), `--test-max-bson-object-size-mi-b` (`16`),
+`--test-records-dir`, and the `--test-telemetry-*` group.
+
+---
+
+## FerretDB settings (SQLite pragmas + environment variables)
+
+**SQLite connection pragmas** — the fork applies these as DEFAULTS in
+[`internal/backends/sqlite/metadata/pool/uri.go`](internal/backends/sqlite/metadata/pool/uri.go)
+(`setDefaultValues`). Each is skipped if the operator already supplied a `_pragma`
+of the same name in `--sqlite-url` — an operator setting always wins.
+
+| Pragma | Value | Why |
+|---|---|---|
+| `busy_timeout` | `30000` (30 s) | Wait up to 30 s for a write lock instead of failing with `SQLITE_BUSY` (raised from upstream 10 s to survive heavy write load / big migrations) — #6480 |
+| `journal_mode` | `wal` | Write-Ahead Logging → concurrent readers + one writer |
+| `synchronous` | `normal` | Crash-safe under WAL; removes one `fsync` per commit (biggest write win) — #6480 |
+| `cache_size` | `-65536` | 64 MiB page cache per connection (KiB, negative) — hot pages stay in RAM — #6480 |
+| `mmap_size` | `268435456` | 256 MiB memory-mapped I/O — reads served from RAM — #6480 |
+| `temp_store` | `memory` | Sorts / temp indexes in RAM |
+| `auto_vacuum` | `none` | Disabled (upstream TODO #3612) |
+
+**Environment variables specific to the fork / to how WeKan runs it**
+
+| Env var | Default | Controls |
+|---|---|---|
+| `FERRETDB_REPL_SET_NAME` | `""` | Replica-set name; **set it (WeKan uses `rs0`) to auto-create `local.oplog.rs` and enable OpLog tailing** |
+| `FERRETDB_SLOW_QUERY_THRESHOLD` | `1s` | Log any SQL statement at/above this at WARN (`500ms`, `2s`, …); `0`/negative disables — fork addition (#6480), read in `internal/util/fsql/slow.go` |
+| `FERRETDB_TELEMETRY` / `DO_NOT_TRACK` | telemetry `disable` | Telemetry is off by default and the reporter loop is never started |
+| `FERRETDB_STATE_DIR` | `.` | Where `state.json` lives (Sandstorm points it at writable `/var`) |
+
+**On the WeKan side**, the OpLog is turned on per platform by
+`WEKAN_FERRETDB_OPLOG` (default `true`; set `false` to force polling only) and
+`WEKAN_FERRETDB_REPL_SET` (default `rs0`); WeKan then exports
+`MONGO_OPLOG_URL=mongodb://<host>/local?replicaSet=rs0` and
+`METEOR_REACTIVITY_ORDER=oplog,polling` (OpLog preferred, polling fallback).
+
+---
+
+## Features & fixes added AFTER xet7 forked FerretDB
+
+Fork point: **upstream FerretDB v1.24.2** (2025-05-27). Every CHANGELOG section
+from **v1.25.0** through the top **"Upcoming"** section is fork work by xet7 for
+WeKan (entries reference `wekan/wekan#NNNN`); the module path stays
+`github.com/FerretDB/FerretDB` and `wire` is pinned at v0.0.8 to match the
+v1.24.2 BSON API.
+
+**OpLog / replica set (so Meteor tails changes instead of polling)** — #6480, #6481
+- `ensureOplog`: auto-create the capped `local.oplog.rs` (128 MiB) at startup and
+  on `replSetInitiate` when `FERRETDB_REPL_SET_NAME` is set; makes "run with an
+  OpLog" the default.
+- `hello`/`isMaster` advertise the full single-node-primary identity (`me`,
+  `primary`, `secondary:false`, `setVersion`) so the driver's SDAM accepts the
+  server as PRIMARY.
+- New `replSetGetStatus` and `replSetGetConfig` commands (valid single-member
+  status/config); `replSetInitiate` compatibility no-op.
+
+**SQLite performance / stability** — #6467, #6469, #6480
+- Raise `busy_timeout` 10 s → 30 s (fixes `SQLITE_BUSY` on Sign In).
+- Connection pragmas as defaults: `synchronous(normal)`, `cache_size(-65536)`,
+  `mmap_size(256 MiB)`, `temp_store(memory)`.
+- Stop capping `MaxOpenConns` (parked Meteor cursors each pin a connection);
+  cap the per-DB pool at 2×GOMAXPROCS (min 4, max 16) instead of 100/100 to stop
+  modernc-SQLite/GC thrashing; keep `MaxIdleConns` warm.
+- `InsertAll` no longer takes the registry global write lock when the collection
+  already exists.
+
+**SQLite filter pushdown** — #6467, #6468
+- Push top-level string/ObjectID equality (not just bare `{_id:X}`), `$in`, literal
+  `$regex`→`LIKE` (superset-safe, ASCII-only gating), and numeric/date range
+  `$gt`/`$gte`/`$lt`/`$lte` down into SQL `WHERE` (WeKan search + "Filter by date").
+
+**Slow-query logging** — #6480
+- `internal/util/fsql` emits a `slow query: <statement>` WARN with elapsed time +
+  threshold; tunable via `FERRETDB_SLOW_QUERY_THRESHOLD` (`0` disables).
+
+**Crash / migration robustness**
+- `collectionCreate` ADOPTS an orphaned physical table (`CREATE ... IF NOT
+  EXISTS`) instead of crashing/dropping data (fixes a systemd crash-loop) — #6476.
+- Accept documents with literal dotted field names (`{"foo.bar":"baz"}`) like
+  MongoDB 3.6+ so migration no longer silently drops such docs — #6473.
+
+**Query operators**
+- `$elemMatch` document/field form (fixed WeKan board-access returning no boards).
+- `$where` (embedded pure-Go goja JS engine); `$text` (partial self-contained
+  semantics: term/OR/phrase/negation, no stemming/scoring).
+
+**Aggregation build-out** (v1.25.0)
+- Stages: `$setWindowFields` (rank/position + window accumulators), `$lookup`
+  (equality join), `$replaceRoot`/`$replaceWith`, `$sortByCount`, `$sample`,
+  `$facet`, `$unionWith`, `$bucket`, `$bucketAuto`.
+- Expression operators across comparison/boolean/conditional, arithmetic,
+  trig/log, string, array, type-conversion, date, `$bsonSize`, and `$function`
+  (server-side JS).
+
+**Update operators** — `$push` modifiers `$slice`/`$sort`/`$position`; `$pullAll`
+tests.
+
+**Indexes** (v1.25.0, SQLite backend) — TTL (`expireAfterSeconds` + background
+reaper); text index option storage (`weights`/`default_language`/… round-tripped,
+no real inverted index); accept/store/round-trip `hidden`, `collation`,
+`partialFilterExpression`, `2dsphere` (reported, not enforced).
+
+**Sessions / transactions** (v1.25.0) — the session/transaction command family as
+compatibility commands + a real server-side session registry (30-min timeout)
+ported from v2. No real multi-document transactions (every SQLite write
+auto-commits).
+
+**Telemetry / logging lockdown** (v1.26.0) — `--telemetry` defaults to `disable`,
+reporter loop never started (no phone-home); default log level lowered to `error`.
+
+**Build / release / packaging** — Go toolchain pinned & patched (stdlib CVEs);
+modernc SQLite bumped (embedded SQLite 3.46.0 → 3.53.2); interactive `build.sh`
+menu (build/run/test/vet/docker/release); `release-all.yml` + split `docker.yml`
+multi-arch publishing (Docker Hub/Quay/GHCR); per-arch `ferretdb-<arch>` binary
+assets; cross-compile 9+ Linux arches without QEMU; a `docker-compose.yml` running
+WeKan on FerretDB SQLite.
+
+---
+
+## Features & fixes already present BEFORE the fork
+
+These upstream **FerretDB v1.24.2** capabilities WeKan relies on shipped before
+the fork (see the [compatibility matrix](#compatibility-matrix) for per-feature
+detail):
+
+- **MongoDB wire-protocol compatibility layer in Go** — reports MongoDB ~5.0
+  (FCV 7.0); `hello`/`isMaster`, `saslStart`/`saslContinue` auth, Stable API.
+- **Pluggable storage backends** — SQLite (embedded, complete), PostgreSQL
+  (vanilla, mature), MySQL (beta), SAP HANA (experimental).
+- **Core CRUD + cursors** — `find`/`insert`/`update`/`delete`,
+  `findAndModify`/`findOneAndUpdate` (`$inc`, `upsert`, `returnDocument`),
+  `count`, `distinct`, `getMore`, `killCursors`, `rawCollection()`.
+- **Update operators** — `$set`/`$unset`/`$inc`/`$push`/`$pull`/`$addToSet`/
+  `$rename`/`$pop`/`$mul`/`$min`/`$max`/`$currentDate`/`$bit`/`$each`/
+  `$setOnInsert`/`$pullAll`.
+- **Query filter operators** — the full comparison/element/array/logical set incl.
+  `$regex` with `$options:'i'` and `$not:{$regex}` (WeKan's entire search),
+  `$expr`, all four `$bits*`.
+- **Base aggregation pipeline** — `$match`/`$group`/`$project`/`$sort`/`$limit`/
+  `$skip`/`$unwind`/`$addFields`/`$set`/`$unset`/`$count`/`$collStats`.
+- **Indexes** — single/compound/unique (incl. compound-unique); `sparse` accepted.
+- **Capped collections + tailable/`awaitData` cursors** on SQLite — the mechanism
+  the fork's default-OpLog feature builds on.
+- **Base OpLog tailing collection** — the `backends/decorators/oplog` layer wrote
+  correctly-shaped `local.oplog.rs` entries pre-fork, but it was opt-in/manual and
+  the replica-set handshake was incomplete (the fork completed & automated it).
+- **Admin/diagnostic commands** — `serverStatus`, `buildInfo`, `ping`, `collStats`,
+  `dbStats`, `listCollections`/`listDatabases`/`listIndexes`, `create`, `drop`,
+  `compact`, `getParameter`.
+- **Observability infra** — OpenTelemetry tracing, K8s liveness/readiness probes,
+  `slog` logging.
+
+---
+
 ## Legend
 
 **WeKan** — does WeKan depend on this feature?
