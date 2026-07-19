@@ -17,11 +17,23 @@ package pool
 import (
 	"net/url"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// defaultPragmas is the URL-encoded _pragma query that setDefaultValues adds when
+// the operator supplies none, in insertion order. Kept in one place so adding a
+// performance pragma is a single edit here (see setDefaultValues in uri.go).
+const defaultPragmas = "_pragma=busy_timeout%2830000%29" +
+	"&_pragma=journal_mode%28wal%29" +
+	"&_pragma=synchronous%28normal%29" +
+	"&_pragma=cache_size%28-16384%29" +
+	"&_pragma=mmap_size%28134217728%29" +
+	"&_pragma=temp_store%28memory%29" +
+	"&_pragma=auto_vacuum%28none%29"
 
 func TestParseURI(t *testing.T) {
 	t.Parallel()
@@ -52,13 +64,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "./",
 				Path:     "./",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29",
+				RawQuery: defaultPragmas,
 			},
-			out: "file:./?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29",
+			out: "file:./?" + defaultPragmas,
 		},
 		"LocalSubDirectory": {
 			in: "file:./tmp/",
@@ -67,13 +75,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "./tmp/",
 				Path:     "./tmp/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29",
+				RawQuery: defaultPragmas,
 			},
-			out: "file:./tmp/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29",
+			out: "file:./tmp/?" + defaultPragmas,
 		},
 		"LocalSubSubDirectory": {
 			in: "file:./tmp/dir/",
@@ -82,13 +86,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "./tmp/dir/",
 				Path:     "./tmp/dir/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29",
+				RawQuery: defaultPragmas,
 			},
-			out: "file:./tmp/dir/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29",
+			out: "file:./tmp/dir/?" + defaultPragmas,
 		},
 		"LocalDirectoryWithParameters": {
 			in: "file:./tmp/?mode=memory",
@@ -97,15 +97,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "./tmp/",
 				Path:     "./tmp/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29" +
-					"&mode=memory",
+				RawQuery: defaultPragmas + "&mode=memory",
 			},
-			out: "file:./tmp/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29" +
-				"&mode=memory",
+			out: "file:./tmp/?" + defaultPragmas + "&mode=memory",
 		},
 		"AbsoluteDirectory": {
 			in: "file:/tmp/",
@@ -114,13 +108,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "/tmp/",
 				Path:     "/tmp/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29",
+				RawQuery: defaultPragmas,
 			},
-			out: "file:/tmp/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29",
+			out: "file:/tmp/?" + defaultPragmas,
 		},
 		"WithEmptyAuthority": {
 			in: "file:///tmp/",
@@ -129,13 +119,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "/tmp/",
 				Path:     "/tmp/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29",
+				RawQuery: defaultPragmas,
 			},
-			out: "file:/tmp/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29",
+			out: "file:/tmp/?" + defaultPragmas,
 		},
 		"WithEmptyAuthorityAndQuery": {
 			in: "file:///tmp/?mode=memory",
@@ -144,15 +130,9 @@ func TestParseURI(t *testing.T) {
 				Opaque:   "/tmp/",
 				Path:     "/tmp/",
 				OmitHost: true,
-				RawQuery: "_pragma=busy_timeout%2830000%29" +
-					"&_pragma=journal_mode%28wal%29" +
-					"&_pragma=auto_vacuum%28none%29" +
-					"&mode=memory",
+				RawQuery: defaultPragmas + "&mode=memory",
 			},
-			out: "file:/tmp/?" + "_pragma=busy_timeout%2830000%29" +
-				"&_pragma=journal_mode%28wal%29" +
-				"&_pragma=auto_vacuum%28none%29" +
-				"&mode=memory",
+			out: "file:/tmp/?" + defaultPragmas + "&mode=memory",
 		},
 		"HostIsNotEmpty": {
 			in:  "file://localhost/./tmp/?mode=memory",
@@ -205,6 +185,62 @@ func TestParseURI(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.uri, u)
 			assert.Equal(t, tc.out, u.String())
+		})
+	}
+}
+
+// TestSetDefaultValues checks that all performance/safety pragmas are applied by
+// default, and — negative tests — that an operator-supplied _pragma of the same
+// name is never duplicated by a default (the operator value wins). See #6480.
+func TestSetDefaultValues(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Defaults", func(t *testing.T) {
+		t.Parallel()
+
+		v := url.Values{}
+		setDefaultValues(v)
+
+		for _, want := range []string{
+			"busy_timeout(30000)",
+			"journal_mode(wal)",
+			"synchronous(normal)",
+			"cache_size(-16384)",
+			"mmap_size(134217728)",
+			"temp_store(memory)",
+			"auto_vacuum(none)",
+		} {
+			assert.Contains(t, v["_pragma"], want)
+		}
+	})
+
+	overrides := map[string]string{
+		"BusyTimeout": "busy_timeout(60000)",
+		"JournalMode": "journal_mode(delete)",
+		"Synchronous": "synchronous(full)",
+		"CacheSize":   "cache_size(-1)",
+		"MmapSize":    "mmap_size(0)",
+		"TempStore":   "temp_store(file)",
+	}
+	for name, override := range overrides {
+		name, override := name, override
+		t.Run("Override"+name, func(t *testing.T) {
+			t.Parallel()
+
+			v := url.Values{"_pragma": {override}}
+			setDefaultValues(v)
+
+			key := override[:strings.IndexByte(override, '(')]
+
+			var count int
+			for _, p := range v["_pragma"] {
+				if strings.HasPrefix(p, key) {
+					count++
+				}
+			}
+
+			assert.Equal(t, 1, count, "pragma %q must not be duplicated by a default", key)
+			assert.Contains(t, v["_pragma"], override)
 		})
 	}
 }

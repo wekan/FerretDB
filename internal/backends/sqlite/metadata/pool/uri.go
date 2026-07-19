@@ -80,8 +80,11 @@ func parseURI(u string) (*url.URL, error) {
 }
 
 // setDefaultValue sets default query parameters.
+//
+// Every default is only added when the operator has NOT already supplied a
+// _pragma with the same name, so an explicit operator setting always wins.
 func setDefaultValues(values url.Values) {
-	var autoVacuum, busyTimeout, journalMode bool
+	var autoVacuum, busyTimeout, journalMode, synchronous, cacheSize, mmapSize, tempStore bool
 
 	for _, v := range values["_pragma"] {
 		if strings.HasPrefix(v, "auto_vacuum") {
@@ -94,6 +97,22 @@ func setDefaultValues(values url.Values) {
 
 		if strings.HasPrefix(v, "journal_mode") {
 			journalMode = true
+		}
+
+		if strings.HasPrefix(v, "synchronous") {
+			synchronous = true
+		}
+
+		if strings.HasPrefix(v, "cache_size") {
+			cacheSize = true
+		}
+
+		if strings.HasPrefix(v, "mmap_size") {
+			mmapSize = true
+		}
+
+		if strings.HasPrefix(v, "temp_store") {
+			tempStore = true
 		}
 	}
 
@@ -114,6 +133,35 @@ func setDefaultValues(values url.Values) {
 
 	if !journalMode {
 		values.Add("_pragma", "journal_mode(wal)")
+	}
+
+	// WeKan #6480: SQLite performance remediation. Users reported FerretDB sitting
+	// above 100% CPU with everything after the login screen extremely slow. These
+	// defaults cut the disk I/O and fsync overhead that drives that CPU:
+	//
+	//   - synchronous=NORMAL is crash-safe under WAL (no corruption; at worst the
+	//     last committed transaction is lost on power loss) and removes an fsync
+	//     per commit — the single biggest write-path win.
+	//   - a larger page cache and memory-mapped I/O keep WeKan's hot pages resident
+	//     so repeated reads stop hitting the disk, cutting CPU on read-heavy loads.
+	//   - temp tables/indexes in memory speed up sorts and index builds.
+	//
+	// Each is only a DEFAULT: an operator-supplied _pragma of the same name wins.
+	if !synchronous {
+		values.Add("_pragma", "synchronous(normal)")
+	}
+
+	if !cacheSize {
+		// negative = size in KiB; -16384 = 16 MiB per connection (SQLite default ~2 MiB).
+		values.Add("_pragma", "cache_size(-16384)")
+	}
+
+	if !mmapSize {
+		values.Add("_pragma", "mmap_size(134217728)") // 128 MiB memory-mapped I/O
+	}
+
+	if !tempStore {
+		values.Add("_pragma", "temp_store(memory)")
 	}
 
 	if !autoVacuum {

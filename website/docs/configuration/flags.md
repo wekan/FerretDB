@@ -92,7 +92,13 @@ Additionally:
 
 - `_pragma=auto_vacuum(none)` parameter is set if that PRAGMA is not present;
 - `_pragma=busy_timeout(30000)` parameter is set if that PRAGMA is not present;
-- `_pragma=journal_mode(wal)` parameter is set if that PRAGMA is not present.
+- `_pragma=journal_mode(wal)` parameter is set if that PRAGMA is not present;
+- `_pragma=synchronous(normal)` parameter is set if that PRAGMA is not present;
+- `_pragma=cache_size(-16384)` parameter is set if that PRAGMA is not present (16 MiB page cache per connection);
+- `_pragma=mmap_size(134217728)` parameter is set if that PRAGMA is not present (128 MiB memory-mapped I/O);
+- `_pragma=temp_store(memory)` parameter is set if that PRAGMA is not present.
+
+Slow SQLite statements (at or above `FERRETDB_SLOW_QUERY_THRESHOLD`, default `1s`; set `0` to disable) are logged at WARN level.
 
 One difference is that URI should point to the existing directory (with absolute or relative path), not to a single database file.
 That allows FerretDB to work with multiple databases.

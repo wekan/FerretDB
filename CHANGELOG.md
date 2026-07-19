@@ -2,6 +2,16 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- SQLite backend: cut FerretDB CPU and latency under WeKan by tuning the SQLite connection pragmas (wekan/wekan#6480). Users reported FerretDB sitting above 100% CPU with everything after the login screen extremely slow even on WeKan v10.02, after the earlier `busy_timeout`, filter-pushdown and connection-pool fixes. `setDefaultValues` (`internal/backends/sqlite/metadata/pool/uri.go`) now also applies these connection pragmas — as DEFAULTS, so an operator-supplied `_pragma` of the same name still wins: `synchronous(normal)`, which is crash-safe under WAL (no corruption; at worst the last committed transaction is lost on power loss) and removes an fsync per commit, the single biggest write-path win; `cache_size(-16384)` (16 MiB page cache per connection) and `mmap_size(134217728)` (128 MiB memory-mapped I/O), which keep WeKan's hot pages resident so repeated reads stop hitting the disk and burning CPU; and `temp_store(memory)` so sorts and temporary indexes stay in RAM. The `parseURI` table tests (`uri_test.go`, refactored around a shared `defaultPragmas` constant) and `TestDefaults` (`pool_test.go`) assert the applied `PRAGMA` values against a real database, and a new `TestSetDefaultValues` adds negative tests proving an operator-supplied pragma is never duplicated by a default by @xet7. Thanks to uusijani and xet7.
+
+### Other Changes 🤖
+
+- Log slow SQLite statements at WARN (wekan/wekan#6480). FerretDB already timed every statement but only logged it at DEBUG, so a pathologically slow query left no trace in ordinary logs — exactly the "100% CPU, everything slow, nothing in the logs" situation from #6480. `internal/util/fsql` now emits a `slow query: <statement>` WARN line, carrying the elapsed time and the threshold, for any statement (in both `db.go` and `tx.go`, plain and in-transaction) at or above a threshold. The threshold defaults to 1s and is tunable with the `FERRETDB_SLOW_QUERY_THRESHOLD` environment variable (a Go duration such as `500ms` or `2s`; a value of `0` or less disables slow-query logging), so a performance problem that FerretDB cannot remediate automatically becomes an actionable, self-describing log line. Covered by `internal/util/fsql/slow_test.go`: threshold parsing (empty/valid/invalid/zero/negative) and that `logSlow` fires only at or above the threshold, is disabled at `<=0`, and does not panic on a nil logger by @xet7. Thanks to uusijani and xet7.
+
 ## [v1.32.0](https://github.com/wekan/FerretDB/releases/tag/v1.32.0) (2026-07-18)
 
 ### Fixed 🐛

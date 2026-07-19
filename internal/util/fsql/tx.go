@@ -72,8 +72,10 @@ func (tx *Tx) QueryContext(ctx context.Context, query string, args ...any) (*Row
 
 	rows, err := tx.sqlTx.QueryContext(ctx, query, args...)
 
-	fields = append(fields, slog.Duration("time", time.Since(start)), logging.Error(err))
+	dur := time.Since(start)
+	fields = append(fields, slog.Duration("time", dur), logging.Error(err))
 	tx.l.With(fields...).DebugContext(ctx, fmt.Sprintf("<<< %s", query))
+	logSlow(ctx, tx.l, query, dur)
 
 	return wrapRows(rows), err
 }
@@ -87,8 +89,10 @@ func (tx *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *s
 
 	row := tx.sqlTx.QueryRowContext(ctx, query, args...)
 
-	fields = append(fields, slog.Duration("time", time.Since(start)), logging.Error(row.Err()))
+	dur := time.Since(start)
+	fields = append(fields, slog.Duration("time", dur), logging.Error(row.Err()))
 	tx.l.With(fields...).DebugContext(ctx, fmt.Sprintf("<<< %s", query))
+	logSlow(ctx, tx.l, query, dur)
 
 	return row
 }
@@ -107,8 +111,10 @@ func (tx *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.R
 		fields = append(fields, slog.Int64("rows", ra))
 	}
 
-	fields = append(fields, slog.Duration("time", time.Since(start)), logging.Error(err))
+	dur := time.Since(start)
+	fields = append(fields, slog.Duration("time", dur), logging.Error(err))
 	tx.l.With(fields...).DebugContext(ctx, fmt.Sprintf("<<< %s", query))
+	logSlow(ctx, tx.l, query, dur)
 
 	return res, err
 }
