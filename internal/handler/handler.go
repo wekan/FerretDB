@@ -176,6 +176,8 @@ func New(opts *NewOpts) (*Handler, error) {
 		return nil, lazyerrors.Error(err)
 	}
 
+	h.ensureOplog()
+
 	h.initCommands()
 
 	h.wg.Add(1)
@@ -274,6 +276,63 @@ func (h *Handler) setup() error {
 	}
 
 	return nil
+}
+
+// oplogCappedSizeBytes is the size of the auto-created capped `local.oplog.rs`.
+// 128 MiB holds a large sliding window of recent mutations for tailing without
+// growing unbounded; the capped-collection cleanup trims older entries.
+const oplogCappedSizeBytes = int64(128 * 1024 * 1024)
+
+// ensureOplog creates the capped `local.oplog.rs` collection when a replica-set
+// name is configured (FERRETDB_REPL_SET_NAME) and it does not already exist.
+//
+// FerretDB v1's oplog decorator only records mutations once this collection is
+// present, and Meteor can only tail it once it exists — previously an operator
+// had to create it by hand, which is why WeKan defaulted to poll-and-diff.
+// Auto-creating it makes "run with an oplog" the out-of-the-box behaviour
+// whenever a replica-set name is set, so Meteor uses OpLog tailing instead of
+// polling. Best-effort: any failure is logged but never blocks startup (WeKan
+// still runs, on polling).
+func (h *Handler) ensureOplog() {
+	if h.ReplSetName == "" {
+		return
+	}
+
+	ctx, span := otel.Tracer("").Start(context.TODO(), "ensureOplog")
+	defer span.End()
+
+	info := conninfo.New()
+	info.SetBypassBackendAuth()
+	ctx = conninfo.Ctx(ctx, info)
+
+	l := logging.WithName(h.L, "oplog")
+
+	db, err := h.b.Database("local")
+	if err != nil {
+		l.WarnContext(ctx, "Failed to open local database for oplog", logging.Error(err))
+		return
+	}
+
+	cList, err := db.ListCollections(ctx, &backends.ListCollectionsParams{Name: "oplog.rs"})
+	if err != nil {
+		l.WarnContext(ctx, "Failed to list oplog collection", logging.Error(err))
+		return
+	}
+
+	if len(cList.Collections) > 0 {
+		return
+	}
+
+	err = db.CreateCollection(ctx, &backends.CreateCollectionParams{
+		Name:       "oplog.rs",
+		CappedSize: oplogCappedSizeBytes,
+	})
+	if err != nil && !backends.ErrorCodeIs(err, backends.ErrorCodeCollectionAlreadyExists) {
+		l.WarnContext(ctx, "Failed to create capped oplog collection", logging.Error(err))
+		return
+	}
+
+	l.InfoContext(ctx, "Enabled OpLog tailing (created capped local.oplog.rs)", slog.String("replSet", h.ReplSetName))
 }
 
 // runCappedCleanup calls capped collections cleanup function according to the given interval.

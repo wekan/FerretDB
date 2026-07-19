@@ -97,14 +97,24 @@ func (h *Handler) hello(ctx context.Context, doc *types.Document, tcpHost, name 
 
 	if name != "" {
 		// That does not work for TLS-only setups, IPv6 addresses, etc.
-		// The proper solution is to support `replSetInitiate` command.
-		// TODO https://github.com/FerretDB/FerretDB/issues/3936
 		if strings.HasPrefix(tcpHost, ":") {
 			tcpHost = "localhost" + tcpHost
 		}
 
+		// Replica-set identity fields. The MongoDB drivers' topology monitor
+		// (SDAM) — used by Meteor's oplog tailing when MONGO_OPLOG_URL carries
+		// `?replicaSet=<name>` — only accepts a server as the replica-set PRIMARY
+		// when the hello reply names the set AND advertises `me` and `primary`
+		// among `hosts`. Without them the driver reports "no primary in replica
+		// set" and the oplog connection fails, forcing WeKan back to poll-and-diff.
+		// FerretDB v1 presents itself as a single-node, always-primary replica set
+		// of one, which is what Meteor's OpLog tailing needs.
 		res.Set("setName", name)
 		res.Set("hosts", must.NotFail(types.NewArray(tcpHost)))
+		res.Set("me", tcpHost)
+		res.Set("primary", tcpHost)
+		res.Set("secondary", false)
+		res.Set("setVersion", int32(1))
 	}
 
 	res.Set("maxBsonObjectSize", int32(h.MaxBsonObjectSizeBytes))

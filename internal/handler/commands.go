@@ -249,9 +249,17 @@ func (h *Handler) initCommands() {
 			Handler: h.MsgRenameCollection,
 			Help:    "Changes the name of an existing collection.",
 		},
+		"replSetGetConfig": {
+			Handler: h.MsgReplSetGetConfig,
+			Help:    "Returns the replica set configuration (single-node set of one, for OpLog tailing).",
+		},
+		"replSetGetStatus": {
+			Handler: h.MsgReplSetGetStatus,
+			Help:    "Returns the replica set status (single-node set of one, for OpLog tailing).",
+		},
 		"replSetInitiate": {
 			Handler: h.MsgReplSetInitiate,
-			Help:    "Accepts replica set initiation (compatibility; FerretDB v1 does not implement real replication).",
+			Help:    "Ensures the OpLog exists (single-node replica set of one; no real multi-node replication).",
 		},
 		"saslStart": {
 			Handler:   h.MsgSASLStart,

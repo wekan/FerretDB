@@ -27,12 +27,13 @@ import (
 
 // MsgReplSetInitiate implements `replSetInitiate` command.
 //
-// FerretDB v1 does not implement real replication. Its oplog is tailing-only and
-// must be configured manually by creating a capped `local.oplog.rs` collection and
-// setting `FERRETDB_REPL_SET_NAME`. This command exists as a compatibility no-op so
-// that tools and drivers that bootstrap a replica set do not hard-fail. It accepts
-// the call (with or without a configuration document) and returns success, but it
-// does NOT create an oplog, elect a primary, or change the server topology in any way.
+// FerretDB v1 does not implement real (multi-node) replication or leader
+// election. It presents a single-node, always-primary replica set of one, whose
+// only purpose is to let Meteor tail the OpLog instead of poll-and-diff. When a
+// replica-set name is configured (`FERRETDB_REPL_SET_NAME`) this command ensures
+// the capped `local.oplog.rs` collection exists (the same collection auto-created
+// at startup), so `rs.initiate()` from a driver/tool leaves the server ready for
+// OpLog tailing. It accepts the call with or without a configuration document.
 //
 // The passed context is canceled when the client connection is closed.
 func (h *Handler) MsgReplSetInitiate(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
@@ -44,13 +45,16 @@ func (h *Handler) MsgReplSetInitiate(connCtx context.Context, msg *wire.OpMsg) (
 	reply := must.NotFail(types.NewDocument())
 
 	// If a configuration document with an `_id` (the replica set name) is provided,
-	// echo it back for compatibility. This is purely informational; no real replica
-	// set is created.
+	// echo it back for compatibility.
 	if config, err := common.GetOptionalParam(document, "replSetInitiate", (*types.Document)(nil)); err == nil && config != nil {
 		if setName, err := common.GetOptionalParam(config, "_id", ""); err == nil && setName != "" {
 			reply.Set("setName", setName)
 		}
 	}
+
+	// Ensure the oplog exists so tailing works after an explicit initiate.
+	// No-op unless FERRETDB_REPL_SET_NAME is set.
+	h.ensureOplog()
 
 	reply.Set("ok", float64(1))
 

@@ -30,8 +30,8 @@ import (
 const defaultPragmas = "_pragma=busy_timeout%2830000%29" +
 	"&_pragma=journal_mode%28wal%29" +
 	"&_pragma=synchronous%28normal%29" +
-	"&_pragma=cache_size%28-16384%29" +
-	"&_pragma=mmap_size%28134217728%29" +
+	"&_pragma=cache_size%28-65536%29" +
+	"&_pragma=mmap_size%28268435456%29" +
 	"&_pragma=temp_store%28memory%29" +
 	"&_pragma=auto_vacuum%28none%29"
 
@@ -205,8 +205,8 @@ func TestSetDefaultValues(t *testing.T) {
 			"busy_timeout(30000)",
 			"journal_mode(wal)",
 			"synchronous(normal)",
-			"cache_size(-16384)",
-			"mmap_size(134217728)",
+			"cache_size(-65536)",
+			"mmap_size(268435456)",
 			"temp_store(memory)",
 			"auto_vacuum(none)",
 		} {

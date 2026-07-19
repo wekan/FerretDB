@@ -152,12 +152,15 @@ func setDefaultValues(values url.Values) {
 	}
 
 	if !cacheSize {
-		// negative = size in KiB; -16384 = 16 MiB per connection (SQLite default ~2 MiB).
-		values.Add("_pragma", "cache_size(-16384)")
+		// negative = size in KiB; -65536 = 64 MiB per connection (SQLite default ~2 MiB).
+		// A larger page cache keeps more of the hot working set in RAM, so the
+		// repeated queries Meteor's poll-and-diff issues (and the migration's bulk
+		// reads) hit memory instead of disk — shorter lock holds, fewer SQLITE_BUSY.
+		values.Add("_pragma", "cache_size(-65536)")
 	}
 
 	if !mmapSize {
-		values.Add("_pragma", "mmap_size(134217728)") // 128 MiB memory-mapped I/O
+		values.Add("_pragma", "mmap_size(268435456)") // 256 MiB memory-mapped I/O (reads served from RAM)
 	}
 
 	if !tempStore {
