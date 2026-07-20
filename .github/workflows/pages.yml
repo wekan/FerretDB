@@ -1,0 +1,53 @@
+# Publish the static documentation site (docs/) to GitHub Pages.
+#
+# The docs are plain Markdown in docs/ and are rendered to static HTML by
+# docs/build.py (no Docusaurus/Node). This workflow regenerates the HTML from the
+# Markdown and deploys the docs/ folder to GitHub Pages on every push to main-v1.
+#
+# One-time setup in the repository: Settings -> Pages -> Build and deployment ->
+# Source: "GitHub Actions". (No manual folder selection is needed with this source.)
+
+name: Pages
+
+on:
+  push:
+    branches: [main-v1]
+    paths:
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render static site from Markdown
+        run: python3 docs/build.py
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload docs/ as the Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

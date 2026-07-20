@@ -111,7 +111,10 @@ See [there](https://pkg.go.dev/github.com/FerretDB/FerretDB/build/version) for m
 
 ## Documentation
 
-- [Documentation for users](https://docs.ferretdb.io/).
+- This fork's documentation is in [`docs/`](docs/) as plain Markdown, rendered to a
+  static website by [`docs/build.py`](docs/build.py) and publishable via GitHub Pages
+  — see [`docs/README.md`](docs/README.md) for how to build and publish it.
+- [Upstream documentation for users](https://docs.ferretdb.io/).
 - [Documentation for Go developers about embeddable FerretDB](https://pkg.go.dev/github.com/FerretDB/FerretDB/ferretdb).
 
 ## Community
