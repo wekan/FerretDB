@@ -885,10 +885,9 @@ tasks:
       - find . -type f -name '*.png' | parallel "pngcrush -ow -brute {} {.}.temp"
 
   docs-dev:
-    desc: "Build the static docs site and serve it locally at http://localhost:3000"
+    desc: "Preview the docs locally (renders Markdown in memory, writes no HTML) at http://localhost:3000"
     cmds:
-      - python3 docs/build.py
-      - python3 -m http.server 3000 --directory docs
+      - python3 docs/build.py --serve 3000
 
   changelog:
     desc: "Generate changelogs locally for a given milestone."

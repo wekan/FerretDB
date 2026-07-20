@@ -22,3 +22,6 @@ state/
 dist/
 
 **/testdata/fuzz/
+
+# Rendered static docs site (built on demand / at deploy time)
+docs/_site/

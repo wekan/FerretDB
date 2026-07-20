@@ -3,22 +3,31 @@
 Static documentation site generator for FerretDB v1 (SQLite).
 
 The documentation source is kept as plain Markdown (.md) files in this directory.
-This script renders them into a static HTML website (one .html next to each .md,
-plus index.html, style.css and a navigation sidebar) that can be published as-is
-by GitHub Pages — no Docusaurus, Node or build server required.
+This script renders them into a static HTML website (index.html, one .html per page,
+style.css and a navigation sidebar) — no Docusaurus, Node or build server required.
 
-Usage:  python3 build.py     (run from the docs/ directory)
+The generated HTML does NOT need to be committed:
+
+  python3 build.py --serve [PORT]   # live preview, renders Markdown in memory,
+                                     # writes NOTHING to disk (default port 3000)
+  python3 build.py [--out DIR]      # build into DIR (default: ./_site), e.g. for
+                                     # a GitHub Pages deploy artifact
+
+So you can view the Markdown website locally without saving any HTML, and publish it
+by rendering at deploy time (see .github/workflows/pages.yml).
 
 It is a small, dependency-free Markdown subset renderer covering what these docs
 use: headings (+anchors), paragraphs, fenced code, inline code, bold/italic,
 links, images, GitHub tables, blockquotes, ordered/unordered nested lists,
 horizontal rules, admonitions (:::note/tip/info/caution) and pass-through inline
-HTML (<br/>, <sub>). Re-run it after editing any .md file.
+HTML (<br/>, <sub>).
 """
 
 import html
 import os
 import re
+import shutil
+import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SITE_TITLE = "FerretDB v1 (SQLite) Documentation"
@@ -373,7 +382,9 @@ def page_title(meta, body, relpath):
 
 def collect_pages():
     pages = {}
-    for dirpath, _dirs, files in os.walk(ROOT):
+    for dirpath, dirs, files in os.walk(ROOT):
+        # never descend into build output or hidden directories
+        dirs[:] = [d for d in dirs if d != "_site" and not d.startswith(".")]
         for f in sorted(files):
             if not f.endswith(".md"):
                 continue
@@ -516,28 +527,99 @@ hr{border:0;border-top:1px solid var(--border);margin:2em 0}
 """
 
 
-def main():
-    pages = collect_pages()
-    for p in pages.values():
-        nav = build_nav(pages, p["out"], p["depth"])
-        toc = []
-        content = md_to_html(p["body"], p["depth"], toc)
-        html_out = PAGE_TMPL.format(
-            title=esc(p["title"]),
-            desc=esc(p["desc"]),
-            pre=rel_prefix(p["depth"]),
-            nav=nav,
-            content=content,
-            src=esc(p["rel"]),
-        )
-        out_path = os.path.join(ROOT, p["out"])
-        os.makedirs(os.path.dirname(out_path) or ROOT, exist_ok=True)
-        open(out_path, "w", encoding="utf-8").write(html_out)
+def render_page(p, pages):
+    """Return the full HTML for one page (used by both build and serve)."""
+    nav = build_nav(pages, p["out"], p["depth"])
+    content = md_to_html(p["body"], p["depth"], [])
+    return PAGE_TMPL.format(
+        title=esc(p["title"]),
+        desc=esc(p["desc"]),
+        pre=rel_prefix(p["depth"]),
+        nav=nav,
+        content=content,
+        src=esc(p["rel"]),
+    )
 
-    open(os.path.join(ROOT, "style.css"), "w", encoding="utf-8").write(STYLE)
-    open(os.path.join(ROOT, ".nojekyll"), "w").write("")
-    print("Rendered %d pages." % len(pages))
+
+def build(out_dir):
+    """Render every page + assets into out_dir (nothing is written under docs/)."""
+    pages = collect_pages()
+    if os.path.abspath(out_dir) == os.path.abspath(ROOT):
+        raise SystemExit("refusing to build into the source dir; use --out DIR or _site")
+    for p in pages.values():
+        out_path = os.path.join(out_dir, p["out"])
+        os.makedirs(os.path.dirname(out_path) or out_dir, exist_ok=True)
+        open(out_path, "w", encoding="utf-8").write(render_page(p, pages))
+    open(os.path.join(out_dir, "style.css"), "w", encoding="utf-8").write(STYLE)
+    open(os.path.join(out_dir, ".nojekyll"), "w").write("")
+    src_img = os.path.join(ROOT, "img")
+    if os.path.isdir(src_img):
+        shutil.copytree(src_img, os.path.join(out_dir, "img"), dirs_exist_ok=True)
+    print("Rendered %d pages into %s" % (len(pages), out_dir))
+
+
+def serve(port):
+    """Live preview: render Markdown in memory on each request; write nothing."""
+    import http.server
+
+    def load():
+        pages = collect_pages()
+        return {p["out"]: p for p in pages.values()}, pages
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = self.path.split("?", 1)[0].split("#", 1)[0].lstrip("/")
+            if path in ("", "/"):
+                path = "index.html"
+            by_out, pages = load()  # reload each request so edits show instantly
+
+            if path == "style.css":
+                return self._send(STYLE.encode("utf-8"), "text/css")
+            if path.startswith("img/"):
+                fp = os.path.join(ROOT, path)
+                if os.path.isfile(fp):
+                    ctype = "image/png" if fp.endswith(".png") else "image/jpeg" if fp.endswith((".jpg", ".jpeg")) else "application/octet-stream"
+                    return self._send(open(fp, "rb").read(), ctype)
+                return self._404()
+            if path in by_out:
+                return self._send(render_page(by_out[path], pages).encode("utf-8"), "text/html; charset=utf-8")
+            return self._404()
+
+        def _send(self, data, ctype):
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _404(self):
+            self.send_response(404)
+            self.end_headers()
+            self.wfile.write(b"Not found")
+
+        def log_message(self, *_):
+            pass
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    print("Serving the Markdown docs (rendered in memory, no files written) at")
+    print("  http://127.0.0.1:%d/   — press Ctrl+C to stop" % port)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
+def main(argv):
+    if "--serve" in argv:
+        i = argv.index("--serve")
+        port = int(argv[i + 1]) if i + 1 < len(argv) and argv[i + 1].isdigit() else 3000
+        serve(port)
+        return
+    out = "_site"
+    if "--out" in argv:
+        out = argv[argv.index("--out") + 1]
+    build(os.path.join(ROOT, out) if not os.path.isabs(out) else out)
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

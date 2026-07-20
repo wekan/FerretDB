@@ -1,62 +1,52 @@
 # FerretDB v1 (SQLite) documentation
 
-This directory holds the documentation **source as plain Markdown (`.md`) files**
-and the **rendered static website** (`.html` + `style.css`) generated from them. The
-site is static and self-contained, so it can be published directly by **GitHub
-Pages** — no Docusaurus, Node, or build server needed.
+This directory holds the documentation as **plain Markdown (`.md`) files only**. There
+is **no committed HTML** — the website is rendered from the Markdown on demand (for
+local preview) and at deploy time (for GitHub Pages) by the small, dependency-free
+generator `build.py`.
 
 ## Layout
 
-- `*.md`, `*/**.md` — the documentation source (edit these).
-- `*.html` — the rendered pages (one next to each `.md`; do not edit by hand).
-- `index.html` — the home page (rendered from `main.md`, which has `slug: /`).
-- `style.css` — the site stylesheet.
+- `*.md`, `*/**.md` — the documentation source (this is all you edit).
+- `main.md` — the home page (it has `slug: /`, so it becomes `index.html`).
 - `img/` — images used by the docs.
-- `.nojekyll` — tells GitHub Pages to serve the generated HTML as-is.
-- `build.py` — the small, dependency-free Markdown → HTML generator.
+- `build.py` — the Markdown → HTML generator (build / serve).
+- `_site/` — the rendered site when you build it locally; **git-ignored**, never committed.
 
-## Rebuild after editing
+## View it locally without saving any HTML
 
 ```sh
-python3 docs/build.py      # from the repository root
-# or
-cd docs && python3 build.py
+python3 docs/build.py --serve        # from the repo root (default port 3000)
+# or:  cd docs && python3 build.py --serve 3000
 ```
 
-Re-run it whenever you add or change a `.md` file, and commit both the `.md` and the
-regenerated `.html`.
+This starts a small local server that renders each Markdown page **in memory on every
+request** and writes nothing to disk — edit a `.md`, refresh the browser, and you see
+the change. Open http://127.0.0.1:3000/. (Same as `task docs-dev`.)
+
+## Build the static site (optional)
+
+```sh
+python3 docs/build.py                 # renders into docs/_site/ (git-ignored)
+python3 docs/build.py --out /tmp/site # or a directory of your choice
+```
+
+You normally do **not** need this — it is what the GitHub Pages workflow runs at
+deploy time.
 
 ## Publish on GitHub Pages
 
-The `docs/` folder is a location GitHub Pages recognizes, so there are two common
-ways to publish it. Pick one.
+The site is published by rendering at deploy time, so no HTML is ever stored in the
+repository.
 
-### Option A — GitHub Actions (recommended, automatic)
+`.github/workflows/pages.yml` renders the Markdown with `build.py` and deploys the
+result on every push to `main-v1`. **One-time setup:** in the repository, go to
+**Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
+After that, every push that touches `docs/` republishes the site.
 
-This repository ships `.github/workflows/pages.yml`, which regenerates the HTML from
-the Markdown with `docs/build.py` and deploys `docs/` on every push to `main-v1`.
-
-One-time setup: in the repository, go to **Settings → Pages → Build and deployment**
-and set **Source** to **GitHub Actions**. That's it — each push that touches `docs/`
-republishes the site, and the live URL appears on the workflow run and under
-**Settings → Pages**.
-
-### Option B — Deploy from the branch's `/docs` folder (no workflow)
-
-Because the rendered `.html` is committed, GitHub can serve it directly with no
-build step. In **Settings → Pages → Build and deployment**, set **Source** to
-**Deploy from a branch**, choose branch **`main-v1`** and folder **`/docs`**, and
-Save. GitHub serves the committed HTML as-is (the `.nojekyll` file disables Jekyll
-so the pre-rendered pages are used verbatim).
-
-With Option B, remember to run `python3 docs/build.py` and commit the regenerated
-`.html` after editing any `.md`. Option A does that for you.
-
-The published site's home page is `index.html` (rendered from `main.md`).
-
-## Local preview
-
-```sh
-python3 -m http.server 3000 --directory docs
-# then open http://localhost:3000/
-```
+Where to find the published URL: it is shown under **Settings → Pages** ("Your site is
+live at …") and on each **Pages** workflow run (the `deploy` job's environment link).
+For this fork the default is `https://<owner>.github.io/FerretDB/` (e.g.
+`https://wekan.github.io/FerretDB/`) unless a custom domain is configured. The
+generated links are all relative, so the site works correctly under that `/FerretDB/`
+sub-path with no extra configuration.
