@@ -298,22 +298,22 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/153).
 
 | Command                    | Argument       | Status | Comments                                                  |
 | -------------------------- | -------------- | ------ | --------------------------------------------------------- |
-| `abortTransaction`         |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1547) |
+| `abortTransaction`         |                | ⚠️     | Compatibility no-op (accepted, ignored) |
 |                            | `txnNumber`    | ⚠️     |                                                           |
 |                            | `writeConcern` | ⚠️     |                                                           |
 |                            | `autocommit`   | ⚠️     |                                                           |
 |                            | `comment`      | ⚠️     |                                                           |
-| `commitTransaction`        |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1548) |
+| `commitTransaction`        |                | ⚠️     | Compatibility no-op (accepted, ignored) |
 |                            | `txnNumber`    | ⚠️     |                                                           |
 |                            | `writeConcern` | ⚠️     |                                                           |
 |                            | `autocommit`   | ⚠️     |                                                           |
 |                            | `comment`      | ⚠️     |                                                           |
-| `endSessions`              |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1549) |
-| `killAllSessions`          |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1550) |
-| `killAllSessionsByPattern` |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1551) |
-| `killSessions`             |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1552) |
-| `refreshSessions`          |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1553) |
-| `startSession`             |                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1554) |
+| `endSessions`              |                | ⚠️     | Compatibility no-op (accepted, ignored) |
+| `killAllSessions`          |                | ⚠️     | Compatibility no-op (accepted, ignored) |
+| `killAllSessionsByPattern` |                | ⚠️     | Compatibility no-op (accepted, ignored) |
+| `killSessions`             |                | ⚠️     | Compatibility no-op (accepted, ignored) |
+| `refreshSessions`          |                | ⚠️     | Compatibility no-op (accepted, ignored) |
+| `startSession`             |                | ⚠️     | Compatibility no-op (accepted, ignored) |
 
 ## Aggregation pipelines
 
@@ -329,220 +329,220 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 
 | Stage                | Status | Comments                                                  |
 | -------------------- | ------ | --------------------------------------------------------- |
-| `$addFields`         | ⚠️     | [Issue](https://github.com/FerretDB/FerretDB/issues/1413) |
-| `$bucket`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1414) |
-| `$bucketAuto`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1414) |
-| `$changeStream`      | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1415) |
-| `$changeStream`      | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1415) |
-| `$collStats`         | ⚠️     | [Issue](https://github.com/FerretDB/FerretDB/issues/2447) |
-| `$count`             | ✅️    |                                                           |
-| `$currentOp`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1444) |
-| `$densify`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1418) |
-| `$documents`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1419) |
-| `$documents`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1419) |
-| `$facet`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1420) |
-| `$fill`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1421) |
-| `$geoNear`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1412) |
-| `$graphLookup`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1422) |
-| `$group`             | ✅️    |                                                           |
-| `$indexStats`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1424) |
-| `$limit`             | ✅️    |                                                           |
-| `$listLocalSessions` | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1426) |
-| `$listSessions`      | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1426) |
+| `$addFields`         | ✅     | Supported |
+| `$bucket`            | ✅     | Supported |
+| `$bucketAuto`        | ✅     | Supported |
+| `$changeStream`      | ❌     | Not implemented |
+| `$changeStream`      | ❌     | Not implemented |
+| `$collStats`         | ✅     | Supported |
+| `$count`             | ✅    | Supported |
+| `$currentOp`         | ❌     | Not implemented |
+| `$densify`           | ❌     | Not implemented |
+| `$documents`         | ❌     | Not implemented |
+| `$documents`         | ❌     | Not implemented |
+| `$facet`             | ✅     | Supported |
+| `$fill`              | ❌     | Not implemented |
+| `$geoNear`           | ❌     | Not implemented |
+| `$graphLookup`       | ❌     | Not implemented |
+| `$group`             | ⚠️    | Supported; accumulators limited to `$sum` and `$count` |
+| `$indexStats`        | ❌     | Not implemented |
+| `$limit`             | ✅    | Supported |
+| `$listLocalSessions` | ❌     | Not implemented |
+| `$listSessions`      | ❌     | Not implemented |
 | `$lookup`            | ✅     | Equality join (from/localField/foreignField/as); pipeline form unsupported |
-| `$match`             | ✅     |                                                           |
-| `$merge`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1429) |
-| `$out`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1430) |
-| `$planCacheStats`    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1431) |
-| `$project`           | ✅     |                                                           |
-| `$redact`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1433) |
-| `$replaceRoot`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1434) |
-| `$replaceWith`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1434) |
-| `$sample`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1435) |
-| `$search`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1436) |
-| `$searchMeta`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1436) |
-| `$set`               | ⚠️     | [Issue](https://github.com/FerretDB/FerretDB/issues/1413) |
-| `$setWindowFields`   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1437) |
-| `$skip`              | ✅️    |                                                           |
-| `$sort`              | ✅️    |                                                           |
-| `$sortByCount`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1440) |
-| `$unionWith`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1441) |
-| `$unset`             | ✅️    |                                                           |
-| `$unwind`            | ✅️    |                                                           |
+| `$match`             | ✅     | Supported |
+| `$merge`             | ❌     | Not implemented |
+| `$out`               | ❌     | Not implemented |
+| `$planCacheStats`    | ❌     | Not implemented |
+| `$project`           | ✅     | Supported |
+| `$redact`            | ❌     | Not implemented |
+| `$replaceRoot`       | ✅     | Supported |
+| `$replaceWith`       | ✅     | Supported |
+| `$sample`            | ✅     | Supported |
+| `$search`            | ❌     | Not implemented |
+| `$searchMeta`        | ❌     | Not implemented |
+| `$set`               | ✅     | Supported |
+| `$setWindowFields`   | ✅     | Supported |
+| `$skip`              | ✅    | Supported |
+| `$sort`              | ✅    | Supported |
+| `$sortByCount`       | ✅     | Supported |
+| `$unionWith`         | ✅     | Supported |
+| `$unset`             | ✅    | Supported |
+| `$unwind`            | ✅    | Supported |
 
 ### Aggregation pipeline operators
 
 | Operator                  | Status | Comments                                                  |
 | ------------------------- | ------ | --------------------------------------------------------- |
-| `$abs`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
+| `$abs`                    | ✅     | Supported |
 | `$accumulator`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$acos`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$acosh`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
+| `$acos`                   | ✅     | Supported |
+| `$acosh`                  | ✅     | Supported |
 | `$add` (arithmetic)       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$add` (date)             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
 | `$addToSet`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$allElementsTrue`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$and`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1455) |
+| `$allElementsTrue`        | ✅     | Supported |
+| `$and`                    | ✅     | Supported |
 | `$anyElementTrue`         | ✅     | Added in FerretDB v1 |
-| `$arrayElemAt`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$arrayToObject`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$asin`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$asinh`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$atan`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
+| `$arrayElemAt`            | ✅     | Supported |
+| `$arrayToObject`          | ✅     | Supported |
+| `$asin`                   | ✅     | Supported |
+| `$asinh`                  | ✅     | Supported |
+| `$atan`                   | ✅     | Supported |
 | `$atan2`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$atanh`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$avg`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$binarySize`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1459) |
+| `$atanh`                  | ✅     | Supported |
+| `$avg`                    | ✅     | Supported |
+| `$binarySize`             | ✅     | Supported |
 | `$bottom`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$bottomN`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$bsonSize`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1459) |
-| `$ceil`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$cmp`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
-| `$concat`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$concatArrays`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$cond`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1457) |
-| `$convert`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$cos`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$cosh`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$count`                  | ✅️    |                                                           |
-| `$covariancePop`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$covarianceSamp`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$dateAdd`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateDiff`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateFromParts`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateFromString`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateSubtract`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateToParts`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateToString`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dateTrunc`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dayOfMonth`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dayOfWeek`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$dayOfYear`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$degreesToRadians`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$denseRank`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$derivative`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$divide`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$documentNumber`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
+| `$bsonSize`               | ✅     | Supported |
+| `$ceil`                   | ✅     | Supported |
+| `$cmp`                    | ✅     | Supported |
+| `$concat`                 | ✅     | Supported |
+| `$concatArrays`           | ✅     | Supported |
+| `$cond`                   | ✅     | Supported |
+| `$convert`                | ✅     | Supported |
+| `$cos`                    | ✅     | Supported |
+| `$cosh`                   | ✅     | Supported |
+| `$count`                  | ✅    | Supported |
+| `$covariancePop`          | ❌     | Not implemented |
+| `$covarianceSamp`         | ❌     | Not implemented |
+| `$dateAdd`                | ✅     | Supported |
+| `$dateDiff`               | ✅     | Supported |
+| `$dateFromParts`          | ✅     | Supported |
+| `$dateFromString`         | ✅     | Supported |
+| `$dateSubtract`           | ✅     | Supported |
+| `$dateToParts`            | ✅     | Supported |
+| `$dateToString`           | ✅     | Supported |
+| `$dateTrunc`              | ✅     | Supported |
+| `$dayOfMonth`             | ✅     | Supported |
+| `$dayOfWeek`              | ✅     | Supported |
+| `$dayOfYear`              | ✅     | Supported |
+| `$degreesToRadians`       | ✅     | Supported |
+| `$denseRank`              | ❌     | Not implemented |
+| `$derivative`             | ❌     | Not implemented |
+| `$divide`                 | ✅     | Supported |
+| `$documentNumber`         | ❌     | Not implemented |
 | `$eq`                     | ✅     | Added in FerretDB v1 |
-| `$exp`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$expMovingAvg`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$filter`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
+| `$exp`                    | ✅     | Supported |
+| `$expMovingAvg`           | ❌     | Not implemented |
+| `$filter`                 | ✅     | Supported |
 | `$first` (accumulator)    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$first` (array operator) | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$firstN`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$floor`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$function`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1458) |
-| `$getField`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1471) |
-| `$gt`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
-| `$gte`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
-| `$hour`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
+| `$floor`                  | ✅     | Supported |
+| `$function`               | ✅     | Supported |
+| `$getField`               | ✅     | Supported |
+| `$gt`                     | ✅     | Supported |
+| `$gte`                    | ✅     | Supported |
+| `$hour`                   | ✅     | Supported |
 | `$ifNull`                 | ✅     | Added in FerretDB v1 |
-| `$in`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$indexOfArray`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$indexOfBytes`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$indexOfCP`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$integral`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$isArray`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$isNumber`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$isoDayOfWeek`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$isoWeek`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$isoWeekYear`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
+| `$in`                     | ✅     | Supported |
+| `$indexOfArray`           | ✅     | Supported |
+| `$indexOfBytes`           | ✅     | Supported |
+| `$indexOfCP`              | ✅     | Supported |
+| `$integral`               | ❌     | Not implemented |
+| `$isArray`                | ✅     | Supported |
+| `$isNumber`               | ✅     | Supported |
+| `$isoDayOfWeek`           | ✅     | Supported |
+| `$isoWeek`                | ✅     | Supported |
+| `$isoWeekYear`            | ✅     | Supported |
 | `$last` (accumulator)     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$last` (array operator)  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$lastN`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$let`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1469) |
-| `$linearFill`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$literal`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1470) |
-| `$ln`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$locf`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$log`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
+| `$let`                    | ✅     | Supported |
+| `$linearFill`             | ❌     | Not implemented |
+| `$literal`                | ✅     | Supported |
+| `$ln`                     | ✅     | Supported |
+| `$locf`                   | ❌     | Not implemented |
+| `$log`                    | ✅     | Supported |
 | `$log10`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$lt`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
-| `$lte`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
-| `$ltrim`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
+| `$lt`                     | ✅     | Supported |
+| `$lte`                    | ✅     | Supported |
+| `$ltrim`                  | ✅     | Supported |
 | `$map`                    | ✅     | Added in FerretDB v1 |
-| `$max`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
+| `$max`                    | ✅     | Supported |
 | `$maxN`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$mergeObjects`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$meta`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$millisecond`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$min`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$minN`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$minute`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$mod`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$month`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$multiply`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
+| `$meta`                   | ❌     | Not implemented |
+| `$millisecond`            | ✅     | Supported |
+| `$min`                    | ✅     | Supported |
+| `$minN`                   | ❌     | Not implemented |
+| `$minute`                 | ✅     | Supported |
+| `$mod`                    | ✅     | Supported |
+| `$month`                  | ✅     | Supported |
+| `$multiply`               | ✅     | Supported |
 | `$ne`                     | ✅     | Added in FerretDB v1 |
-| `$not`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1455) |
+| `$not`                    | ✅     | Supported |
 | `$objectToArray`          | ✅     | Added in FerretDB v1 |
 | `$or`                     | ✅     | Added in FerretDB v1 |
-| `$pow`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
+| `$pow`                    | ✅     | Supported |
 | `$push`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$radiansToDegrees`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$rand`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/541)  |
-| `$range`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$rank`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$reduce`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$regexFind`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$regexFindAll`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$regexMatch`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$replaceAll`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$replaceOne`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$reverseArray`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$round`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$rtrim`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$sampleRate`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1472) |
-| `$second`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$setDifference`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$setEquals`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$setField`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1461) |
-| `$setIntersection`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$setIsSubset`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$setUnion`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
-| `$shift`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$sin`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$sinh`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$size`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$slice`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$sortArray`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
-| `$split`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$sqrt`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$stdDevPop`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$stdDevSamp`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$strcasecmp`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$strLenBytes`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$strLenCP`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$substr`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$substrBytes`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$substrCP`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
+| `$radiansToDegrees`       | ✅     | Supported |
+| `$rand`                   | ✅     | Supported |
+| `$range`                  | ✅     | Supported |
+| `$rank`                   | ❌     | Not implemented |
+| `$reduce`                 | ✅     | Supported |
+| `$regexFind`              | ❌     | Not implemented |
+| `$regexFindAll`           | ❌     | Not implemented |
+| `$regexMatch`             | ✅     | Supported |
+| `$replaceAll`             | ✅     | Supported |
+| `$replaceOne`             | ✅     | Supported |
+| `$reverseArray`           | ✅     | Supported |
+| `$round`                  | ✅     | Supported |
+| `$rtrim`                  | ✅     | Supported |
+| `$sampleRate`             | ❌     | Not implemented |
+| `$second`                 | ✅     | Supported |
+| `$setDifference`          | ✅     | Supported |
+| `$setEquals`              | ✅     | Supported |
+| `$setField`               | ✅     | Supported |
+| `$setIntersection`        | ✅     | Supported |
+| `$setIsSubset`            | ✅     | Supported |
+| `$setUnion`               | ✅     | Supported |
+| `$shift`                  | ❌     | Not implemented |
+| `$sin`                    | ✅     | Supported |
+| `$sinh`                   | ✅     | Supported |
+| `$size`                   | ✅     | Supported |
+| `$slice`                  | ✅     | Supported |
+| `$sortArray`              | ✅     | Supported |
+| `$split`                  | ✅     | Supported |
+| `$sqrt`                   | ✅     | Supported |
+| `$stdDevPop`              | ❌     | Not implemented |
+| `$stdDevSamp`             | ❌     | Not implemented |
+| `$strcasecmp`             | ✅     | Supported |
+| `$strLenBytes`            | ✅     | Supported |
+| `$strLenCP`               | ✅     | Supported |
+| `$substr`                 | ✅     | Supported |
+| `$substrBytes`            | ✅     | Supported |
+| `$substrCP`               | ✅     | Supported |
 | `$subtract` (arithmetic)  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$subtract` (date)        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
 | `$sum` (accumulator)      | ✅️    |                                                           |
 | `$sum` (operator)         | ✅️    |                                                           |
-| `$switch`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1457) |
-| `$tan`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$tanh`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
-| `$toBool`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toDate`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$toDecimal`              | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toDouble`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toInt`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toLong`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toLower`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$toObjectId`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
+| `$switch`                 | ✅     | Supported |
+| `$tan`                    | ✅     | Supported |
+| `$tanh`                   | ✅     | Supported |
+| `$toBool`                 | ✅     | Supported |
+| `$toDate`                 | ✅     | Supported |
+| `$toDecimal`              | ❌     | Not implemented |
+| `$toDouble`               | ✅     | Supported |
+| `$toInt`                  | ✅     | Supported |
+| `$toLong`                 | ✅     | Supported |
+| `$toLower`                | ✅     | Supported |
+| `$toObjectId`             | ✅     | Supported |
 | `$top`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$topN`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
-| `$toString`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$toUpper`                | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$trim`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$trunc`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$tsIncrement`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1464) |
-| `$tsSecond`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1464) |
-| `$type`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1466) |
-| `$unsetField`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1461) |
-| `$week`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$year`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$zip`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
+| `$toString`               | ✅     | Supported |
+| `$toUpper`                | ✅     | Supported |
+| `$trim`                   | ✅     | Supported |
+| `$trunc`                  | ✅     | Supported |
+| `$tsIncrement`            | ❌     | Not implemented |
+| `$tsSecond`               | ❌     | Not implemented |
+| `$type`                   | ✅     | Supported |
+| `$unsetField`             | ✅     | Supported |
+| `$week`                   | ✅     | Supported |
+| `$year`                   | ✅     | Supported |
+| `$zip`                    | ✅     | Supported |
 
 ## Administration commands
 
