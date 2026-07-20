@@ -170,9 +170,10 @@ func throttleApply(ctx context.Context) {
 }
 
 // throttleStatus returns the current throttle state for the command response,
-// including FerretDB's self-regulated delay and last measured host CPU%.
-func throttleStatus() (active bool, sleepMs, untilNano, commands, autoMs, cpuPct int64) {
+// including FerretDB's self-regulated delay, last measured host CPU% and FerretDB's
+// own process CPU% (100 == one full core, may exceed 100 across cores).
+func throttleStatus() (active bool, sleepMs, untilNano, commands, autoMs, cpuPct, procPct int64) {
 	a, _ := throttleActive()
 	return a, throttleSleepMs.Load(), throttleUntilUnixNano.Load(), commandCounter.Load(),
-		autoSlowdownMs.Load(), lastCPUPercent.Load()
+		autoSlowdownMs.Load(), lastCPUPercent.Load(), lastProcCPUPercent.Load()
 }

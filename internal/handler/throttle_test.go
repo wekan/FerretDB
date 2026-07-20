@@ -35,7 +35,7 @@ func TestThrottle(t *testing.T) {
 		throttleSet(999999, 999999999)
 		_, d := throttleActive()
 		assert.Equal(t, time.Duration(throttleMaxSleepMs)*time.Millisecond, d)
-		_, sleepMs, until, _, _, _ := throttleStatus()
+		_, sleepMs, until, _, _, _, _ := throttleStatus()
 		assert.Equal(t, int64(throttleMaxSleepMs), sleepMs)
 		// deadline is no further out than the max duration (+ a little slack).
 		max := time.Now().Add(time.Duration(throttleMaxDurationMs+1000) * time.Millisecond).UnixNano()
@@ -57,11 +57,11 @@ func TestThrottle(t *testing.T) {
 	})
 
 	t.Run("throttleCount counts total + per-command, and summary lists the busiest", func(t *testing.T) {
-		_, _, _, before, _, _ := throttleStatus()
+		_, _, _, before, _, _, _ := throttleStatus()
 		throttleCount("find")
 		throttleCount("find")
 		throttleCount("update")
-		_, _, _, after, _, _ := throttleStatus()
+		_, _, _, after, _, _, _ := throttleStatus()
 		assert.Equal(t, before+3, after, "total command counter increments")
 		summary := commandSummary(5)
 		assert.Contains(t, summary, "find=", "summary names the busiest command")

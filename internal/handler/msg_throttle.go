@@ -59,7 +59,7 @@ func (h *Handler) MsgThrottle(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 	}
 
 	until := throttleSet(slowDownMs, durationMs)
-	active, sleepMs, _, commands, autoMs, cpuPct := throttleStatus()
+	active, sleepMs, _, commands, autoMs, cpuPct, procPct := throttleStatus()
 
 	return documentOpMsg(
 		must.NotFail(types.NewDocument(
@@ -77,6 +77,10 @@ func (h *Handler) MsgThrottle(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 			// the delay it has added on its own, and its last measured host CPU%.
 			"autoSlowDownMs", autoMs,
 			"hostCpuPercent", cpuPct,
+			// FerretDB's OWN process CPU% (100 == one full core; may exceed 100 across
+			// cores). This makes a "FerretDB is pegging N cores" problem visible even
+			// when the host-wide percentage stays moderate on a many-core machine.
+			"processCpuPercent", procPct,
 			"note", "FerretDB pauses max(slowDownMs, autoSlowDownMs) before each command to yield CPU",
 		)),
 	)

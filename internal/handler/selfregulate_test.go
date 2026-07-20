@@ -82,3 +82,24 @@ func TestProcStatCPU(t *testing.T) {
 		assert.LessOrEqual(t, idle, total)
 	}
 }
+
+func TestProcSelfCPU(t *testing.T) {
+	// On Linux this reads real /proc/self/stat; elsewhere it must not panic and
+	// simply reports unavailable.
+	first, ok := procSelfCPU()
+	if !ok {
+		return
+	}
+
+	// Burn a little CPU so utime/stime advance, then read again: the process CPU
+	// jiffies counter is monotonic and must not go backwards.
+	sum := 0
+	for i := 0; i < 5_000_000; i++ {
+		sum += i
+	}
+	_ = sum
+
+	second, ok := procSelfCPU()
+	assert.True(t, ok, "second read should also succeed")
+	assert.GreaterOrEqual(t, second, first, "process CPU jiffies are monotonic")
+}
