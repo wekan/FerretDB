@@ -11,6 +11,21 @@ or (safely) ignored.
 Use ❌ for commands and arguments that are not implemented at all.
 -->
 
+:::note This build (FerretDB v1, SQLite)
+
+This is the FerretDB v1 (SQLite) fork. On top of upstream FerretDB v1.24.2 it adds,
+among other things: a single-node replica-set handshake with automatic oplog
+creation (`replSetInitiate`, `replSetGetStatus`, `replSetGetConfig`, replica-set
+`hello`/`isMaster` fields) so MongoDB-wire clients can tail changes instead of
+polling; the aggregation operators `$eq`, `$ne`, `$or`, `$ifNull`,
+`$anyElementTrue`, `$objectToArray`, `$map` and the equality-join `$lookup` stage;
+and the `throttle` self-throttling extension command (see the end of this page).
+The authoritative, dated list is in the CHANGELOG; the ROADMAP has the full
+comparison with upstream. FerretDB v1 (SQLite) is a general-purpose MongoDB 7
+replacement, comparable to FerretDB v2 (PostgreSQL).
+
+:::
+
 ## Query commands
 
 | Command         | Argument                   | Status | Comments                                                  |
@@ -265,9 +280,15 @@ The following operators are available in the `find` command `projection` argumen
 
 ### Replication Commands
 
-| Command           | Argument | Status | Comments                                                  |
-| ----------------- | -------- | ------ | --------------------------------------------------------- |
-| `replSetInitiate` |          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/3936) |
+FerretDB v1 (SQLite) presents itself as a single-node, always-primary replica set
+of one — enough for a MongoDB-wire client's oplog tailing (e.g. Meteor's OpLog
+mode), not real multi-node replication or elections. See the CHANGELOG for details.
+
+| Command             | Argument | Status | Comments                                                     |
+| ------------------- | -------- | ------ | ------------------------------------------------------------ |
+| `replSetInitiate`   |          | ✅     | Single-node RS; auto-creates the capped `local.oplog.rs`     |
+| `replSetGetStatus`  |          | ✅     | Single-member primary status for `rs.status()`               |
+| `replSetGetConfig`  |          | ✅     | Single-member config for `rs.conf()`                         |
 
 ## Session Commands
 
@@ -328,7 +349,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$limit`             | ✅️    |                                                           |
 | `$listLocalSessions` | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1426) |
 | `$listSessions`      | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1426) |
-| `$lookup`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1427) |
+| `$lookup`            | ✅     | Equality join (from/localField/foreignField/as); pipeline form unsupported |
 | `$match`             | ✅     |                                                           |
 | `$merge`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1429) |
 | `$out`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1430) |
@@ -362,7 +383,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$addToSet`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
 | `$allElementsTrue`        | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
 | `$and`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1455) |
-| `$anyElementTrue`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1462) |
+| `$anyElementTrue`         | ✅     | Added in FerretDB v1 |
 | `$arrayElemAt`            | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$arrayToObject`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$asin`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
@@ -402,7 +423,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$derivative`             | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
 | `$divide`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$documentNumber`         | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
-| `$eq`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
+| `$eq`                     | ✅     | Added in FerretDB v1 |
 | `$exp`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$expMovingAvg`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1468) |
 | `$filter`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
@@ -415,7 +436,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$gt`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
 | `$gte`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
 | `$hour`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
-| `$ifNull`                 | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1457) |
+| `$ifNull`                 | ✅     | Added in FerretDB v1 |
 | `$in`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$indexOfArray`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
 | `$indexOfBytes`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
@@ -439,7 +460,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$lt`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
 | `$lte`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
 | `$ltrim`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1463) |
-| `$map`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1454) |
+| `$map`                    | ✅     | Added in FerretDB v1 |
 | `$max`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$maxN`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$mergeObjects`           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
@@ -451,10 +472,10 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 | `$mod`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$month`                  | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1460) |
 | `$multiply`               | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
-| `$ne`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1456) |
+| `$ne`                     | ✅     | Added in FerretDB v1 |
 | `$not`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1455) |
-| `$objectToArray`          | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1461) |
-| `$or`                     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1455) |
+| `$objectToArray`          | ✅     | Added in FerretDB v1 |
+| `$or`                     | ✅     | Added in FerretDB v1 |
 | `$pow`                    | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1453) |
 | `$push`                   | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1467) |
 | `$radiansToDegrees`       | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1465) |
@@ -604,7 +625,7 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 |                                   | `writeConcern`                 |                           | ⚠️     |                                                           |
 |                                   | `commitQuorum`                 |                           | ⚠️     |                                                           |
 |                                   | `comment`                      |                           | ⚠️     |                                                           |
-| `currentOp`                       |                                |                           | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/2399) |
+| `currentOp`                       |                                |                           | ✅     | Basic command supported (empty `inprog`)                  |
 |                                   | `$ownOps`                      |                           | ⚠️     |                                                           |
 |                                   | `$all`                         |                           | ⚠️     |                                                           |
 |                                   | `comment`                      |                           | ⚠️     |                                                           |
@@ -718,6 +739,9 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 |                      | `filter`               | ⚠️     |                                  |
 | `serverStatus`       |                        | ✅     | Basic command is fully supported |
 | `shardConnPoolStats` |                        | ❌     | Unimplemented                    |
+| `throttle`           |                        | ✅     | FerretDB v1 extension (see below)|
+|                      | `slowDownMs`           | ✅     | Pause per command, 0–1000, def 5 |
+|                      | `durationMs`           | ✅     | Window length, 0–300000, def 2000|
 | `top`                |                        | ❌     | Unimplemented                    |
 | `validate`           |                        | ✅     | Basic command is fully supported |
 |                      | `full`                 | ⚠️     |                                  |
@@ -729,3 +753,45 @@ Related [issue](https://github.com/FerretDB/FerretDB/issues/1917).
 |                      | `db`                   | ⚠️     |                                  |
 |                      | `collections`          | ⚠️     |                                  |
 | `whatsmyuri`         |                        | ✅     | Basic command is fully supported |
+
+## FerretDB v1 extension commands
+
+These commands are specific to this FerretDB v1 (SQLite) build and are not part of
+the MongoDB command set.
+
+### `throttle`
+
+A self-throttle for host-CPU pressure. A client that shares the host with FerretDB
+can call `throttle` to (1) learn how busy FerretDB is and (2) ask it to slow down
+when the host CPU is high (a client cannot pause FerretDB's internal work from the
+outside). While the throttle is active, every command sleeps `slowDownMs` before it
+runs, which lowers FerretDB's CPU use and yields time to other software on the host.
+The throttle **self-expires** after `durationMs`, so a crashed or disconnected client
+can never leave FerretDB permanently slow. The throttle command itself and the cheap
+health/handshake commands (`hello`/`isMaster`/`ping`) are never throttled.
+
+Parameters (all optional):
+
+| Field        | Type | Default | Range        | Meaning                                   |
+| ------------ | ---- | ------- | ------------ | ----------------------------------------- |
+| `slowDownMs` | int  | 5       | 0–1000       | Pause before each command while active    |
+| `durationMs` | int  | 2000    | 0–300000     | How long the throttle stays active        |
+
+Response fields:
+
+| Field               | Meaning                                                        |
+| ------------------- | -------------------------------------------------------------- |
+| `commandsProcessed` | Running count of commands handled (an activity/"how busy" signal) |
+| `throttled`         | Whether the throttle is currently active                       |
+| `slowDownMs`        | The pause (clamped) now in effect                              |
+| `durationMs`        | The requested window length                                    |
+| `untilUnixNano`     | Deadline after which the throttle self-expires                 |
+
+Example:
+
+```js
+db.runCommand({ throttle: 1, slowDownMs: 5, durationMs: 2000 })
+// { ok: 1, commandsProcessed: 128374, throttled: true, slowDownMs: 5, ... }
+
+db.runCommand({ throttle: 1, durationMs: 0 }) // resume full speed immediately
+```

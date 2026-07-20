@@ -217,7 +217,15 @@ v1.24.2 BSON API.
   `primary`, `secondary:false`, `setVersion`) so the driver's SDAM accepts the
   server as PRIMARY.
 - New `replSetGetStatus` and `replSetGetConfig` commands (valid single-member
-  status/config); `replSetInitiate` compatibility no-op.
+  status/config); `replSetInitiate` compatibility no-op (also runs `ensureOplog`).
+
+**Self-throttle command (host-CPU governor)**
+- New custom `throttle` command: a client that shares the host can ask FerretDB how
+  busy it is (`commandsProcessed`) and to slow down when the host CPU is high — for a
+  self-expiring window it pauses a few ms before each command, lowering FerretDB CPU
+  use and yielding to other software. Applied in the command dispatch path, skipping
+  the throttle command and health/handshake commands. Not a MongoDB command; general
+  (any MongoDB-wire client can use it). See `internal/handler/throttle.go`.
 
 **SQLite performance / stability** — #6467, #6469, #6480
 - Raise `busy_timeout` 10 s → 30 s (fixes `SQLITE_BUSY` on Sign In).
@@ -426,8 +434,9 @@ backends). Source paths in `v1` cells are relative to this repo; WeKan sources l
 | `serverStatus` `buildInfo` `hello`/`ismaster` `ping` `collStats` `dbStats` | ✅ | ✅ | ✅ |
 | `listCollections` `listDatabases` `listIndexes` `createIndexes` `dropIndexes` `create` `drop` `compact` | ✅ | ✅ | ✅ |
 | `getParameter` | ✅ [`meteorMongoIntegration.js`](https://github.com/wekan/wekan/blob/main/models/lib/meteorMongoIntegration.js) | ✅ `msg_getparameter.go` (verified, `TestCommandsAdministrationGetParameter`) | ✅ |
-| `replSetInitiate` | — | ⚠️ compat no-op `{ok:1}` (echoes config `_id`); **no** real replica set (`msg_replsetinitiate.go`) · `replsetinitiate_test.go` | ❌ not registered; TODO in `msg_hello.go` (#3936) |
-| `replSetGetStatus` | ⚙️ (GridFS admin tooling; skippable with `fs`) | ❌ not registered in `commands.go` | ❌ not registered |
+| `replSetInitiate` | — | ✅ single-node RS; echoes config `_id` and runs `ensureOplog` to auto-create `local.oplog.rs` (`msg_replsetinitiate.go`) · `msg_replset_test.go` | ❌ not registered; TODO in `msg_hello.go` (#3936) |
+| `replSetGetStatus` `replSetGetConfig` | ⚙️ (GridFS admin tooling; skippable with `fs`) | ✅ registered in `commands.go`; single-member status/config (`msg_replsetgetstatus.go`, `msg_replsetgetconfig.go`) · `msg_replset_test.go` | ❌ not registered |
+| `throttle` (FerretDB v1 extension) | — | ✅ self-throttle for host-CPU pressure (`throttle.go`, `msg_throttle.go`) · `throttle_test.go` | ❌ not present |
 | **— Not required by WeKan —** | | | |
 | GridFS storage / commands | — (attachments on filesystem) | ⚠️ driver convention over `fs.files`/`fs.chunks` CRUD | ✅ (same driver convention) |
 | `mapReduce` | — | ❌ not registered | ❌ not registered (no handler) |
@@ -485,9 +494,10 @@ Both feature columns were checked against the branches' real code (2026-07):
   aggregation `Stages` map plus `init()`-injected `$facet`/`$bucket`/`$bucketAuto`/
   `$unionWith`; the `Operators` / `unsupportedOperators` maps; `filter.go`'s operator
   cases (incl. `$where`, `$text`); the update-operator set; `msg_createindexes.go`
-  option handling; and `commands.go`. Correction applied vs. an earlier draft:
-  `replSetGetStatus` is **not** implemented in v1 (`❌`, not `⚠️`); `$where` is a
-  genuine goja implementation (`✅`, matching `$function`).
+  option handling; and `commands.go`. Notes: `replSetGetStatus` and
+  `replSetGetConfig` **are** now implemented in v1 (`✅`, single-member) and
+  registered in `commands.go`; `$where` is a genuine goja implementation (`✅`,
+  matching `$function`).
 - **v1 per-backend** — checked `internal/backends/{sqlite,postgresql,mysql,hana}`. All
   four implement the same `backends.Collection` interface, so the handler layer (every
   non-storage matrix row) works on any of them. The fork's new index options
