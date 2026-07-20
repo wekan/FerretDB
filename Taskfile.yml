@@ -867,13 +867,8 @@ tasks:
     desc: "Format, lint and build documentation"
     deps: [fmt-docs]
     cmds:
-      - docker compose run --rm docusaurus-docs build
+      - python3 docs/build.py
 
-  blog:
-    desc: "Format, lint and build blog"
-    deps: [fmt-docs]
-    cmds:
-      - docker compose run --rm docusaurus-blog build
 
   pngcrush:
     cmds:
@@ -890,39 +885,10 @@ tasks:
       - find . -type f -name '*.png' | parallel "pngcrush -ow -brute {} {.}.temp"
 
   docs-dev:
-    desc: "Start documentation development server"
+    desc: "Build the static docs site and serve it locally at http://localhost:3000"
     cmds:
-      - docker compose run --rm --service-ports docusaurus-docs start --host=0.0.0.0
-
-  docs-version:
-    desc: "Create new documentation version"
-    cmds:
-      - docker compose run --rm docusaurus-docs docs:version v{{.VERSION}}
-    requires:
-      vars: [VERSION]
-
-  docs-cloudflare-preview:
-    cmds:
-      # for debugging
-      - >
-        docker compose run --rm
-        --entrypoint='/bin/sh -c "git config --global --add safe.directory /workdir && git status"'
-        wrangler
-      - docker compose run --rm --service-ports wrangler pages deployment create --project-name=docs website/build
-
-  blog-dev:
-    desc: "Start blog development server"
-    cmds:
-      - docker compose run --rm --service-ports docusaurus-blog start --host=0.0.0.0 --port=3001
-
-  blog-cloudflare-preview:
-    cmds:
-      # for debugging
-      - >
-        docker compose run --rm
-        --entrypoint='/bin/sh -c "git config --global --add safe.directory /workdir && git status"'
-        wrangler
-      - docker compose run --rm --service-ports wrangler pages deployment create --project-name=blog website/build
+      - python3 docs/build.py
+      - python3 -m http.server 3000 --directory docs
 
   changelog:
     desc: "Generate changelogs locally for a given milestone."

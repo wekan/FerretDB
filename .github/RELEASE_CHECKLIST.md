@@ -11,9 +11,8 @@
    - Copy the changelog to the `CHANGELOG.md` file.
    - Sort items within sections according to importance if needed.
    - Add first-time contributor credits if any (copy this data from the release draft).
-6. Run `task docs-version VERSION=X.Y`.
-   Update `versions` in `docusaurus.config.js`.
-   Remove the oldest version from `versioned_docs`, `versioned_sidebars`, `versions.json`.
+6. Run `task docs` to rebuild the static documentation site (`python3 docs/build.py`)
+   and commit the regenerated `docs/*.html`.
 7. Run `task docs-fmt`.
 8. Commit and push changes to the PR.
 9. Merge PR, pull and check `git status`.

@@ -8,13 +8,11 @@ state.json
 *.out
 *.sqlite*
 *.txt
-!website/static/*.txt
 
 .task/
 bin/
 tmp/
 vendor/
-website/build/
 
 # build.sh: local Go toolchain and SQLite data dir
 .goroot/

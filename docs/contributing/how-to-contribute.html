@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How to contribute to FerretDB — FerretDB v1 (SQLite)</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">FerretDB v1 <span>(SQLite)</span></a>
+  <input type="checkbox" id="navtoggle" hidden>
+  <label for="navtoggle" class="navtoggle-btn" aria-label="Toggle navigation">☰</label>
+</header>
+<div class="layout">
+  <nav class="sidebar"><ul class='nav-top'>
+<li><a href="../index.html">Introduction</a></li>
+<li><a href="../understanding-ferretdb.html">Understanding FerretDB</a></li>
+<li><a href="../pushdown.html">Query pushdown</a></li>
+<li><a href="../indexes.html">Indexes</a></li>
+<li><a href="../diff.html">Known differences</a></li>
+<li><a href="../telemetry.html">Telemetry reporting</a></li>
+</ul>
+<div class="nav-cat">Operators</div>
+<ul>
+<li><a href="../operators/query/bitwise-operators.html">Bitwise query operators</a></li>
+<li><a href="../operators/query/comparison-operators.html">Comparison query operators</a></li>
+<li><a href="../operators/query/logical-operators.html">Logical query operators</a></li>
+<li><a href="../operators/query/array-operators.html">Array query operators</a></li>
+<li><a href="../operators/query/element-operators.html">Element query operators</a></li>
+<li><a href="../operators/query/evaluation-operators.html">Evaluation query operators</a></li>
+<li><a href="../operators/update/array-update-operators.html">Array update operators</a></li>
+<li><a href="../operators/update/field-update-operators.html">Field update operators</a></li>
+</ul>
+<div class="nav-cat">Reference</div>
+<ul>
+<li><a href="../reference/supported-commands.html">Supported commands</a></li>
+<li><a href="../reference/glossary.html">Glossary</a></li>
+</ul>
+<div class="nav-cat">Aggregation Operations</div>
+<ul>
+<li><a href="../aggregation-operations/aggregation-pipeline-and-commands.html">Aggregation pipeline and commands</a></li>
+<li><a href="../aggregation-operations/aggregation-stages.html">Aggregation stages</a></li>
+</ul>
+<div class="nav-cat">Quickstart Guide</div>
+<ul>
+<li><a href="../quickstart-guide/docker.html">Docker</a></li>
+<li><a href="../quickstart-guide/deb.html">DEB package</a></li>
+<li><a href="../quickstart-guide/rpm.html">RPM package</a></li>
+<li><a href="../quickstart-guide/systemd.html">Systemd Unit</a></li>
+<li><a href="../quickstart-guide/macos.html">macOS</a></li>
+<li><a href="../quickstart-guide/windows.html">Windows</a></li>
+<li><a href="../quickstart-guide/go.html">Go</a></li>
+</ul>
+<div class="nav-cat">Contributing</div>
+<ul>
+<li class="active"><a href="../contributing/how-to-contribute.html">How to contribute to FerretDB</a></li>
+<li><a href="../contributing/writing-guide.html">Writing guide</a></li>
+</ul>
+<div class="nav-cat">Security</div>
+<ul>
+<li><a href="../security/authentication.html">Authentication</a></li>
+<li><a href="../security/tls-connections.html">TLS Connections</a></li>
+</ul>
+<div class="nav-cat">Basic Operations</div>
+<ul>
+<li><a href="../basic-operations/performing.html">Performing CRUD operations</a></li>
+<li><a href="../basic-operations/create.html">Insert operation</a></li>
+<li><a href="../basic-operations/read.html">Read operation</a></li>
+<li><a href="../basic-operations/update.html">Update operation</a></li>
+<li><a href="../basic-operations/delete.html">Delete operation</a></li>
+</ul>
+<div class="nav-cat">Migration</div>
+<ul>
+<li><a href="../migration/premigration-testing.html">Pre-migration testing</a></li>
+<li><a href="../migration/migrating-from-mongodb.html">Migrating from MongoDB</a></li>
+</ul>
+<div class="nav-cat">Configuration</div>
+<ul>
+<li><a href="../configuration/flags.html">Configuration flags</a></li>
+<li><a href="../configuration/operation-modes.html">Operation modes</a></li>
+<li><a href="../configuration/observability.html">Observability</a></li>
+<li><a href="../configuration/oplog-support.html">OpLog support</a></li>
+</ul></nav>
+  <main class="content">
+    <article><h1 id="how-to-contribute-to-ferretdb">How to contribute to FerretDB</h1>
+<p>FerretDB is an open source project and everyone – developers and non-developers – is welcome to contribute. If you're interested in contributing to FerretDB projects, this documentation will help you get started.</p>
+<p>Here are some of the current FerretDB projects that you can fork and contribute to:</p>
+<ul>
+<li><a href="https://github.com/FerretDB/FerretDB">FerretDB</a>: This is the main repository of FerretDB.</li>
+<li><a href="https://github.com/FerretDB/dance">dance</a>: This repository contains the FerretDB integration testing tool.</li>
+<li><a href="https://github.com/FerretDB/github-actions">github-actions</a>: This repository houses our shared GitHub Actions for FerretDB, dance, and other repositories.</li>
+</ul>
+<p>For those taking their first steps in contributing to an open source project. Please take a look at this post on <a href="https://blog.ferretdb.io/how-to-contribute-to-open-source-2022/">how to contribute to open source software</a>.</p>
+<h2 id="get-started">Get started</h2>
+<p>You don't have to be a developer to contribute to FerretDB projects, you can even get started by helping us improve this documentation. If you have any questions or suggestions on how we can improve, kindly join our <a href="../index.html#community">community</a>. We appreciate your feedback.</p>
+<h2 id="contributing-to-this-documentation">Contributing to this documentation</h2>
+<p>If you find anything confusing or missing in the documentation, click the "Edit this page" link at the bottom of almost every page in the documentation. More information on contributing to the documentation can be found <a href="https://github.com/FerretDB/FerretDB/blob/main-v1/CONTRIBUTING.md#contributing-documentation">here</a>.</p>
+<h2 id="contributing-to-the-ferretdb-repository">Contributing to the FerretDB repository</h2>
+<ul>
+<li>To contribute to this <a href="https://github.com/FerretDB/FerretDB/">FerretDB project</a>, please read the <a href="https://github.com/FerretDB/FerretDB/blob/main-v1/CONTRIBUTING.md">CONTRIBUTING.md</a> and <a href="https://github.com/FerretDB/FerretDB/blob/main-v1/CODE_OF_CONDUCT.md">CODE_OF_CONDUCT.md</a> guideline to know more.</li>
+<li>Is everything working as it should? If not, please let us know by <a href="https://github.com/FerretDB/FerretDB/issues/new/choose">creating an issue</a>. You can create issues for bugs, documentation, features, or enhancements.</li>
+<li>You can identify issues you would like to work on by looking at the <a href="https://github.com/FerretDB/FerretDB/issues">open issues</a> for this repository.</li>
+<li>The most straightforward way to start contributing to this repository is to select issues that are labeled <a href="https://github.com/FerretDB/FerretDB/contribute">good-first-issues</a></li>
+</ul>
+<h2 id="contributing-to-dance">Contributing to dance</h2>
+<ul>
+<li>To start contributing to the <a href="https://github.com/FerretDB/dance">dance repository</a> for integration testing, follow the guidelines in the <a href="https://github.com/FerretDB/dance/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> and <a href="https://github.com/FerretDB/dance/blob/main/CODE_OF_CONDUCT.md">CODE_OF_CONDUCT.md</a> files.</li>
+<li>Looking for something to work on? Check out the <a href="https://github.com/FerretDB/dance/issues">open issues</a> for this repository.</li>
+</ul>
+<h2 id="contributing-to-github-actions">Contributing to github-actions</h2>
+<ul>
+<li>To contribute to our <a href="https://github.com/FerretDB/github-actions/">github-actions repository</a>, please go through the instructions in the <a href="https://github.com/FerretDB/github-actions/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a> file.</li>
+</ul></article>
+    <footer class="pagefoot">
+      <p>FerretDB v1 (SQLite) — a general-purpose MongoDB replacement. Source:
+      <a href="https://github.com/wekan/FerretDB">github.com/wekan/FerretDB</a>.
+      This page is generated from <code>contributing/how-to-contribute.md</code> by <code>docs/build.py</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

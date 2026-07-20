@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Insert operation — FerretDB v1 (SQLite)</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">FerretDB v1 <span>(SQLite)</span></a>
+  <input type="checkbox" id="navtoggle" hidden>
+  <label for="navtoggle" class="navtoggle-btn" aria-label="Toggle navigation">☰</label>
+</header>
+<div class="layout">
+  <nav class="sidebar"><ul class='nav-top'>
+<li><a href="../index.html">Introduction</a></li>
+<li><a href="../understanding-ferretdb.html">Understanding FerretDB</a></li>
+<li><a href="../pushdown.html">Query pushdown</a></li>
+<li><a href="../indexes.html">Indexes</a></li>
+<li><a href="../diff.html">Known differences</a></li>
+<li><a href="../telemetry.html">Telemetry reporting</a></li>
+</ul>
+<div class="nav-cat">Operators</div>
+<ul>
+<li><a href="../operators/query/bitwise-operators.html">Bitwise query operators</a></li>
+<li><a href="../operators/query/comparison-operators.html">Comparison query operators</a></li>
+<li><a href="../operators/query/logical-operators.html">Logical query operators</a></li>
+<li><a href="../operators/query/array-operators.html">Array query operators</a></li>
+<li><a href="../operators/query/element-operators.html">Element query operators</a></li>
+<li><a href="../operators/query/evaluation-operators.html">Evaluation query operators</a></li>
+<li><a href="../operators/update/array-update-operators.html">Array update operators</a></li>
+<li><a href="../operators/update/field-update-operators.html">Field update operators</a></li>
+</ul>
+<div class="nav-cat">Reference</div>
+<ul>
+<li><a href="../reference/supported-commands.html">Supported commands</a></li>
+<li><a href="../reference/glossary.html">Glossary</a></li>
+</ul>
+<div class="nav-cat">Aggregation Operations</div>
+<ul>
+<li><a href="../aggregation-operations/aggregation-pipeline-and-commands.html">Aggregation pipeline and commands</a></li>
+<li><a href="../aggregation-operations/aggregation-stages.html">Aggregation stages</a></li>
+</ul>
+<div class="nav-cat">Quickstart Guide</div>
+<ul>
+<li><a href="../quickstart-guide/docker.html">Docker</a></li>
+<li><a href="../quickstart-guide/deb.html">DEB package</a></li>
+<li><a href="../quickstart-guide/rpm.html">RPM package</a></li>
+<li><a href="../quickstart-guide/systemd.html">Systemd Unit</a></li>
+<li><a href="../quickstart-guide/macos.html">macOS</a></li>
+<li><a href="../quickstart-guide/windows.html">Windows</a></li>
+<li><a href="../quickstart-guide/go.html">Go</a></li>
+</ul>
+<div class="nav-cat">Contributing</div>
+<ul>
+<li><a href="../contributing/how-to-contribute.html">How to contribute to FerretDB</a></li>
+<li><a href="../contributing/writing-guide.html">Writing guide</a></li>
+</ul>
+<div class="nav-cat">Security</div>
+<ul>
+<li><a href="../security/authentication.html">Authentication</a></li>
+<li><a href="../security/tls-connections.html">TLS Connections</a></li>
+</ul>
+<div class="nav-cat">Basic Operations</div>
+<ul>
+<li><a href="../basic-operations/performing.html">Performing CRUD operations</a></li>
+<li class="active"><a href="../basic-operations/create.html">Insert operation</a></li>
+<li><a href="../basic-operations/read.html">Read operation</a></li>
+<li><a href="../basic-operations/update.html">Update operation</a></li>
+<li><a href="../basic-operations/delete.html">Delete operation</a></li>
+</ul>
+<div class="nav-cat">Migration</div>
+<ul>
+<li><a href="../migration/premigration-testing.html">Pre-migration testing</a></li>
+<li><a href="../migration/migrating-from-mongodb.html">Migrating from MongoDB</a></li>
+</ul>
+<div class="nav-cat">Configuration</div>
+<ul>
+<li><a href="../configuration/flags.html">Configuration flags</a></li>
+<li><a href="../configuration/operation-modes.html">Operation modes</a></li>
+<li><a href="../configuration/observability.html">Observability</a></li>
+<li><a href="../configuration/oplog-support.html">OpLog support</a></li>
+</ul></nav>
+  <main class="content">
+    <article><h1 id="insert-operation">Insert operation</h1>
+<p>The insert operation adds a new document to a collection.</p>
+<h2 id="insert-a-single-document">Insert a single document</h2>
+<p>The <code>insertOne()</code> command is used to add a single document into a collection, using this syntax format:</p>
+<pre><code class="language-js">db.collection.insertOne({field1: value1, field2: value2,.... fieldN: valueN})</code></pre>
+<p>The example below depicts how a single document can be added to a collection. If a collection does not exist, the insert command automatically creates one.</p>
+<pre><code class="language-js">db.scientists.insertOne({
+  name: {
+    firstname: 'Thomas',
+    lastname: 'Edison'
+  },
+  born: 1847,
+  invention: 'lightbulb'
+})</code></pre>
+<p>If the operation is successful, you will get a response with acknowledged set to true, and the autogenerated ObjectId of the document that looks like this:</p>
+<pre><code class="language-js">{
+  acknowledged: true,
+  insertedId: ObjectId("6346fcafd7a4a1b0b38eb2db")
+}</code></pre>
+<h2 id="insert-multiple-documents-at-once">Insert multiple documents at once</h2>
+<p>A collection can contain multiple documents. Using the <code>insertMany()</code> command, you can add multiple documents to a collection at once.</p>
+<pre><code class="language-js">db.collection_name.insertMany([{ document1 }, { document2 }, ...{ documentN }])</code></pre>
+<p>The following example shows how to insert multiple documents into a collection:</p>
+<pre><code class="language-js">db.scientists.insertMany([
+  {
+    name: {
+      firstname: 'Alan',
+      lastname: 'Turing'
+    },
+    born: 1912,
+    invention: 'Turing Machine'
+  },
+  {
+    name: {
+      firstname: 'Graham',
+      lastname: 'Bell'
+    },
+    born: 1847,
+    invention: 'telephone'
+  },
+  {
+    name: {
+      firstname: 'Ada',
+      lastname: 'Lovelace'
+    },
+    born: 1815,
+    invention: 'computer programming'
+  }
+])</code></pre>
+<p>You can retrieve all the documents in the collection with this command: <code>db.scientists.find({})</code></p></article>
+    <footer class="pagefoot">
+      <p>FerretDB v1 (SQLite) — a general-purpose MongoDB replacement. Source:
+      <a href="https://github.com/wekan/FerretDB">github.com/wekan/FerretDB</a>.
+      This page is generated from <code>basic-operations/create.md</code> by <code>docs/build.py</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

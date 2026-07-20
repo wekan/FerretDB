@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Supported commands — FerretDB v1 (SQLite)</title>
+<meta name="description" content="This is a list of all supported commands in FerretDB">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">FerretDB v1 <span>(SQLite)</span></a>
+  <input type="checkbox" id="navtoggle" hidden>
+  <label for="navtoggle" class="navtoggle-btn" aria-label="Toggle navigation">☰</label>
+</header>
+<div class="layout">
+  <nav class="sidebar"><ul class='nav-top'>
+<li><a href="../index.html">Introduction</a></li>
+<li><a href="../understanding-ferretdb.html">Understanding FerretDB</a></li>
+<li><a href="../pushdown.html">Query pushdown</a></li>
+<li><a href="../indexes.html">Indexes</a></li>
+<li><a href="../diff.html">Known differences</a></li>
+<li><a href="../telemetry.html">Telemetry reporting</a></li>
+</ul>
+<div class="nav-cat">Operators</div>
+<ul>
+<li><a href="../operators/query/bitwise-operators.html">Bitwise query operators</a></li>
+<li><a href="../operators/query/comparison-operators.html">Comparison query operators</a></li>
+<li><a href="../operators/query/logical-operators.html">Logical query operators</a></li>
+<li><a href="../operators/query/array-operators.html">Array query operators</a></li>
+<li><a href="../operators/query/element-operators.html">Element query operators</a></li>
+<li><a href="../operators/query/evaluation-operators.html">Evaluation query operators</a></li>
+<li><a href="../operators/update/array-update-operators.html">Array update operators</a></li>
+<li><a href="../operators/update/field-update-operators.html">Field update operators</a></li>
+</ul>
+<div class="nav-cat">Reference</div>
+<ul>
+<li class="active"><a href="../reference/supported-commands.html">Supported commands</a></li>
+<li><a href="../reference/glossary.html">Glossary</a></li>
+</ul>
+<div class="nav-cat">Aggregation Operations</div>
+<ul>
+<li><a href="../aggregation-operations/aggregation-pipeline-and-commands.html">Aggregation pipeline and commands</a></li>
+<li><a href="../aggregation-operations/aggregation-stages.html">Aggregation stages</a></li>
+</ul>
+<div class="nav-cat">Quickstart Guide</div>
+<ul>
+<li><a href="../quickstart-guide/docker.html">Docker</a></li>
+<li><a href="../quickstart-guide/deb.html">DEB package</a></li>
+<li><a href="../quickstart-guide/rpm.html">RPM package</a></li>
+<li><a href="../quickstart-guide/systemd.html">Systemd Unit</a></li>
+<li><a href="../quickstart-guide/macos.html">macOS</a></li>
+<li><a href="../quickstart-guide/windows.html">Windows</a></li>
+<li><a href="../quickstart-guide/go.html">Go</a></li>
+</ul>
+<div class="nav-cat">Contributing</div>
+<ul>
+<li><a href="../contributing/how-to-contribute.html">How to contribute to FerretDB</a></li>
+<li><a href="../contributing/writing-guide.html">Writing guide</a></li>
+</ul>
+<div class="nav-cat">Security</div>
+<ul>
+<li><a href="../security/authentication.html">Authentication</a></li>
+<li><a href="../security/tls-connections.html">TLS Connections</a></li>
+</ul>
+<div class="nav-cat">Basic Operations</div>
+<ul>
+<li><a href="../basic-operations/performing.html">Performing CRUD operations</a></li>
+<li><a href="../basic-operations/create.html">Insert operation</a></li>
+<li><a href="../basic-operations/read.html">Read operation</a></li>
+<li><a href="../basic-operations/update.html">Update operation</a></li>
+<li><a href="../basic-operations/delete.html">Delete operation</a></li>
+</ul>
+<div class="nav-cat">Migration</div>
+<ul>
+<li><a href="../migration/premigration-testing.html">Pre-migration testing</a></li>
+<li><a href="../migration/migrating-from-mongodb.html">Migrating from MongoDB</a></li>
+</ul>
+<div class="nav-cat">Configuration</div>
+<ul>
+<li><a href="../configuration/flags.html">Configuration flags</a></li>
+<li><a href="../configuration/operation-modes.html">Operation modes</a></li>
+<li><a href="../configuration/observability.html">Observability</a></li>
+<li><a href="../configuration/oplog-support.html">OpLog support</a></li>
+</ul></nav>
+  <main class="content">
+    <article><h1 id="supported-commands">Supported commands</h1>
+<div class="admonition admonition-note">
+<div class="admonition-title">This build (FerretDB v1, SQLite)</div>
+<p>This is the FerretDB v1 (SQLite) fork. On top of upstream FerretDB v1.24.2 it adds, among other things: a single-node replica-set handshake with automatic oplog creation (<code>replSetInitiate</code>, <code>replSetGetStatus</code>, <code>replSetGetConfig</code>, replica-set <code>hello</code>/<code>isMaster</code> fields) so MongoDB-wire clients can tail changes instead of polling; the aggregation operators <code>$eq</code>, <code>$ne</code>, <code>$or</code>, <code>$ifNull</code>, <code>$anyElementTrue</code>, <code>$objectToArray</code>, <code>$map</code> and the equality-join <code>$lookup</code> stage; and the <code>throttle</code> self-throttling extension command (see the end of this page). The authoritative, dated list is in the CHANGELOG; the ROADMAP has the full comparison with upstream. FerretDB v1 (SQLite) is a general-purpose MongoDB 7 replacement, comparable to FerretDB v2 (PostgreSQL).</p>
+</div>
+<h2 id="query-commands">Query commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>delete</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>deletes</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>let</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>ordered</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>q</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>limit</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>hint</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>find</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>filter</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>sort</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>projection</code></td><td>✅</td><td>Basic projections with fields are supported</td></tr>
+<tr><td></td><td><code>hint</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>skip</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>limit</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>batchSize</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>singleBatch</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>maxTimeMS</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>readConcern</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>max</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>min</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>returnKey</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>showRecordId</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>tailable</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>oplogReplay</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>noCursorTimeout</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/4035">Issue</a></td></tr>
+<tr><td></td><td><code>awaitData</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>allowPartialResults</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>allowDiskUse</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>let</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>findAndModify</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>query</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>sort</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>remove</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>update</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>new</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>upsert</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>bypassDocumentValidation</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>maxTimeMS</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>arrayFilters</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>hint</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>let</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td><code>getMore</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>batchSize</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>maxTimeMS</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td><code>insert</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>documents</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>ordered</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>bypassDocumentValidation</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>update</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>updates</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>ordered</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>bypassDocumentValidation</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>let</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>q</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>u</code></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2742">Issue</a></td></tr>
+<tr><td></td><td><code>c</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>upsert</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>multi</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>arrayFilters</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>hint</code></td><td>⚠️</td><td>Ignored</td></tr>
+</tbody>
+</table>
+<h3 id="update-operators">Update Operators</h3>
+<p>The following operators and modifiers are available in the <code>update</code> and <code>findAndModify</code> commands.</p>
+<table>
+<thead>
+<tr><th>Operator</th><th>Modifier</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>$currentDate</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$inc</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$min</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$max</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$mul</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$rename</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$set</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$setOnInsert</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$unset</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/822">Issue</a></td></tr>
+<tr><td><code>$[]</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/823">Issue</a></td></tr>
+<tr><td><code>$[&lt;identifier&gt;]</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/824">Issue</a></td></tr>
+<tr><td><code>$addToSet</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td><code>$pop</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$pull</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>$push</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td><code>$pullAll</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td></td><td><code>$each</code></td><td>✅️</td><td></td></tr>
+<tr><td></td><td><code>$position</code></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/829">Issue</a></td></tr>
+<tr><td></td><td><code>$slice</code></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/830">Issue</a></td></tr>
+<tr><td></td><td><code>$sort</code></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/831">Issue</a></td></tr>
+<tr><td></td><td><code>$bit</code></td><td>✅️</td><td></td></tr>
+</tbody>
+</table>
+<h3 id="projection-operators">Projection Operators</h3>
+<p>The following operators are available in the <code>find</code> command <code>projection</code> argument.</p>
+<table>
+<thead>
+<tr><th>Operator</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>$</code></td><td>✅️</td><td></td></tr>
+<tr><td><code>$elemMatch</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1710">Issue</a></td></tr>
+<tr><td><code>$meta</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1712">Issue</a></td></tr>
+<tr><td><code>$slice</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1711">Issue</a></td></tr>
+</tbody>
+</table>
+<h2 id="query-plan-cache-commands">Query Plan Cache Commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>planCacheClear</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1502">Issue</a></td></tr>
+<tr><td></td><td><code>query</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>projection</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>sort</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>planCacheClearFilters</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1503">Issue</a></td></tr>
+<tr><td></td><td><code>query</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>sort</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>projection</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>planCacheListFilters</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1504">Issue</a></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>planCacheSetFilter</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1505">Issue</a></td></tr>
+<tr><td></td><td><code>query</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>sort</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>projection</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>indexes</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+</tbody>
+</table>
+<h2 id="free-monitoring-commands">Free Monitoring Commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>setFreeMonitoring</code></td><td></td><td>✅</td><td><a href="../telemetry.html">Telemetry reporting</a></td></tr>
+<tr><td></td><td><code>action: "enable"</code></td><td>✅</td><td><a href="../telemetry.html#enable-telemetry"> 0 </a></td></tr>
+<tr><td></td><td><code>action: "disable"</code></td><td>✅</td><td><a href="../telemetry.html#disable-telemetry"> 0 </a></td></tr>
+<tr><td><code>getFreeMonitoringStatus</code></td><td></td><td>✅</td><td></td></tr>
+</tbody>
+</table>
+<h2 id="database-operations">Database Operations</h2>
+<h3 id="user-management-commands">User Management Commands</h3>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>createUser</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>pwd</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>customData</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>digestPassword</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>authenticationRestrictions</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>mechanisms</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>digestPassword</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dropAllUsersFromDatabase</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dropUser</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>grantRolesToUser</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1494">Issue</a></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>revokeRolesFromUser</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1495">Issue</a></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>updateUser</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>pwd</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>customData</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>roles</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>digestPassword</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>authenticationRestrictions</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>mechanisms</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>digestPassword</code></td><td></td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td></td></tr>
+<tr><td><code>usersInfo</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>showCredentials</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>showCustomData</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>showPrivileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>showAuthenticationRestrictions</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>filter</code></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/4141">Issue</a></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+</tbody>
+</table>
+<h3 id="authentication-commands">Authentication Commands</h3>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>authenticate</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1731">Issue</a></td></tr>
+<tr><td><code>getnonce</code></td><td></td><td>❌</td><td>Deprecated</td></tr>
+<tr><td><code>logout</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>saslStart</code></td><td></td><td>✅</td><td></td></tr>
+</tbody>
+</table>
+<h3 id="role-management-commands">Role Management Commands</h3>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>createRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1528">Issue</a></td></tr>
+<tr><td></td><td><code>privileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>authenticationRestrictions</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dropRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1529">Issue</a></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dropAllRolesFromDatabase</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1530">Issue</a></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>grantPrivilegesToRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1531">Issue</a></td></tr>
+<tr><td></td><td><code>privileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>grantRolesToRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1532">Issue</a></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>invalidateUserCache</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1533">Issue</a></td></tr>
+<tr><td><code>revokePrivilegesFromRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1534">Issue</a></td></tr>
+<tr><td></td><td><code>privileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>revokeRolesFromRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1535">Issue</a></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>rolesInfo</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1536">Issue</a></td></tr>
+<tr><td></td><td><code>showPrivileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>showBuiltinRoles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>updateRole</code></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1537">Issue</a></td></tr>
+<tr><td></td><td><code>privileges</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>roles</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>authenticationRestrictions</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+</tbody>
+</table>
+<h3 id="replication-commands">Replication Commands</h3>
+<p>FerretDB v1 (SQLite) presents itself as a single-node, always-primary replica set of one — enough for a MongoDB-wire client's oplog tailing (e.g. Meteor's OpLog mode), not real multi-node replication or elections. See the CHANGELOG for details.</p>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>replSetInitiate</code></td><td></td><td>✅</td><td>Single-node RS; auto-creates the capped <code>local.oplog.rs</code></td></tr>
+<tr><td><code>replSetGetStatus</code></td><td></td><td>✅</td><td>Single-member primary status for <code>rs.status()</code></td></tr>
+<tr><td><code>replSetGetConfig</code></td><td></td><td>✅</td><td>Single-member config for <code>rs.conf()</code></td></tr>
+</tbody>
+</table>
+<h2 id="session-commands">Session Commands</h2>
+<p>Related <a href="https://github.com/FerretDB/FerretDB/issues/8">issue</a>.</p>
+<p>Related <a href="https://github.com/FerretDB/FerretDB/issues/153">issue</a>.</p>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>abortTransaction</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td></td><td><code>txnNumber</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>autocommit</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>commitTransaction</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td></td><td><code>txnNumber</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>autocommit</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>endSessions</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td><code>killAllSessions</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td><code>killAllSessionsByPattern</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td><code>killSessions</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td><code>refreshSessions</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+<tr><td><code>startSession</code></td><td></td><td>⚠️</td><td>Compatibility no-op (accepted, ignored)</td></tr>
+</tbody>
+</table>
+<h2 id="aggregation-pipelines">Aggregation pipelines</h2>
+<p>Related <a href="https://github.com/FerretDB/FerretDB/issues/1917">issue</a>.</p>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>aggregate</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td><code>count</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td><code>distinct</code></td><td></td><td>✅</td><td></td></tr>
+</tbody>
+</table>
+<h3 id="aggregation-pipeline-stages">Aggregation pipeline stages</h3>
+<table>
+<thead>
+<tr><th>Stage</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>$addFields</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$bucket</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$bucketAuto</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$changeStream</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$changeStream</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$collStats</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$count</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$currentOp</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$densify</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$documents</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$documents</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$facet</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$fill</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$geoNear</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$graphLookup</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$group</code></td><td>⚠️</td><td>Supported; accumulators limited to <code>$sum</code> and <code>$count</code></td></tr>
+<tr><td><code>$indexStats</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$limit</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$listLocalSessions</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$listSessions</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$lookup</code></td><td>✅</td><td>Equality join (from/localField/foreignField/as); pipeline form unsupported</td></tr>
+<tr><td><code>$match</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$merge</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$out</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$planCacheStats</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$project</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$redact</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$replaceRoot</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$replaceWith</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sample</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$search</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$searchMeta</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$set</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setWindowFields</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$skip</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sort</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sortByCount</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$unionWith</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$unset</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$unwind</code></td><td>✅</td><td>Supported</td></tr>
+</tbody>
+</table>
+<h3 id="aggregation-pipeline-operators">Aggregation pipeline operators</h3>
+<table>
+<thead>
+<tr><th>Operator</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>$abs</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$accumulator</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$acos</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$acosh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$add</code> (arithmetic)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1453">Issue</a></td></tr>
+<tr><td><code>$add</code> (date)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1460">Issue</a></td></tr>
+<tr><td><code>$addToSet</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1468">Issue</a></td></tr>
+<tr><td><code>$allElementsTrue</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$and</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$anyElementTrue</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$arrayElemAt</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$arrayToObject</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$asin</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$asinh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$atan</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$atan2</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1465">Issue</a></td></tr>
+<tr><td><code>$atanh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$avg</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$binarySize</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$bottom</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$bottomN</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$bsonSize</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$ceil</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$cmp</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$concat</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$concatArrays</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$cond</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$convert</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$cos</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$cosh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$count</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$covariancePop</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$covarianceSamp</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$dateAdd</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateDiff</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateFromParts</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateFromString</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateSubtract</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateToParts</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateToString</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dateTrunc</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dayOfMonth</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dayOfWeek</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$dayOfYear</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$degreesToRadians</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$denseRank</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$derivative</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$divide</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$documentNumber</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$eq</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$exp</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$expMovingAvg</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$filter</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$first</code> (accumulator)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$first</code> (array operator)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1454">Issue</a></td></tr>
+<tr><td><code>$firstN</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$floor</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$function</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$getField</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$gt</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$gte</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$hour</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$ifNull</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$in</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$indexOfArray</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$indexOfBytes</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$indexOfCP</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$integral</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$isArray</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$isNumber</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$isoDayOfWeek</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$isoWeek</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$isoWeekYear</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$last</code> (accumulator)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$last</code> (array operator)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1454">Issue</a></td></tr>
+<tr><td><code>$lastN</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$let</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$linearFill</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$literal</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$ln</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$locf</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$log</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$log10</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1453">Issue</a></td></tr>
+<tr><td><code>$lt</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$lte</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$ltrim</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$map</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$max</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$maxN</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$mergeObjects</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$meta</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$millisecond</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$min</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$minN</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$minute</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$mod</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$month</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$multiply</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$ne</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$not</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$objectToArray</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$or</code></td><td>✅</td><td>Added in FerretDB v1</td></tr>
+<tr><td><code>$pow</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$push</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$radiansToDegrees</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$rand</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$range</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$rank</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$reduce</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$regexFind</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$regexFindAll</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$regexMatch</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$replaceAll</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$replaceOne</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$reverseArray</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$round</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$rtrim</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sampleRate</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$second</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setDifference</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setEquals</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setField</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setIntersection</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setIsSubset</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$setUnion</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$shift</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$sin</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sinh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$size</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$slice</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sortArray</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$split</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$sqrt</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$stdDevPop</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$stdDevSamp</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$strcasecmp</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$strLenBytes</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$strLenCP</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$substr</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$substrBytes</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$substrCP</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$subtract</code> (arithmetic)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1453">Issue</a></td></tr>
+<tr><td><code>$subtract</code> (date)</td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1460">Issue</a></td></tr>
+<tr><td><code>$sum</code> (accumulator)</td><td>✅️</td><td></td></tr>
+<tr><td><code>$sum</code> (operator)</td><td>✅️</td><td></td></tr>
+<tr><td><code>$switch</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$tan</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$tanh</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toBool</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toDate</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toDecimal</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$toDouble</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toInt</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toLong</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toLower</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toObjectId</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$top</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$topN</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1467">Issue</a></td></tr>
+<tr><td><code>$toString</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$toUpper</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$trim</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$trunc</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$tsIncrement</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$tsSecond</code></td><td>❌</td><td>Not implemented</td></tr>
+<tr><td><code>$type</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$unsetField</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$week</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$year</code></td><td>✅</td><td>Supported</td></tr>
+<tr><td><code>$zip</code></td><td>✅</td><td>Supported</td></tr>
+</tbody>
+</table>
+<h2 id="administration-commands">Administration commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument / Option</th><th>Property</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>cloneCollectionAsCapped</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>toCollection</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>size</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>collMod</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1510">Issue</a></td></tr>
+<tr><td></td><td><code>index</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>keyPattern</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>name</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>expireAfterSeconds</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>hidden</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>prepareUnique</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>unique</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>validator</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>validationLevel</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>validationAction</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>viewOn</code> (Views)</td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>pipeline</code> (Views)</td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>cappedSize</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>cappedMax</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>changeStreamPreAndPostImages</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>compact</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>force</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>compactStructuredEncryptionData</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>compactionTokens</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>convertToCapped</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/3457">Issue</a></td></tr>
+<tr><td></td><td><code>size</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>create</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>capped</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td></td><td><code>timeseries</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/177">Issue</a></td></tr>
+<tr><td></td><td></td><td><code>timeField</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>metaField</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td></td><td><code>granularity</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>expireAfterSeconds</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2415">Issue</a></td></tr>
+<tr><td></td><td><code>clusteredIndex</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>changeStreamPreAndPostImages</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>autoIndexId</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/3922">Issue</a></td></tr>
+<tr><td></td><td><code>size</code></td><td></td><td>✅️</td><td></td></tr>
+<tr><td></td><td><code>max</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>storageEngine</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>validator</code></td><td></td><td>⚠️</td><td>Not implemented in PostgreSQL</td></tr>
+<tr><td></td><td><code>validationLevel</code></td><td></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>validationAction</code></td><td></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>indexOptionDefaults</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>viewOn</code></td><td></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>pipeline</code></td><td></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>collation</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>encryptedFields</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>createIndexes</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>indexes</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td></td><td><code>key</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td></td><td><code>name</code></td><td>✅️</td><td></td></tr>
+<tr><td></td><td></td><td><code>unique</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td></td><td><code>partialFilterExpression</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2448">Issue</a></td></tr>
+<tr><td></td><td></td><td><code>sparse</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2448">Issue</a></td></tr>
+<tr><td></td><td></td><td><code>expireAfterSeconds</code></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2415">Issue</a></td></tr>
+<tr><td></td><td></td><td><code>hidden</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>storageEngine</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>weights</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>default_language</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>language_override</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>textIndexVersion</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>2dsphereIndexVersion</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>bits</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>min</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>max</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>bucketSize</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>collation</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td></td><td><code>wildcardProjection</code></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>commitQuorum</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>currentOp</code></td><td></td><td></td><td>✅</td><td>Basic command supported (empty <code>inprog</code>)</td></tr>
+<tr><td></td><td><code>$ownOps</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>$all</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>drop</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>dropDatabase</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>dropConnections</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1511">Issue</a></td></tr>
+<tr><td></td><td><code>hostAndPort</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dropIndexes</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>index</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>filemd5</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td><code>fsync</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td><code>fsyncUnlock</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>lock</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>getDefaultRWConcern</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>inMemory</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>getClusterParameter</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td><code>getParameter</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>killCursors</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>cursors</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>killOp</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1515">Issue</a></td></tr>
+<tr><td></td><td><code>op</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>listCollections</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>filter</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>nameOnly</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>authorizedCollections</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/3770">Issue</a></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>listDatabases</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>filter</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>nameOnly</code></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>authorizedDatabases</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/3769">Issue</a></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>listIndexes</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>cursor.batchSize</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>logRotate</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1959">Issue</a></td></tr>
+<tr><td></td><td><code>&lt;target&gt;</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>reIndex</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1516">Issue</a></td></tr>
+<tr><td><code>renameCollection</code></td><td></td><td></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>to</code></td><td></td><td>✅</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2563">Issue</a></td></tr>
+<tr><td></td><td><code>dropTarget</code></td><td></td><td>⚠️</td><td><a href="https://github.com/FerretDB/FerretDB/issues/2565">Issue</a></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>rotateCertificates</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td><code>setFeatureCompatibilityVersion</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td><code>setIndexCommitQuorum</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>setIndexCommitQuorum</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>indexNames</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>commitQuorum</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>setParameter</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1518">Issue</a></td></tr>
+<tr><td><code>setDefaultRWConcern</code></td><td></td><td></td><td>❌</td><td></td></tr>
+<tr><td></td><td><code>defaultReadConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>defaultWriteConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>writeConcern</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td><code>shutdown</code></td><td></td><td></td><td>❌</td><td><a href="https://github.com/FerretDB/FerretDB/issues/1519">Issue</a></td></tr>
+<tr><td></td><td><code>force</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>timeoutSecs</code></td><td></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>comment</code></td><td></td><td>⚠️</td><td></td></tr>
+</tbody>
+</table>
+<h2 id="diagnostic-commands">Diagnostic commands</h2>
+<table>
+<thead>
+<tr><th>Command</th><th>Argument</th><th>Status</th><th>Comments</th></tr>
+</thead>
+<tbody>
+<tr><td><code>buildInfo</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>collStats</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>collStats</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>scale</code></td><td>✅</td><td></td></tr>
+<tr><td><code>connPoolStats</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>connectionStatus</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>showPrivileges</code></td><td>✅</td><td></td></tr>
+<tr><td><code>dataSize</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>keyPattern</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>min</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>max</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>estimate</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td><code>dbHash</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>collection</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>dbStats</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>scale</code></td><td>✅</td><td></td></tr>
+<tr><td></td><td><code>freeStorage</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td><code>driverOIDTest</code></td><td></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td><code>explain</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>verbosity</code></td><td>⚠️</td><td>Ignored</td></tr>
+<tr><td></td><td><code>comment</code></td><td>⚠️</td><td>Unimplemented</td></tr>
+<tr><td><code>features</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>getCmdLineOpts</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>getLog</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>hostInfo</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>_isSelf</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>listCommands</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>lockInfo</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>netstat</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>ping</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>profile</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>slowms</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>sampleRate</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>filter</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>serverStatus</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td><code>shardConnPoolStats</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>throttle</code></td><td></td><td>✅</td><td>FerretDB v1 extension (see below)</td></tr>
+<tr><td></td><td><code>slowDownMs</code></td><td>✅</td><td>Pause per command, 0–1000, def 5</td></tr>
+<tr><td></td><td><code>durationMs</code></td><td>✅</td><td>Window length, 0–300000, def 2000</td></tr>
+<tr><td><code>top</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td><code>validate</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+<tr><td></td><td><code>full</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>repair</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>metadata</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>checkBSONConformance</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>validateDBMetadata</code></td><td></td><td>❌</td><td>Unimplemented</td></tr>
+<tr><td></td><td><code>apiParameters</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>db</code></td><td>⚠️</td><td></td></tr>
+<tr><td></td><td><code>collections</code></td><td>⚠️</td><td></td></tr>
+<tr><td><code>whatsmyuri</code></td><td></td><td>✅</td><td>Basic command is fully supported</td></tr>
+</tbody>
+</table>
+<h2 id="ferretdb-v1-extension-commands">FerretDB v1 extension commands</h2>
+<p>These commands are specific to this FerretDB v1 (SQLite) build and are not part of the MongoDB command set.</p>
+<h3 id="throttle"><code>throttle</code></h3>
+<p>A self-throttle for host-CPU pressure. A client that shares the host with FerretDB can call <code>throttle</code> to (1) learn how busy FerretDB is and (2) ask it to slow down when the host CPU is high (a client cannot pause FerretDB's internal work from the outside). While the throttle is active, every command sleeps <code>slowDownMs</code> before it runs, which lowers FerretDB's CPU use and yields time to other software on the host. The throttle <strong>self-expires</strong> after <code>durationMs</code>, so a crashed or disconnected client can never leave FerretDB permanently slow. The throttle command itself and the cheap health/handshake commands (<code>hello</code>/<code>isMaster</code>/<code>ping</code>) are never throttled.</p>
+<p>A client can drive the loop by calling <code>throttle</code> repeatedly with an <strong>increasing</strong> <code>slowDownMs</code> (e.g. doubling) while the host CPU stays high, and backing off once enough CPU is free. <code>commandsProcessed</code> and <code>operationsSummary</code> let the client see how busy FerretDB is and what it has been doing between calls.</p>
+<p><strong>FerretDB also self-regulates.</strong> A client that shares the host may be too starved of CPU to measure the load or even send the request. So a background loop in FerretDB samples the host's total CPU (from <code>/proc/stat</code>) every few seconds and, when it is too high, adds its OWN increasing delay before each command until CPU returns below a target — then backs off. The delay actually applied per command is the <strong>max</strong> of the client-requested <code>slowDownMs</code> and FerretDB's self-regulated delay, so the two cooperate and FerretDB never monopolizes the host even with no client. Self-regulation is tunable with <code>FERRETDB_CPU_SELF_REGULATE</code> (default on), <code>FERRETDB_CPU_HIGH_PERCENT</code>, <code>FERRETDB_CPU_TARGET_PERCENT</code>, <code>FERRETDB_CPU_SLOWDOWN_MS</code>, <code>FERRETDB_CPU_SLOWDOWN_MAX_MS</code> and <code>FERRETDB_CPU_INTERVAL_MS</code>; it is a no-op where <code>/proc/stat</code> is unreadable.</p>
+<p>Parameters (all optional):</p>
+<table>
+<thead>
+<tr><th>Field</th><th>Type</th><th>Default</th><th>Range</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>slowDownMs</code></td><td>int</td><td>5</td><td>0–1000</td><td>Pause before each command while active</td></tr>
+<tr><td><code>durationMs</code></td><td>int</td><td>2000</td><td>0–300000</td><td>How long the throttle stays active</td></tr>
+</tbody>
+</table>
+<p>Response fields:</p>
+<table>
+<thead>
+<tr><th>Field</th><th>Meaning</th></tr>
+</thead>
+<tbody>
+<tr><td><code>commandsProcessed</code></td><td>Running count of commands handled (an activity/"how busy" signal)</td></tr>
+<tr><td><code>operationsSummary</code></td><td>The busiest commands so far, e.g. <code>find=12000, update=340, …</code></td></tr>
+<tr><td><code>throttled</code></td><td>Whether the client-requested throttle is currently active</td></tr>
+<tr><td><code>slowDownMs</code></td><td>The client-requested pause (clamped) now in effect</td></tr>
+<tr><td><code>durationMs</code></td><td>The requested window length</td></tr>
+<tr><td><code>untilUnixNano</code></td><td>Deadline after which the client throttle self-expires</td></tr>
+<tr><td><code>autoSlowDownMs</code></td><td>FerretDB's own self-regulated delay (independent of the client)</td></tr>
+<tr><td><code>hostCpuPercent</code></td><td>FerretDB's last measured host CPU%</td></tr>
+</tbody>
+</table>
+<p>Example:</p>
+<pre><code class="language-js">db.runCommand({ throttle: 1, slowDownMs: 5, durationMs: 2000 })
+// { ok: 1, commandsProcessed: 128374, throttled: true, slowDownMs: 5, ... }
+
+db.runCommand({ throttle: 1, durationMs: 0 }) // resume full speed immediately</code></pre></article>
+    <footer class="pagefoot">
+      <p>FerretDB v1 (SQLite) — a general-purpose MongoDB replacement. Source:
+      <a href="https://github.com/wekan/FerretDB">github.com/wekan/FerretDB</a>.
+      This page is generated from <code>reference/supported-commands.md</code> by <code>docs/build.py</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

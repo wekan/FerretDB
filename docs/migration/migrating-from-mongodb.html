@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migrating from MongoDB — FerretDB v1 (SQLite)</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">FerretDB v1 <span>(SQLite)</span></a>
+  <input type="checkbox" id="navtoggle" hidden>
+  <label for="navtoggle" class="navtoggle-btn" aria-label="Toggle navigation">☰</label>
+</header>
+<div class="layout">
+  <nav class="sidebar"><ul class='nav-top'>
+<li><a href="../index.html">Introduction</a></li>
+<li><a href="../understanding-ferretdb.html">Understanding FerretDB</a></li>
+<li><a href="../pushdown.html">Query pushdown</a></li>
+<li><a href="../indexes.html">Indexes</a></li>
+<li><a href="../diff.html">Known differences</a></li>
+<li><a href="../telemetry.html">Telemetry reporting</a></li>
+</ul>
+<div class="nav-cat">Operators</div>
+<ul>
+<li><a href="../operators/query/bitwise-operators.html">Bitwise query operators</a></li>
+<li><a href="../operators/query/comparison-operators.html">Comparison query operators</a></li>
+<li><a href="../operators/query/logical-operators.html">Logical query operators</a></li>
+<li><a href="../operators/query/array-operators.html">Array query operators</a></li>
+<li><a href="../operators/query/element-operators.html">Element query operators</a></li>
+<li><a href="../operators/query/evaluation-operators.html">Evaluation query operators</a></li>
+<li><a href="../operators/update/array-update-operators.html">Array update operators</a></li>
+<li><a href="../operators/update/field-update-operators.html">Field update operators</a></li>
+</ul>
+<div class="nav-cat">Reference</div>
+<ul>
+<li><a href="../reference/supported-commands.html">Supported commands</a></li>
+<li><a href="../reference/glossary.html">Glossary</a></li>
+</ul>
+<div class="nav-cat">Aggregation Operations</div>
+<ul>
+<li><a href="../aggregation-operations/aggregation-pipeline-and-commands.html">Aggregation pipeline and commands</a></li>
+<li><a href="../aggregation-operations/aggregation-stages.html">Aggregation stages</a></li>
+</ul>
+<div class="nav-cat">Quickstart Guide</div>
+<ul>
+<li><a href="../quickstart-guide/docker.html">Docker</a></li>
+<li><a href="../quickstart-guide/deb.html">DEB package</a></li>
+<li><a href="../quickstart-guide/rpm.html">RPM package</a></li>
+<li><a href="../quickstart-guide/systemd.html">Systemd Unit</a></li>
+<li><a href="../quickstart-guide/macos.html">macOS</a></li>
+<li><a href="../quickstart-guide/windows.html">Windows</a></li>
+<li><a href="../quickstart-guide/go.html">Go</a></li>
+</ul>
+<div class="nav-cat">Contributing</div>
+<ul>
+<li><a href="../contributing/how-to-contribute.html">How to contribute to FerretDB</a></li>
+<li><a href="../contributing/writing-guide.html">Writing guide</a></li>
+</ul>
+<div class="nav-cat">Security</div>
+<ul>
+<li><a href="../security/authentication.html">Authentication</a></li>
+<li><a href="../security/tls-connections.html">TLS Connections</a></li>
+</ul>
+<div class="nav-cat">Basic Operations</div>
+<ul>
+<li><a href="../basic-operations/performing.html">Performing CRUD operations</a></li>
+<li><a href="../basic-operations/create.html">Insert operation</a></li>
+<li><a href="../basic-operations/read.html">Read operation</a></li>
+<li><a href="../basic-operations/update.html">Update operation</a></li>
+<li><a href="../basic-operations/delete.html">Delete operation</a></li>
+</ul>
+<div class="nav-cat">Migration</div>
+<ul>
+<li><a href="../migration/premigration-testing.html">Pre-migration testing</a></li>
+<li class="active"><a href="../migration/migrating-from-mongodb.html">Migrating from MongoDB</a></li>
+</ul>
+<div class="nav-cat">Configuration</div>
+<ul>
+<li><a href="../configuration/flags.html">Configuration flags</a></li>
+<li><a href="../configuration/operation-modes.html">Operation modes</a></li>
+<li><a href="../configuration/observability.html">Observability</a></li>
+<li><a href="../configuration/oplog-support.html">OpLog support</a></li>
+</ul></nav>
+  <main class="content">
+    <article><h1 id="migrating-from-mongodb">Migrating from MongoDB</h1>
+<p>Before you begin this section of the migration process, go through the pre-migration process so as to ensure a successful migration from MongoDB to FerretDB:</p>
+<ul>
+<li><a href="premigration-testing.html">Pre-migration testing</a></li>
+</ul>
+<p>This guide will help you migrate your data from MongoDB – locally or online – to FerretDB.</p>
+<p>As an open-source MongoDB alternative, FerretDB is built to work with many MongoDB tools. In that case, you can migrate your data using MongoDB native tools such as <code>mongodump</code>/<code>mongorestore</code> and <code>mongoexport</code>/<code>mongoimport</code>.</p>
+<p>Before you go forward with the migration, you need to have the following:</p>
+<ul>
+<li>MongoDB connection URI</li>
+<li>FerretDB connection URI</li>
+<li>MongoDB native tools</li>
+</ul>
+<h2 id="backup-your-mongodb-data">Backup your MongoDB data</h2>
+<p>To backup your MongoDB instance using <code>mongodump</code> or <code>mongoexport</code>, you'll need to set the connection string to your MongoDB instance (e.g. <code>"mongodb://127.0.0.1:27017"</code>) to run the following command:</p>
+<pre><code class="language-sh">mongodump --uri="mongodb://&lt;yourusername&gt;:&lt;yourpassword&gt;@&lt;host&gt;:&lt;port&gt;"</code></pre>
+<p>The <code>mongodump</code> command will create a dump of all the data in the instance, consisting of BSON files of all the collections. Also, you can migrate a specific database (e.g. <code>--db=test</code>) or collection (e.g. <code>--collection=supply</code>) using their respective parameters after the <code>--uri</code> connection string.</p>
+<div class="admonition admonition-caution">
+<div class="admonition-title">Caution</div>
+<p>If you include the database in your connection string, there's no need to specify a database name for the backup or restore process.</p>
+</div>
+<pre><code class="language-sh">mongoexport --uri="mongodb://&lt;yourusername&gt;:&lt;yourpassword&gt;@&lt;host&gt;:&lt;port&gt;" --db=&lt;database-name&gt; --collection=&lt;collection-name&gt; --out=&lt;collection&gt;.json</code></pre>
+<p>On the other hand, <code>mongoexport</code> does not provide a direct way to export all the collections at once, like <code>mongodump</code> does.</p>
+<p>Instead, you need to set the connection string to connect with your preferred database and then run the command together with the parameters for the collection (<code>--collection=myCollection</code>) and the directory you want to export to (e.g. <code>--out=collection-name.json</code>).</p>
+<h2 id="restore-your-data-to-ferretdb">Restore your data to FerretDB</h2>
+<p>To restore or import your backed-up data to FerretDB, set the connection string to your FerretDB instance and use <code>mongorestore</code> and <code>mongoimport</code>.</p>
+<p>Run the following command in your terminal, from your <code>dump</code> folder:</p>
+<pre><code class="language-sh">mongorestore --uri="mongodb://&lt;yourusername&gt;:&lt;yourpassword&gt;@&lt;host&gt;:&lt;port&gt;/?authMechanism=PLAIN"</code></pre>
+<p>With this command, you can restore all the data in <code>dump</code> into your FerretDB instance. You can also specify the database and collection (<code>dump/&lt;database&gt;/&lt;collection&gt;</code>) you want to restore from the <code>dump</code> folder, according to your preferences.</p>
+<p>To import your database using <code>mongoimport</code>, run the command from the terminal directory where you exported your data:</p>
+<pre><code class="language-sh">mongoimport --uri="mongodb://&lt;yourusername&gt;:&lt;yourpassword&gt;@&lt;host&gt;:&lt;port&gt;/?authMechanism=PLAIN" --db=&lt;database-name&gt; --collection=&lt;collection-name&gt; --file=&lt;collection&gt;.json</code></pre>
+<p>The command will import the specified collection you exported from your MongoDB instance to FerretDB.</p></article>
+    <footer class="pagefoot">
+      <p>FerretDB v1 (SQLite) — a general-purpose MongoDB replacement. Source:
+      <a href="https://github.com/wekan/FerretDB">github.com/wekan/FerretDB</a>.
+      This page is generated from <code>migration/migrating-from-mongodb.md</code> by <code>docs/build.py</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

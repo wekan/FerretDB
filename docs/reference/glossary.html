@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary — FerretDB v1 (SQLite)</title>
+<meta name="description" content="">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="../index.html">FerretDB v1 <span>(SQLite)</span></a>
+  <input type="checkbox" id="navtoggle" hidden>
+  <label for="navtoggle" class="navtoggle-btn" aria-label="Toggle navigation">☰</label>
+</header>
+<div class="layout">
+  <nav class="sidebar"><ul class='nav-top'>
+<li><a href="../index.html">Introduction</a></li>
+<li><a href="../understanding-ferretdb.html">Understanding FerretDB</a></li>
+<li><a href="../pushdown.html">Query pushdown</a></li>
+<li><a href="../indexes.html">Indexes</a></li>
+<li><a href="../diff.html">Known differences</a></li>
+<li><a href="../telemetry.html">Telemetry reporting</a></li>
+</ul>
+<div class="nav-cat">Operators</div>
+<ul>
+<li><a href="../operators/query/bitwise-operators.html">Bitwise query operators</a></li>
+<li><a href="../operators/query/comparison-operators.html">Comparison query operators</a></li>
+<li><a href="../operators/query/logical-operators.html">Logical query operators</a></li>
+<li><a href="../operators/query/array-operators.html">Array query operators</a></li>
+<li><a href="../operators/query/element-operators.html">Element query operators</a></li>
+<li><a href="../operators/query/evaluation-operators.html">Evaluation query operators</a></li>
+<li><a href="../operators/update/array-update-operators.html">Array update operators</a></li>
+<li><a href="../operators/update/field-update-operators.html">Field update operators</a></li>
+</ul>
+<div class="nav-cat">Reference</div>
+<ul>
+<li><a href="../reference/supported-commands.html">Supported commands</a></li>
+<li class="active"><a href="../reference/glossary.html">Glossary</a></li>
+</ul>
+<div class="nav-cat">Aggregation Operations</div>
+<ul>
+<li><a href="../aggregation-operations/aggregation-pipeline-and-commands.html">Aggregation pipeline and commands</a></li>
+<li><a href="../aggregation-operations/aggregation-stages.html">Aggregation stages</a></li>
+</ul>
+<div class="nav-cat">Quickstart Guide</div>
+<ul>
+<li><a href="../quickstart-guide/docker.html">Docker</a></li>
+<li><a href="../quickstart-guide/deb.html">DEB package</a></li>
+<li><a href="../quickstart-guide/rpm.html">RPM package</a></li>
+<li><a href="../quickstart-guide/systemd.html">Systemd Unit</a></li>
+<li><a href="../quickstart-guide/macos.html">macOS</a></li>
+<li><a href="../quickstart-guide/windows.html">Windows</a></li>
+<li><a href="../quickstart-guide/go.html">Go</a></li>
+</ul>
+<div class="nav-cat">Contributing</div>
+<ul>
+<li><a href="../contributing/how-to-contribute.html">How to contribute to FerretDB</a></li>
+<li><a href="../contributing/writing-guide.html">Writing guide</a></li>
+</ul>
+<div class="nav-cat">Security</div>
+<ul>
+<li><a href="../security/authentication.html">Authentication</a></li>
+<li><a href="../security/tls-connections.html">TLS Connections</a></li>
+</ul>
+<div class="nav-cat">Basic Operations</div>
+<ul>
+<li><a href="../basic-operations/performing.html">Performing CRUD operations</a></li>
+<li><a href="../basic-operations/create.html">Insert operation</a></li>
+<li><a href="../basic-operations/read.html">Read operation</a></li>
+<li><a href="../basic-operations/update.html">Update operation</a></li>
+<li><a href="../basic-operations/delete.html">Delete operation</a></li>
+</ul>
+<div class="nav-cat">Migration</div>
+<ul>
+<li><a href="../migration/premigration-testing.html">Pre-migration testing</a></li>
+<li><a href="../migration/migrating-from-mongodb.html">Migrating from MongoDB</a></li>
+</ul>
+<div class="nav-cat">Configuration</div>
+<ul>
+<li><a href="../configuration/flags.html">Configuration flags</a></li>
+<li><a href="../configuration/operation-modes.html">Operation modes</a></li>
+<li><a href="../configuration/observability.html">Observability</a></li>
+<li><a href="../configuration/oplog-support.html">OpLog support</a></li>
+</ul></nav>
+  <main class="content">
+    <article><h1 id="glossary">Glossary</h1>
+<h2 id="list-of-ferretdb-terminologies">List of FerretDB terminologies</h2>
+<p><em>This section contains a list of common terminologies related to FerretDB</em>.</p>
+<h3 id="a">A</h3>
+<h4 id="aggregation">aggregation</h4>
+<p>A way of processing documents in a collection and passing them through various operations or stages. See <a href="supported-commands.html#aggregation-pipelines">list of supported aggregation operations and commands here</a>.</p>
+<h4 id="aggregation-pipeline">aggregation pipeline</h4>
+<p>A set of operators that lets you perform complex operations that aggregate and summarize values. See <a href="supported-commands.html#aggregation-pipeline-operators">list of supported aggregation pipeline operators</a> here.</p>
+<hr>
+<h3 id="b">B</h3>
+<h4 id="beacon">Beacon</h4>
+<p>The telemetry service of FerretDB. See <a href="../telemetry.html">telemetry</a> for more details.</p>
+<h4 id="bson">BSON</h4>
+<p>BSON is a serialized binary file format for storing JSON-like documents.</p>
+<h4 id="bson-types">BSON types</h4>
+<p>The list of types that the BSON format supports. BSON offers support for additional data types compared to JSON, such as <code>timestamp</code>, <code>date</code>, <code>ObjectId</code>, and <code>binary</code>.</p>
+<hr>
+<h3 id="c">C</h3>
+<h4 id="collection">collection</h4>
+<p>A group of documents in a non-relational database. It is comparable to a table in a relational database.</p>
+<h4 id="crud">CRUD</h4>
+<p>The four basic operations of a database: Create, Read, Update, and Delete. See <a href="../basic-operations/performing.html">Basic FerretDB CRUD operations here</a>.</p>
+<hr>
+<h3 id="d">D</h3>
+<h4 id="database">database</h4>
+<p>An organized repository for collections containing its own sets of documents, and data.</p>
+<h4 id="database-command">database command</h4>
+<p>The set of commands in FerretDB. For more information, see <a href="supported-commands.html">supported commands</a> for more details.</p>
+<h4 id="document">document</h4>
+<p>A record in a collection that comprises key-value pairs. See <a href="../understanding-ferretdb.html#documents">Documents</a> for more.</p>
+<h4 id="dot-notation">dot notation</h4>
+<p>Dot notation is used to reference or access the elements in an array or in an embedded document. See <a href="../understanding-ferretdb.html#dot-notation">dot notation</a> for more details.</p>
+<hr>
+<h3 id="f">F</h3>
+<h4 id="field">field</h4>
+<p>Similar to columns in a relational database. They are represented as field name-value pairs and describe the kind of data in a document.</p>
+<hr>
+<h3 id="i">I</h3>
+<h4 id="index">index</h4>
+<p>A data structure used for identifying and querying records in a collection. It helps to limit the number of documents to search through or inspect in a collection. Examples include <code>_id</code> index, user-defined index, hashed index, and partial index. See <a href="../indexes.html">Indexes</a> for more.</p>
+<hr>
+<h3 id="j">J</h3>
+<h4 id="json">JSON</h4>
+<p>An acronym for JavaScript Object Notation. It is a structured data format with human-readable text to store data objects composed of attribute-value pairs.</p>
+<h4 id="jsonb">JSONB</h4>
+<p>JSONB is a data type of PostgreSQL that stores JSON data as a decomposed binary format.</p>
+<h4 id="objectid">ObjectId</h4>
+<p>A defining 12-byte type that ensures singularity and uniques within a collection and are used to represent the default values for the <code>_id</code> fields.</p>
+<h4 id="operator">operator</h4>
+<p>A keyword that starts with a <code>$</code> character to query, update, or transform data.</p>
+<hr>
+<h3 id="o">O</h3>
+<h4 id="operation-modes">Operation modes</h4>
+<p>FerretDB utilizes operation modes to define its approach in handling incoming requests, serving purposes such as testing, debugging, and bug reporting. By default, FerretDB operates in <code>normal</code> mode. See <a href="../configuration/operation-modes.html">Operation modes</a> for more details.</p>
+<hr>
+<h3 id="p">P</h3>
+<h4 id="primary-key">primary key</h4>
+<p>An immutable identifier for a record. The primary key of a documents is stored in the <code>_id</code> field, which typically contains the <code>ObjectId</code>.</p>
+<h4 id="proxy">proxy</h4>
+<p>Proxy is any MongoDB-compatible database that is running in parallel with FerretDB. It's used to test differences between FerretDB and other databases. See <a href="../configuration/operation-modes.html">Operation modes</a> for more details.</p>
+<h4 id="postgresql">PostgreSQL</h4>
+<p>An open source relational database. FerretDB uses PostgreSQL as a database engine.</p>
+<h3 id="s">S</h3>
+<h4 id="sqlite">SQLite</h4>
+<p>SQLite is a self-contained, serverless system ideal for lightweight applications. FerretDB now offers SQLite backend support.</p>
+<hr></article>
+    <footer class="pagefoot">
+      <p>FerretDB v1 (SQLite) — a general-purpose MongoDB replacement. Source:
+      <a href="https://github.com/wekan/FerretDB">github.com/wekan/FerretDB</a>.
+      This page is generated from <code>reference/glossary.md</code> by <code>docs/build.py</code>.</p>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

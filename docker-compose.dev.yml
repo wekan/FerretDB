@@ -178,47 +178,6 @@ services:
       # - WRANGLER_LOG=debug # TODO https://github.com/cloudflare/workers-sdk/issues/3073
     volumes:
       - .:/workdir # mount everything for wrangler to pick up branch name, commit hash, etc from git
-  docusaurus-docs:
-    build:
-      context: ./build/deps
-      dockerfile: docusaurus-docs.Dockerfile
-    container_name: ferretdb_docusaurus-docs
-    ports:
-      - 3000:3000
-    volumes:
-      # shared with blog
-      - ./website/babel.config.js:/workdir/docusaurus-docs/babel.config.js:ro
-      - ./website/sidebars.js:/workdir/docusaurus-docs/sidebars.js:ro
-      - ./website/src:/workdir/docusaurus-docs/src:ro
-      - ./website/static:/workdir/docusaurus-docs/static:ro
-      - ./website/build:/workdir/docusaurus-docs/build:rw
-
-      # docs sources
-      - ./website/docs:/workdir/docusaurus-docs/docs:rw
-      - ./website/docusaurus.config.js:/workdir/docusaurus-docs/docusaurus.config.js:ro
-      - ./website/versioned_docs:/workdir/docusaurus-docs/versioned_docs:rw
-      - ./website/versioned_sidebars:/workdir/docusaurus-docs/versioned_sidebars:rw
-      - ./website/versions.json:/workdir/docusaurus-docs/versions.json:rw
-
-  docusaurus-blog:
-    build:
-      context: ./build/deps
-      dockerfile: docusaurus-docs.Dockerfile
-    container_name: ferretdb_docusaurus-blog
-    ports:
-      - 3001:3001
-    volumes:
-      # shared with docs
-      - ./website/babel.config.js:/workdir/docusaurus-docs/babel.config.js:ro
-      - ./website/sidebars.js:/workdir/docusaurus-docs/sidebars.js:ro
-      - ./website/src:/workdir/docusaurus-docs/src:ro
-      - ./website/static:/workdir/docusaurus-docs/static:ro
-      - ./website/build:/workdir/docusaurus-docs/build:rw
-
-      # blog sources
-      - ./website/blog:/workdir/docusaurus-docs/blog:ro
-      - ./website/docusaurus.config-blog.js:/workdir/docusaurus-docs/docusaurus.config.js:ro
-
 networks:
   default:
     name: ferretdb

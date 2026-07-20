@@ -12,7 +12,7 @@
 
 # @AlekSi for engineering, @ptrfarkas for marketing.
 # See also Mergify configuration.
-/website/                   @AlekSi @ptrfarkas
+/docs/                       @AlekSi @ptrfarkas
 
 /build/                     @AlekSi
 /build/legacy-mongo-shell/  @FerretDB/specops
