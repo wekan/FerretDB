@@ -44,6 +44,22 @@ result on every push to `main-v1`. **One-time setup:** in the repository, go to
 **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
 After that, every push that touches `docs/` republishes the site.
 
+### Which workflow runs it? (avoid the duplicate)
+
+Two names can show up under the Actions tab, and only **one** should be active:
+
+- **`Pages`** — this repo's workflow (`.github/workflows/pages.yml`), used when
+  **Source = GitHub Actions**. It renders the Markdown with `build.py` (admonitions,
+  navigation, styling) and deploys it. **This is the one to use.**
+- **`pages-build-deployment`** — GitHub's built-in, auto-generated workflow (not a
+  file here), which runs only when **Source = Deploy from a branch**. That mode would
+  serve this Markdown-only folder through Jekyll and show a broken page (literal
+  `:::note`, no sidebar), so it is **not** used here.
+
+Pick **Source = GitHub Actions** — then only `Pages` runs and `pages-build-deployment`
+never appears. There is nothing to delete from the repository for it; it is controlled
+entirely by the Pages Source setting.
+
 Where to find the published URL: it is shown under **Settings → Pages** ("Your site is
 live at …") and on each **Pages** workflow run (the `deploy` job's environment link).
 For this fork the default is `https://<owner>.github.io/FerretDB/` (e.g.
