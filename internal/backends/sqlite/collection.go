@@ -67,7 +67,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 
 	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
 
-	// WeKan #6467/#6468: push the filter's top-level equality conditions down to
+	// Push the filter's top-level equality conditions down to
 	// SQLite (superset semantics; the Go filter stays authoritative). Previously
 	// only a bare {_id: X} filter was pushed down, so every other query decoded
 	// the WHOLE collection in Go on every Meteor poll.
@@ -93,7 +93,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 
 // InsertAll implements backends.Collection interface.
 func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllParams) (*backends.InsertAllResult, error) {
-	// WeKan #6467: only take the registry's GLOBAL write lock when the collection
+	// Only take the registry's GLOBAL write lock when the collection
 	// does not exist yet. CollectionCreate write-locks the whole registry even
 	// when it is a no-op, so previously EVERY insert (sessions, activities, login
 	// tokens, ...) stalled all concurrent readers' RLocks — a steady stream of
@@ -269,7 +269,7 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 
 	selectClause := prepareSelectClause(meta.TableName, "", meta.Capped(), false)
 
-	// WeKan #6467/#6468: same pushdown as Query — top-level equality conditions
+	// Same pushdown as Query — top-level equality conditions
 	// (superset semantics; the Go filter stays authoritative).
 	whereClause, args := prepareWhereClause(params.Filter)
 	filterPushdown := whereClause != ""

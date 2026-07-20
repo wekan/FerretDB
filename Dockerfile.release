@@ -16,7 +16,7 @@ ARG TARGETARCH
 ARG TARGETVARIANT
 COPY dist /bins
 RUN set -eux; \
-    # Map the OCI target platform to the WeKan arch name used in the binary name.
+    # Map the OCI target platform to the arch name used in the binary name.
     case "${TARGETARCH}/${TARGETVARIANT}" in \
       amd64/*)   n=amd64 ;; \
       arm64/*)   n=arm64 ;; \

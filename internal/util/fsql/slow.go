@@ -26,8 +26,8 @@ import (
 // at WARN level (in addition to the per-query DEBUG logging), so performance
 // problems are visible without turning on debug logging.
 //
-// WeKan #6480: FerretDB on SQLite could sit above 100% CPU with everything after
-// the login screen extremely slow, and normal logs showed nothing. Surfacing slow
+// Under a heavy poll-and-diff workload, FerretDB on SQLite could sit above 100%
+// CPU with the application very slow, and normal logs showed nothing. Surfacing slow
 // statements at WARN turns that silent pathology into an actionable log line
 // naming the exact statement and how long it took.
 //

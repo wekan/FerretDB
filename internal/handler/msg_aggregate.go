@@ -356,7 +356,7 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 		// each $lookup stage before Process runs.
 		//
 		// Limitation: the entire `from` collection is loaded into memory (full scan, no index use).
-		// This is acceptable for WeKan's small joins.
+		// This is acceptable for small joins.
 		//
 		// The same technique is applied to $unionWith, which likewise needs to read another
 		// ("coll") collection but has no database handle of its own.
@@ -455,7 +455,7 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 //
 // It is used to pre-fetch the `from` collection for the $lookup aggregation stage, which itself
 // has no access to the database handle. The whole collection is loaded into memory (full scan,
-// no index use); this is acceptable for the small joins used by WeKan.
+// no index use); this is acceptable for small joins.
 //
 // If the database or collection does not exist, an empty slice is returned.
 func fetchAllDocuments(ctx context.Context, db backends.Database, cName string) ([]*types.Document, error) {

@@ -66,7 +66,7 @@ func pushdownSafeString(s string) bool {
 }
 
 // pushdownSafeLiteralSubstring reports whether s can be pushed to SQLite as a
-// LIKE substring for a `$regex` filter (WeKan #6467/#6468 follow-up: "Filter by
+// LIKE substring for a `$regex` filter (performance follow-up: "Filter by
 // card title"). It must be a plain, ASCII, case-fold-safe LITERAL:
 //   - non-empty and all ASCII: SQLite's LIKE folds case only for ASCII A-Z, so
 //     for an ASCII literal `LIKE` is a correct SUPERSET of a case-insensitive Go
@@ -101,13 +101,13 @@ func pushdownSafeLiteralSubstring(s string) bool {
 // equality conditions. Exact filtering still happens in Go afterwards
 // (common.FilterIterator re-applies the whole filter), so a superset is always
 // correct — but evaluating the cheap conditions inside SQLite avoids decoding
-// every document's sjson in Go, which was pinning the CPU on busy WeKan boards
-// (WeKan #6467, #6468: every {boardId: X} query decoded the whole collection).
+// every document's sjson in Go, which was pinning the CPU on busy collections
+// (every {field: value} equality query decoded the whole collection).
 //
 // The expressions are built EXACTLY like Registry.indexesCreate builds its
 // expression indexes (_ferretdb_sjson->"field"), so SQLite can satisfy them from
 // an existing index: {_id: X} uses the unique _id index, and Mongo-level indexes
-// that WeKan declares (boardId, listId, ...) accelerate their fields too.
+// that the application declares accelerate their fields too.
 //
 // Because Mongo equality {f: "x"} also matches documents where f is an ARRAY
 // containing "x", each non-_id condition keeps array values with an
@@ -150,8 +150,8 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 // SUPERSET of the documents matching {key: v}, or ok=false when v cannot be
 // pushed down (the Go filter then stays the sole authority for that field).
 //
-// Handled: scalar string/ObjectID equality, {$in: [...safe...]} (WeKan's label
-// filter) and {$regex: literal} (WeKan's card-title filter). Everything else —
+// Handled: scalar string/ObjectID equality, {$in: [...safe...]} (an $in list
+// filter) and {$regex: literal} (a substring filter). Everything else —
 // ranges ($gt/$lte/…, unsafe on JSON-text ordering), $ne, non-ASCII or
 // non-literal regex, unsafe values — stays in Go.
 func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {

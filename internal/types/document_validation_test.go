@@ -50,7 +50,7 @@ func TestDocumentValidateData(t *testing.T) {
 				doc:    must.NotFail(NewDocument("$v", "bar")),
 				reason: errors.New(`invalid key: "$v" (key must not start with '$' sign)`),
 			},
-			// wekan/wekan#6473: dotted keys are VALID data documents — MongoDB 3.6+
+			// Dotted keys are VALID data documents — MongoDB 3.6+
 			// accepts them, and rejecting them silently dropped migrated documents.
 			"KeyContainsDotSign": {
 				doc: must.NotFail(NewDocument("_id", "1", "v.foo", "bar")),

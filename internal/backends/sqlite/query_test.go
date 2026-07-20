@@ -83,7 +83,7 @@ func TestPushdownSafeString(t *testing.T) {
 	// byte-identically, so a parameterized equality comparison is exact.
 	for _, s := range []string{
 		"",
-		"9dbmCNTLuSaPCJbe3", // typical WeKan _id / boardId
+		"9dbmCNTLuSaPCJbe3", // typical application _id
 		"Hello World 123",
 		"unicode äöü 漢字 ✓",
 		`quote " and backslash \ escape the same in both`,
@@ -146,7 +146,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			expectArgs:  []any{`"0102030405060708090a0b0c"`},
 		},
 		"TopLevelString": {
-			// WeKan's hottest query shape: {boardId: X} (#6467, #6468). The
+			// A common hottest query shape: {field: X} equality. The
 			// array arm keeps Mongo's array-containment equality candidates.
 			filter:      must.NotFail(types.NewDocument("boardId", "b1")),
 			expectWhere: ` WHERE ` + arrayArm("boardId"),
@@ -185,7 +185,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("title", "a<b")),
 		},
 
-		// --- $in (WeKan's label filter {labelIds: {$in: [...]}}) ---
+		// --- $in (a list filter {field: {$in: [...]}}) ---
 		"InPushedNonID": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("l1", "l2")))))),
@@ -214,7 +214,7 @@ func TestPrepareWhereClause(t *testing.T) {
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a<b")))))),
 		},
 
-		// --- $regex (WeKan's card-title filter {title: {$regex: text, $options: 'i'}}) ---
+		// --- $regex (a substring filter {field: {$regex: text, $options: 'i'}}) ---
 		"RegexLiteralPushed": {
 			filter: must.NotFail(types.NewDocument("title",
 				must.NotFail(types.NewDocument("$regex", "foo", "$options", "i")))),
@@ -239,7 +239,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("title",
 				must.NotFail(types.NewDocument("$regex", "foo bar", "$options", "x")))),
 		},
-		// --- numeric/date range (WeKan's date filters), pushed via ->> ---
+		// --- numeric/date range filters, pushed via ->> ---
 		"RangeLtePushed": {
 			filter: must.NotFail(types.NewDocument("count",
 				must.NotFail(types.NewDocument("$lte", int64(100))))),

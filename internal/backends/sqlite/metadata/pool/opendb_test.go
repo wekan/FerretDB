@@ -27,7 +27,7 @@ import (
 )
 
 // TestIdleConnLimit pins the warm (idle) connection cap: proportional to the
-// machine, with a floor of 4 and a cap of 16 (WeKan #6467).
+// machine, with a floor of 4 and a cap of 16.
 func TestIdleConnLimit(t *testing.T) {
 	t.Parallel()
 
@@ -51,8 +51,8 @@ func TestIdleConnLimit(t *testing.T) {
 	}
 }
 
-// TestConfigurePoolDoesNotStarveCheckout is the regression test for WeKan
-// #6467/#6469: the earlier CPU fix capped MaxOpenConns at <=16, but each parked
+// TestConfigurePoolDoesNotStarveCheckout is the regression test for connection-pool
+// checkout starvation: the earlier CPU fix capped MaxOpenConns at <=16, but each parked
 // Meteor find cursor pins a pooled connection, so a small open cap starved every
 // other query (minutes-long board loads, "Must be logged in"). MaxOpenConns must
 // now be unlimited so connection checkout never starves.

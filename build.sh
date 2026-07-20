@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# build.sh - interactive helper for FerretDB v1 (SQLite) + WeKan.
+# build.sh - interactive helper for FerretDB v1 (SQLite).
 #
 # Usage:
 #   ./build.sh              # interactive menu
@@ -153,7 +153,7 @@ act_run() {
 }
 
 # ---- per-arch binaries (cross-compile for every platform) ----------------
-# WeKan-style arch name + GOOS + GOARCH + GOARM. .exe suffix is added only for
+# Release arch name + GOOS + GOARCH + GOARM. .exe suffix is added only for
 # Windows; every other platform's binary has no extension. Each target compiles
 # to a single self-contained binary named ferretdb-<arch>[.exe]; these are the
 # individual assets attached to the GitHub Release (no ferretdb.zip). Targets a
@@ -243,9 +243,9 @@ act_dist() {
   fi
 
   {
-    echo "# FerretDB v1 (SQLite) for WeKan"
+    echo "# FerretDB v1 (SQLite)"
     echo
-    echo "FerretDB v1 binaries compiled from the WeKan fork:"
+    echo "FerretDB v1 binaries compiled from this fork:"
     echo "https://github.com/wekan/FerretDB"
     echo
     echo "FerretDB is an open-source, MongoDB-compatible database. These builds use"
@@ -272,7 +272,7 @@ act_dist() {
     echo "    ferretdb-<arch> --handler=sqlite --sqlite-url=file:./ferretdb-sqlite/ \\"
     echo "      --listen-addr=127.0.0.1:27017 --telemetry=disable"
     echo
-    echo "Then point WeKan at it: MONGO_URL=mongodb://127.0.0.1:27017/wekan"
+    echo "Then point your MongoDB client at it: MONGO_URL=mongodb://127.0.0.1:27017/mydb"
     echo
     echo "Telemetry is disabled by the flag above (FerretDB also honors DO_NOT_TRACK=1)."
   } > "$out/README.md"
@@ -349,7 +349,7 @@ act_lint() {
 
 act_docker() {
   if ! command -v docker >/dev/null 2>&1; then err "docker not found"; return 1; fi
-  info "docker compose up --build  (FerretDB v1 SQLite + WeKan) ..."
+  info "docker compose up --build  (FerretDB v1 SQLite + example app) ..."
   docker compose up --build
 }
 

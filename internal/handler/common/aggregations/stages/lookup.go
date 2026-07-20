@@ -189,7 +189,7 @@ func getFieldValue(doc *types.Document, field string) (any, bool) {
 // valuesMatch reports whether the local and foreign values should be joined, following the
 // MongoDB rules: if either value is an array, the join matches when any element of the local
 // value equals any element (or the scalar) of the foreign value. Scalar equality is the common
-// case (e.g. WeKan joins on a scalar boardId).
+// case (e.g. a join on a scalar id field).
 func valuesMatch(local, foreign any) bool {
 	localArr, localIsArr := local.(*types.Array)
 	foreignArr, foreignIsArr := foreign.(*types.Array)

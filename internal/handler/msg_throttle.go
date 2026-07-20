@@ -25,12 +25,12 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
-// MsgWekanThrottle implements the custom `wekanThrottle` command.
+// MsgThrottle implements the custom `throttle` command.
 //
-// WeKan calls this when it detects that the host CPU is high (WeKan and FerretDB
-// share the machine). The command (1) reports what FerretDB is doing — a running
-// count of commands processed, the activity signal — and (2) asks FerretDB to slow
-// down: for the next `durationMs`, pause `slowDownMs` before each command, lowering
+// A client that shares the host with FerretDB calls this when it detects that the
+// host CPU is high. The command (1) reports how busy FerretDB is — a running count
+// of commands processed, the activity signal — and (2) asks FerretDB to slow down:
+// for the next `durationMs`, pause `slowDownMs` before each command, lowering
 // FerretDB's CPU use and yielding to other software. The throttle self-expires.
 //
 // Parameters (all optional):
@@ -38,7 +38,7 @@ import (
 //   - durationMs: how long the throttle lasts (default 2000, clamped to [0,300000]).
 //
 // The passed context is canceled when the client connection is closed.
-func (h *Handler) MsgWekanThrottle(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+func (h *Handler) MsgThrottle(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
 	document, err := opMsgDocument(msg)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
@@ -58,14 +58,14 @@ func (h *Handler) MsgWekanThrottle(connCtx context.Context, msg *wire.OpMsg) (*w
 		}
 	}
 
-	until := wekanThrottleSet(slowDownMs, durationMs)
-	active, sleepMs, _, commands := wekanThrottleStatus()
+	until := throttleSet(slowDownMs, durationMs)
+	active, sleepMs, _, commands := throttleStatus()
 
 	return documentOpMsg(
 		must.NotFail(types.NewDocument(
 			"ok", float64(1),
-			// What FerretDB is doing: a running count of processed commands (higher =
-			// busier). WeKan reads this to describe FerretDB's activity in the log.
+			// How busy FerretDB is: a running count of processed commands (higher =
+			// busier). A client reads this to describe FerretDB's activity.
 			"commandsProcessed", commands,
 			// What FerretDB was asked to do / is doing about it.
 			"throttled", active,

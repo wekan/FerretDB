@@ -23,8 +23,8 @@ import (
 	"github.com/FerretDB/FerretDB/integration/setup"
 )
 
-// TestAggregateExprOperators covers the aggregation expression operators used by
-// WeKan that were added on top of FerretDB v1.24.2:
+// TestAggregateExprOperators covers the aggregation expression operators added on
+// top of FerretDB v1.24.2:
 // $eq, $ne, $or, $ifNull, $anyElementTrue, $objectToArray and $map.
 func TestAggregateExprOperators(t *testing.T) {
 	t.Parallel()

@@ -288,11 +288,11 @@ const oplogCappedSizeBytes = int64(128 * 1024 * 1024)
 //
 // FerretDB v1's oplog decorator only records mutations once this collection is
 // present, and Meteor can only tail it once it exists — previously an operator
-// had to create it by hand, which is why WeKan defaulted to poll-and-diff.
+// had to create it by hand, which is why clients defaulted to poll-and-diff.
 // Auto-creating it makes "run with an oplog" the out-of-the-box behaviour
 // whenever a replica-set name is set, so Meteor uses OpLog tailing instead of
-// polling. Best-effort: any failure is logged but never blocks startup (WeKan
-// still runs, on polling).
+// polling. Best-effort: any failure is logged but never blocks startup (the server
+// still runs; clients fall back to polling).
 func (h *Handler) ensureOplog() {
 	if h.ReplSetName == "" {
 		return

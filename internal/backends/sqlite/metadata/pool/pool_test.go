@@ -267,7 +267,7 @@ func TestDefaults(t *testing.T) {
 		"PRAGMA encoding":           "UTF-8",
 		"PRAGMA journal_mode":       "wal",
 		"PRAGMA locking_mode":       "normal",
-		// WeKan #6480 performance remediation defaults (see setDefaultValues in uri.go).
+		// Performance remediation defaults (see setDefaultValues in uri.go).
 		"PRAGMA synchronous": "1",          // NORMAL (crash-safe under WAL, fewer fsyncs)
 		"PRAGMA cache_size":  "-65536",     // 64 MiB page cache per connection
 		"PRAGMA mmap_size":   "268435456",  // 256 MiB memory-mapped I/O

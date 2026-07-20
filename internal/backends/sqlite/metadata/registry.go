@@ -282,14 +282,14 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 		s++
 	}
 
-	// WeKan #6476: adopt an existing physical table instead of failing on it.
+	// Adopt an existing physical table instead of failing on it.
 	// The collision loop above only checks the IN-MEMORY metadata, and the table
 	// name is a deterministic hash of the collection name, so a table can exist on
 	// disk while its metadata row is absent — an ORPHAN left by an interrupted
 	// migration or a crash. A plain "CREATE TABLE" then failed with
 	// `table "<db>.<coll>_<hash>" already exists`, and because this runs from an
 	// upsert (msg_update.go updateDocument -> CreateCollection) the error surfaced
-	// as an unhandledRejection in WeKan's SyncedCron, which crash-looped the whole
+	// as an unhandled rejection in the client's scheduler, which crash-looped the whole
 	// server so its web port never stayed open. IF NOT EXISTS re-adopts the orphan
 	// (same collection, same deterministic table) and the metadata INSERT below
 	// re-registers it, so startup self-heals instead of crashing.
@@ -482,10 +482,10 @@ func (r *Registry) indexesCreate(ctx context.Context, dbName, collectionName str
 			q += "UNIQUE "
 		}
 
-		// WeKan #6476: IF NOT EXISTS so adopting an ORPHANED table (see
+		// IF NOT EXISTS so adopting an ORPHANED table (see
 		// collectionCreate) does not fail on an index that already exists on it —
 		// which otherwise rolled back and DROPPED the orphan (losing its data) and
-		// re-raised the error that crash-looped WeKan.
+		// re-raised the error that crash-looped the client.
 		q += "INDEX IF NOT EXISTS %q ON %q (%s)"
 
 		columns := make([]string, len(index.Key))

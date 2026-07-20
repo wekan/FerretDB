@@ -80,11 +80,11 @@ func TestDiffDocumentValidation(t *testing.T) {
 		}
 	})
 
-	// wekan/wekan#6473: literal dotted field names are NO LONGER a diff from
+	// Literal dotted field names are NO LONGER a diff from
 	// MongoDB — both accept them (MongoDB since 3.6). They must insert, update
 	// and round-trip intact, because data migrated from a real MongoDB can
 	// legitimately contain them; rejecting them silently dropped documents
-	// during the WeKan MongoDB -> FerretDB migration.
+	// during a MongoDB -> FerretDB migration.
 	t.Run("DottedKeysAccepted", func(t *testing.T) {
 		t.Parallel()
 

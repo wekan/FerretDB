@@ -135,14 +135,14 @@ func setDefaultValues(values url.Values) {
 		values.Add("_pragma", "journal_mode(wal)")
 	}
 
-	// WeKan #6480: SQLite performance remediation. Users reported FerretDB sitting
-	// above 100% CPU with everything after the login screen extremely slow. These
-	// defaults cut the disk I/O and fsync overhead that drives that CPU:
+	// SQLite performance remediation. Users reported FerretDB sitting above 100%
+	// CPU with the application very slow. These defaults cut the disk I/O and fsync
+	// overhead that drives that CPU:
 	//
 	//   - synchronous=NORMAL is crash-safe under WAL (no corruption; at worst the
 	//     last committed transaction is lost on power loss) and removes an fsync
 	//     per commit — the single biggest write-path win.
-	//   - a larger page cache and memory-mapped I/O keep WeKan's hot pages resident
+	//   - a larger page cache and memory-mapped I/O keep the application's hot pages resident
 	//     so repeated reads stop hitting the disk, cutting CPU on read-heavy loads.
 	//   - temp tables/indexes in memory speed up sorts and index builds.
 	//

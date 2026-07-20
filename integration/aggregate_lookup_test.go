@@ -24,7 +24,7 @@ import (
 )
 
 // TestAggregateLookup covers the basic equality-join form of the $lookup aggregation stage
-// used by WeKan: { $lookup: { from, localField, foreignField, as } }.
+// commonly used by clients: { $lookup: { from, localField, foreignField, as } }.
 func TestAggregateLookup(t *testing.T) {
 	t.Parallel()
 

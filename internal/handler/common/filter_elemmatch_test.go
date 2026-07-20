@@ -25,17 +25,17 @@ import (
 )
 
 // TestFilterDocumentElemMatch covers the document/field form of $elemMatch
-// ({arr: {$elemMatch: {field: value, ...}}}) added by the WeKan fork: match
+// ({arr: {$elemMatch: {field: value, ...}}}) added by this fork: match
 // array elements that are documents satisfying the WHOLE sub-query on the SAME
 // element. The previous behavior rejected it with "unknown operator: <field>",
-// which broke WeKan's board access check
+// which broke a nested-document member access check
 // {members: {$elemMatch: {userId: X, isActive: true}}} on the SQLite backend —
 // the board list returned no boards and private boards could not be opened.
 // The operator form ({arr: {$elemMatch: {$gt: value}}}) must stay unchanged.
 func TestFilterDocumentElemMatch(t *testing.T) {
 	t.Parallel()
 
-	// The WeKan boards document shape: members whose elements are documents.
+	// A boards-like document shape: members whose elements are documents.
 	boardDoc := must.NotFail(types.NewDocument(
 		"_id", "board1",
 		"members", must.NotFail(types.NewArray(
@@ -50,7 +50,7 @@ func TestFilterDocumentElemMatch(t *testing.T) {
 		expected bool
 		wantErr  bool
 	}{
-		"WeKanBoardAccessMatches": {
+		"NestedDocumentMemberMatches": {
 			// the fix's motivating query: BOTH fields on the SAME element
 			doc: boardDoc,
 			filter: must.NotFail(types.NewDocument(

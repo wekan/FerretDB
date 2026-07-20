@@ -68,7 +68,7 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 // idleConnLimit returns how many connections are kept WARM (idle) for a
 // SQLite-backed database, given GOMAXPROCS.
 //
-// WeKan #6467: together with the #6468 filter pushdown — which turned WeKan's
+// Together with the filter pushdown — which turned the application's
 // queries from whole-collection scans into indexed lookups — bounding the warm
 // set is what keeps the pure-Go SQLite (modernc) allocator/WAL mutexes and the
 // Go GC from thrashing (the reported 821k futex + 530k nanosleep syscalls per
@@ -97,7 +97,7 @@ func configurePool(db *sql.DB, memory bool) {
 
 	db.SetMaxIdleConns(idleConnLimit(runtime.GOMAXPROCS(0)))
 
-	// WeKan #6467/#6469: do NOT cap the number of connections that may be OPEN at
+	// Do NOT cap the number of connections that may be OPEN at
 	// once (an earlier fix set both idle and open to <=16, which regressed).
 	// Meteor keeps a server-side find cursor open between getMore round-trips, and
 	// each open cursor PINS one pooled connection for its entire lifetime. With a

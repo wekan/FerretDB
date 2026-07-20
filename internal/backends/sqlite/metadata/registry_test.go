@@ -94,12 +94,12 @@ func TestCreateDrop(t *testing.T) {
 	testCollection(t, ctx, r, db, dbName, collectionName)
 }
 
-// TestCollectionCreateAdoptsOrphanTable is the regression test for WeKan #6476:
+// TestCollectionCreateAdoptsOrphanTable is the regression test for orphan-table adoption:
 // collectionCreate must ADOPT a physical table that exists on disk but whose
 // metadata row is gone (an orphan left by an interrupted migration or a crash),
 // instead of failing with `table "<db>.<coll>_<hash>" already exists`. That
 // error, raised from an upsert's CreateCollection, surfaced as an
-// unhandledRejection in WeKan's SyncedCron and crash-looped the server so its web
+// unhandled rejection in the client's scheduler and crash-looped the server so its web
 // port never stayed open.
 func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	t.Parallel()

@@ -106,7 +106,7 @@ func (h *Handler) hello(ctx context.Context, doc *types.Document, tcpHost, name 
 		// `?replicaSet=<name>` — only accepts a server as the replica-set PRIMARY
 		// when the hello reply names the set AND advertises `me` and `primary`
 		// among `hosts`. Without them the driver reports "no primary in replica
-		// set" and the oplog connection fails, forcing WeKan back to poll-and-diff.
+		// set" and the oplog connection fails, forcing the client back to poll-and-diff.
 		// FerretDB v1 presents itself as a single-node, always-primary replica set
 		// of one, which is what Meteor's OpLog tailing needs.
 		res.Set("setName", name)

@@ -324,13 +324,14 @@ func (h *Handler) initCommands() {
 		// please keep sorted alphabetically
 	}
 
-	// WeKan CPU governor command (custom): lets WeKan ask FerretDB what it is doing
-	// and to slow down when the host CPU is high. anonymous so WeKan's monitor can
-	// always reach it, even under load. See internal/handler/wekanthrottle.go.
-	h.commands["wekanThrottle"] = &command{
-		Handler:   h.MsgWekanThrottle,
+	// Self-throttle command (custom): lets a client that shares the host learn how
+	// busy FerretDB is and ask it to slow down when the host CPU is high. anonymous
+	// so a client's monitor can always reach it, even under load. See
+	// internal/handler/throttle.go.
+	h.commands["throttle"] = &command{
+		Handler:   h.MsgThrottle,
 		anonymous: true,
-		Help:      "WeKan CPU governor: report activity and slow FerretDB down when the host CPU is high.",
+		Help:      "Report activity and slow FerretDB down when the host CPU is high.",
 	}
 
 	for name, cmd := range h.commands {
@@ -347,20 +348,20 @@ func (h *Handler) initCommands() {
 		}
 	}
 
-	// WeKan CPU governor: wrap every command so that, while WeKan has asked FerretDB
-	// to slow down (via the wekanThrottle command), each command pauses briefly —
-	// lowering FerretDB CPU use and yielding time to other software. The throttle
-	// command itself and cheap health/handshake commands are excluded so WeKan's
+	// Self-throttle: wrap every command so that, while a client has asked FerretDB to
+	// slow down (via the throttle command), each command pauses briefly — lowering
+	// FerretDB CPU use and yielding time to other software on the host. The throttle
+	// command itself and cheap health/handshake commands are excluded so a client's
 	// monitoring and control are never delayed.
 	for name := range h.commands {
 		switch name {
-		case "wekanThrottle", "hello", "ismaster", "isMaster", "ping":
+		case "throttle", "hello", "ismaster", "isMaster", "ping":
 			continue
 		}
 
 		inner := h.commands[name].Handler
 		h.commands[name].Handler = func(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
-			wekanThrottleApply(ctx)
+			throttleApply(ctx)
 			return inner(ctx, msg)
 		}
 	}

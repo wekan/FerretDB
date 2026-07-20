@@ -93,7 +93,7 @@ func TestCappedCollectionInsertAllQueryExplain(t *testing.T) {
 // exactly what the pushed clause selects. It confirms `->>` extracts sjson's
 // millis-encoded date and compares it numerically, and that the clause is a
 // correct SUPERSET — a real in-range match is always returned, while
-// null/missing/out-of-range dates are excluded (WeKan's "Filter by date").
+// null/missing/out-of-range dates are excluded (a "filter by date").
 func TestQueryRangePushdownDates(t *testing.T) {
 	t.Parallel()
 
@@ -144,7 +144,7 @@ func TestQueryRangePushdownDates(t *testing.T) {
 	t.Run("Overdue_lte", func(t *testing.T) {
 		t.Parallel()
 
-		// {dueAt: {$lte: base}} — WeKan's "Overdue" once past is our reference.
+		// {dueAt: {$lte: base}} — an "overdue" filter once past is our reference.
 		ids := queryIDs(must.NotFail(types.NewDocument("dueAt",
 			must.NotFail(types.NewDocument("$lte", base)))))
 

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# Builds FerretDB v1 (SQLite backend) for use together with WeKan (see
+# Builds FerretDB v1 (SQLite backend), a MongoDB-compatible server (see
 # docker-compose.yml in this directory).
 #
 # The build stage runs NATIVELY on the build platform and cross-compiles to each
