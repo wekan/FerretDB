@@ -219,13 +219,20 @@ v1.24.2 BSON API.
 - New `replSetGetStatus` and `replSetGetConfig` commands (valid single-member
   status/config); `replSetInitiate` compatibility no-op (also runs `ensureOplog`).
 
-**Self-throttle command (host-CPU governor)**
+**Self-throttle command + autonomous CPU self-regulation (host-CPU governor)**
 - New custom `throttle` command: a client that shares the host can ask FerretDB how
-  busy it is (`commandsProcessed`) and to slow down when the host CPU is high — for a
-  self-expiring window it pauses a few ms before each command, lowering FerretDB CPU
-  use and yielding to other software. Applied in the command dispatch path, skipping
-  the throttle command and health/handshake commands. Not a MongoDB command; general
-  (any MongoDB-wire client can use it). See `internal/handler/throttle.go`.
+  busy it is (`commandsProcessed`, plus an `operationsSummary` of the busiest
+  commands) and to slow down when the host CPU is high — for a self-expiring window it
+  pauses `slowDownMs` before each command. Applied in the command dispatch path,
+  skipping the throttle command and health/handshake commands.
+- **FerretDB also self-regulates on its own** (`internal/handler/selfregulate.go`): a
+  background loop samples the host CPU from `/proc/stat` and, when it is too high,
+  adds its own increasing delay before each command until CPU drops below a target,
+  then backs off — so FerretDB never monopolizes the host even if the client is too
+  starved to ask. The per-command delay applied is `max(client slowDownMs, self-
+  regulated delay)`. Tunable via `FERRETDB_CPU_*` env vars; a no-op where `/proc/stat`
+  is unreadable. Not a MongoDB command; general (any MongoDB-wire client can use it).
+  See `internal/handler/throttle.go`.
 
 **SQLite performance / stability** — #6467, #6469, #6480
 - Raise `busy_timeout` 10 s → 30 s (fixes `SQLITE_BUSY` on Sign In).

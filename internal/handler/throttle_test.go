@@ -16,6 +16,7 @@ package handler
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -34,7 +35,7 @@ func TestThrottle(t *testing.T) {
 		throttleSet(999999, 999999999)
 		_, d := throttleActive()
 		assert.Equal(t, time.Duration(throttleMaxSleepMs)*time.Millisecond, d)
-		_, sleepMs, until, _ := throttleStatus()
+		_, sleepMs, until, _, _, _ := throttleStatus()
 		assert.Equal(t, int64(throttleMaxSleepMs), sleepMs)
 		// deadline is no further out than the max duration (+ a little slack).
 		max := time.Now().Add(time.Duration(throttleMaxDurationMs+1000) * time.Millisecond).UnixNano()
@@ -47,14 +48,26 @@ func TestThrottle(t *testing.T) {
 		assert.False(t, active)
 	})
 
-	t.Run("apply counts commands and does not block when inactive", func(t *testing.T) {
-		throttleSet(10, 0) // inactive
-		_, _, _, before := throttleStatus()
+	t.Run("apply does not block when inactive", func(t *testing.T) {
+		throttleSet(10, 0)      // inactive
+		autoSlowdownMs.Store(0) // no self-regulation either
 		start := time.Now()
 		throttleApply(context.Background())
 		assert.Less(t, time.Since(start), 5*time.Millisecond, "must not sleep when inactive")
-		_, _, _, after := throttleStatus()
-		assert.Equal(t, before+1, after, "command counter increments")
+	})
+
+	t.Run("throttleCount counts total + per-command, and summary lists the busiest", func(t *testing.T) {
+		_, _, _, before, _, _ := throttleStatus()
+		throttleCount("find")
+		throttleCount("find")
+		throttleCount("update")
+		_, _, _, after, _, _ := throttleStatus()
+		assert.Equal(t, before+3, after, "total command counter increments")
+		summary := commandSummary(5)
+		assert.Contains(t, summary, "find=", "summary names the busiest command")
+		assert.Contains(t, summary, "update=", "summary includes other commands")
+		// find (2) must be listed before update (1).
+		assert.Less(t, strings.Index(summary, "find="), strings.Index(summary, "update="), "sorted by count desc")
 	})
 
 	t.Run("apply respects a cancelled context (no long block)", func(t *testing.T) {

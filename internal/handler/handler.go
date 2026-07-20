@@ -80,6 +80,8 @@ type Handler struct {
 
 	ttlCleanupStop            chan struct{}
 	cleanupTTLCollectionsDocs *prometheus.CounterVec
+
+	selfRegulateStop chan struct{}
 }
 
 // NewOpts represents handler configuration.
@@ -159,6 +161,8 @@ func New(opts *NewOpts) (*Handler, error) {
 			[]string{"db", "collection"},
 		),
 
+		selfRegulateStop: make(chan struct{}),
+
 		ttlCleanupStop: make(chan struct{}),
 		cleanupTTLCollectionsDocs: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -194,6 +198,14 @@ func New(opts *NewOpts) (*Handler, error) {
 		defer h.wg.Done()
 
 		h.runTTLCleanup()
+	}()
+
+	h.wg.Add(1)
+
+	go func() {
+		defer h.wg.Done()
+
+		h.runSelfRegulation()
 	}()
 
 	return h, nil
@@ -537,6 +549,7 @@ func (h *Handler) Close() {
 	h.sessions.Stop()
 	close(h.cappedCleanupStop)
 	close(h.ttlCleanupStop)
+	close(h.selfRegulateStop)
 	h.wg.Wait()
 }
 

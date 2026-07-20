@@ -359,8 +359,10 @@ func (h *Handler) initCommands() {
 			continue
 		}
 
+		cmdName := name
 		inner := h.commands[name].Handler
 		h.commands[name].Handler = func(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+			throttleCount(cmdName)
 			throttleApply(ctx)
 			return inner(ctx, msg)
 		}

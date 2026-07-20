@@ -770,6 +770,22 @@ The throttle **self-expires** after `durationMs`, so a crashed or disconnected c
 can never leave FerretDB permanently slow. The throttle command itself and the cheap
 health/handshake commands (`hello`/`isMaster`/`ping`) are never throttled.
 
+A client can drive the loop by calling `throttle` repeatedly with an **increasing**
+`slowDownMs` (e.g. doubling) while the host CPU stays high, and backing off once
+enough CPU is free. `commandsProcessed` and `operationsSummary` let the client see
+how busy FerretDB is and what it has been doing between calls.
+
+**FerretDB also self-regulates.** A client that shares the host may be too starved of
+CPU to measure the load or even send the request. So a background loop in FerretDB
+samples the host's total CPU (from `/proc/stat`) every few seconds and, when it is too
+high, adds its OWN increasing delay before each command until CPU returns below a
+target — then backs off. The delay actually applied per command is the **max** of the
+client-requested `slowDownMs` and FerretDB's self-regulated delay, so the two
+cooperate and FerretDB never monopolizes the host even with no client. Self-regulation
+is tunable with `FERRETDB_CPU_SELF_REGULATE` (default on), `FERRETDB_CPU_HIGH_PERCENT`,
+`FERRETDB_CPU_TARGET_PERCENT`, `FERRETDB_CPU_SLOWDOWN_MS`, `FERRETDB_CPU_SLOWDOWN_MAX_MS`
+and `FERRETDB_CPU_INTERVAL_MS`; it is a no-op where `/proc/stat` is unreadable.
+
 Parameters (all optional):
 
 | Field        | Type | Default | Range        | Meaning                                   |
@@ -782,10 +798,13 @@ Response fields:
 | Field               | Meaning                                                        |
 | ------------------- | -------------------------------------------------------------- |
 | `commandsProcessed` | Running count of commands handled (an activity/"how busy" signal) |
-| `throttled`         | Whether the throttle is currently active                       |
-| `slowDownMs`        | The pause (clamped) now in effect                              |
+| `operationsSummary` | The busiest commands so far, e.g. `find=12000, update=340, …`  |
+| `throttled`         | Whether the client-requested throttle is currently active      |
+| `slowDownMs`        | The client-requested pause (clamped) now in effect             |
 | `durationMs`        | The requested window length                                    |
-| `untilUnixNano`     | Deadline after which the throttle self-expires                 |
+| `untilUnixNano`     | Deadline after which the client throttle self-expires          |
+| `autoSlowDownMs`    | FerretDB's own self-regulated delay (independent of the client) |
+| `hostCpuPercent`    | FerretDB's last measured host CPU%                             |
 
 Example:
 

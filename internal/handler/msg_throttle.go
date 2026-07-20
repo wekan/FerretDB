@@ -59,20 +59,25 @@ func (h *Handler) MsgThrottle(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 	}
 
 	until := throttleSet(slowDownMs, durationMs)
-	active, sleepMs, _, commands := throttleStatus()
+	active, sleepMs, _, commands, autoMs, cpuPct := throttleStatus()
 
 	return documentOpMsg(
 		must.NotFail(types.NewDocument(
 			"ok", float64(1),
 			// How busy FerretDB is: a running count of processed commands (higher =
-			// busier). A client reads this to describe FerretDB's activity.
+			// busier), plus a summary of the busiest commands (what it has been doing).
 			"commandsProcessed", commands,
+			"operationsSummary", commandSummary(5),
 			// What FerretDB was asked to do / is doing about it.
 			"throttled", active,
 			"slowDownMs", sleepMs,
 			"durationMs", durationMs,
 			"untilUnixNano", until,
-			"note", "FerretDB pauses slowDownMs before each command until the deadline to yield CPU",
+			// FerretDB's autonomous self-regulation (independent of this request):
+			// the delay it has added on its own, and its last measured host CPU%.
+			"autoSlowDownMs", autoMs,
+			"hostCpuPercent", cpuPct,
+			"note", "FerretDB pauses max(slowDownMs, autoSlowDownMs) before each command to yield CPU",
 		)),
 	)
 }
