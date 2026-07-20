@@ -324,6 +324,15 @@ func (h *Handler) initCommands() {
 		// please keep sorted alphabetically
 	}
 
+	// WeKan CPU governor command (custom): lets WeKan ask FerretDB what it is doing
+	// and to slow down when the host CPU is high. anonymous so WeKan's monitor can
+	// always reach it, even under load. See internal/handler/wekanthrottle.go.
+	h.commands["wekanThrottle"] = &command{
+		Handler:   h.MsgWekanThrottle,
+		anonymous: true,
+		Help:      "WeKan CPU governor: report activity and slow FerretDB down when the host CPU is high.",
+	}
+
 	for name, cmd := range h.commands {
 		if h.EnableNewAuth && !cmd.anonymous {
 			cmdHandler := h.commands[name].Handler
@@ -335,6 +344,24 @@ func (h *Handler) initCommands() {
 
 				return cmdHandler(ctx, msg)
 			}
+		}
+	}
+
+	// WeKan CPU governor: wrap every command so that, while WeKan has asked FerretDB
+	// to slow down (via the wekanThrottle command), each command pauses briefly —
+	// lowering FerretDB CPU use and yielding time to other software. The throttle
+	// command itself and cheap health/handshake commands are excluded so WeKan's
+	// monitoring and control are never delayed.
+	for name := range h.commands {
+		switch name {
+		case "wekanThrottle", "hello", "ismaster", "isMaster", "ping":
+			continue
+		}
+
+		inner := h.commands[name].Handler
+		h.commands[name].Handler = func(ctx context.Context, msg *wire.OpMsg) (*wire.OpMsg, error) {
+			wekanThrottleApply(ctx)
+			return inner(ctx, msg)
 		}
 	}
 }
