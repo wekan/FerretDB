@@ -363,8 +363,29 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 			return
 		}
 
-		if params.maxTimeMS > 10 {
-			ctxutil.Sleep(ctx, 10*time.Millisecond)
-		}
+		// No new data yet: wait before re-running the query. This backend has no
+		// server-side "new data" signal for a capped tailable cursor (unlike a real
+		// capped collection), so awaitData polls by re-running the query. A very short
+		// interval means a client that keeps a tailable+awaitData cursor open with no
+		// other activity — e.g. a driver tailing a capped operations log (oplog) — re-runs
+		// that query continuously and pins CPU even when completely idle. Poll at a calmer
+		// interval, bounded by the remaining maxTimeMS budget (ctxutil.Sleep returns as
+		// soon as ctx's deadline passes), so new-data latency stays within that budget.
+		ctxutil.Sleep(ctx, tailableAwaitPollInterval())
 	}
+}
+
+// tailableAwaitPollInterval is how long awaitData waits between re-checking a
+// tailable+awaitData cursor for new data. The historical 10ms made a continuously
+// tailed, otherwise-idle cursor re-run its query ~100 times/second forever, pinning
+// CPU. Default to a calmer 500ms — still well within a typical 1s awaitData budget, so
+// new-data latency stays low — and allow tuning via FERRETDB_TAILABLE_AWAIT_POLL_MS
+// (a value of 0 or less falls back to the default rather than busy-looping).
+func tailableAwaitPollInterval() time.Duration {
+	ms := envInt("FERRETDB_TAILABLE_AWAIT_POLL_MS", 500)
+	if ms <= 0 {
+		ms = 500
+	}
+
+	return time.Duration(ms) * time.Millisecond
 }
