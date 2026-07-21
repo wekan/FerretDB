@@ -10,7 +10,7 @@
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
 #   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
-#   ./build.sh release-ferretdb        # confirm CHANGELOG, read version from its top, commit all + tag + push
+#   ./build.sh release-ferretdb        # rename '## Upcoming' -> next version (auto), tag + push (no version arg)
 #   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
@@ -416,27 +416,74 @@ act_release_docker() {
 # commit everything, tag it with that version and push the branch and the tag.
 # Exits the script when done (or if CHANGELOG isn't ready / has no version).
 act_release_ferretdb() {
-  printf "Did you newest version to CHANGELOG.md  (y/n) ? "
+  printf "Did you add your changes under '## Upcoming FerretDB release' in CHANGELOG.md (y/n) ? "
   read -r ans
   case "${ans:-}" in
     [yY]*) ;;
     *) printf '%s\n' "Please first update CHANGELOG.md . Thanks !"; exit 0 ;;
   esac
 
-  # Read the newest release version straight from the top of CHANGELOG.md — the
-  # first "## [vX.Y.Z] ..." heading — instead of asking for it.
-  local version
-  version="$(grep -m1 -oE '^##[[:space:]]+\[?v[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md 2>/dev/null \
-             | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  if [ -z "$version" ]; then
-    err "Could not read a version (vX.Y.Z) from the top of CHANGELOG.md. Aborting."
+  # Determine the version to release — NO version number needed. The wekan-fork
+  # releases are the "## [vX.Y.Z](https://github.com/wekan/FerretDB/releases/tag/vX.Y.Z)"
+  # headings (upstream FerretDB's own pre-fork entries link to FerretDB/FerretDB and are
+  # skipped). Newest first:
+  local newest second
+  newest="$(grep -oE '^## \[v[0-9]+\.[0-9]+\.[0-9]+\]\(https://github.com/wekan/FerretDB' CHANGELOG.md \
+            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed -n 1p)"
+  second="$(grep -oE '^## \[v[0-9]+\.[0-9]+\.[0-9]+\]\(https://github.com/wekan/FerretDB' CHANGELOG.md \
+            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed -n 2p)"
+  if [ -z "$newest" ]; then
+    err "No released '## [vX.Y.Z](.../wekan/FerretDB/...)' heading found in CHANGELOG.md. Aborting."
     exit 1
   fi
-  info "Releasing $version (read from CHANGELOG.md)"
 
-  git add --all
-  git commit -m "$version"
-  git push
+  local version
+  if grep -qE '^## Upcoming FerretDB release' CHANGELOG.md; then
+    # Rename the Upcoming section to the next version — the same increment (of the
+    # minor, patch stays .0) as the last release, default +1 — WITH the correct git-tag
+    # link generated from the new version (so the link can never point at the previous
+    # tag).
+    local major nmin smin step
+    major="$(printf '%s' "${newest#v}" | cut -d. -f1)"
+    nmin="$(printf '%s' "${newest#v}"  | cut -d. -f2)"
+    step=1
+    if [ -n "$second" ]; then
+      smin="$(printf '%s' "${second#v}" | cut -d. -f2)"
+      step=$(( nmin - smin )); [ "$step" -le 0 ] && step=1
+    fi
+    version="v${major}.$(( nmin + step )).0"
+    local date link
+    date="$(date +%F)"
+    link="https://github.com/wekan/FerretDB/releases/tag/${version}"
+    info "Renaming '## Upcoming FerretDB release' -> ## [${version}](${link}) (${date})"
+    local _tmp; _tmp="$(mktemp)"
+    sed "s|^## Upcoming FerretDB release.*|## [${version}](${link}) (${date})|" CHANGELOG.md > "$_tmp" && mv "$_tmp" CHANGELOG.md
+  else
+    # No Upcoming section: the newest heading is already the prepared release. Sanity-
+    # check it is the expected +1 increment of the previous release.
+    version="$newest"
+    if [ -n "$second" ]; then
+      local exp_major exp_min
+      exp_major="$(printf '%s' "${second#v}" | cut -d. -f1)"
+      exp_min="$(( $(printf '%s' "${second#v}" | cut -d. -f2) + 1 ))"
+      if [ "$version" != "v${exp_major}.${exp_min}.0" ]; then
+        info "Note: newest CHANGELOG version $version is not the +1 increment (v${exp_major}.${exp_min}.0) of the previous $second; proceeding anyway."
+      fi
+    fi
+    info "No Upcoming section; using newest CHANGELOG version $version."
+  fi
+
+  if git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1; then
+    err "Tag $version already exists — nothing to release. Aborting."
+    exit 1
+  fi
+
+  info "Releasing $version"
+  if ! git diff --quiet || ! git diff --cached --quiet; then
+    git add --all
+    git commit -m "$version"
+    git push
+  fi
   git tag -a "$version" -m "$version"
   git push origin "$version"
   git push
