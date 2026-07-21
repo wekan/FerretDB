@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- OpLog: stop `awaitData` busy-polling the tailed capped collection, which pinned FerretDB CPU (~140%) even with no clients connected (wekan/wekan#6498). A tailable+awaitData `getMore` with no new data re-ran the cursor's query every 10ms until its `maxTimeMS` budget elapsed. This backend has no server-side "new data" signal for a capped tailable cursor (unlike a real capped collection), so `awaitData` polls by re-running the query — at 10ms that is ~100 full scans/second. A client that keeps such a cursor open continuously with no other activity — e.g. a Meteor 3 driver tailing the capped operations log `local.oplog.rs` — therefore drove continuous high CPU even with no application clients and nothing else happening (this is a distinct cause from the OpLog bloat capped in v1.35.0: it is the tail's poll rate, not the OpLog size). `maxTimeMS` already defaults to 1000ms, so the await window was fine; only the poll interval was too aggressive. It now polls at a calmer 500ms by default (still well within the 1s await budget, so new-data latency stays low), bounded by the remaining `maxTimeMS` via `ctxutil.Sleep`, and tunable with `FERRETDB_TAILABLE_AWAIT_POLL_MS` (0/invalid falls back to the default, never a busy-loop) — cutting idle tail query load ~50x. New `tailableAwaitPollInterval` in `internal/handler/msg_getmore.go`, covered by `internal/handler/msg_getmore_test.go`: `TestTailableAwaitPollInterval` (default is calm and not the old 10ms; honours a custom value; and the negatives zero/negative/non-numeric/empty all fall back to the default and never to a busy-loop) by @xet7. Thanks to Alishara, bluetopaz1204, mueschel and xet7.
+
 ## [v1.35.0](https://github.com/wekan/FerretDB/releases/tag/v1.35.0) (2026-07-21)
 
 ### New Features 🎉
