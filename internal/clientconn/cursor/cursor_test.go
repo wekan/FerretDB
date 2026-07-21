@@ -166,5 +166,29 @@ func TestCursor(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, []*types.Document{doc3}, actual)
 		})
+
+		t.Run("ResetFromEmpty", func(t *testing.T) {
+			t.Parallel()
+
+			// A tailable cursor whose first batch was empty (an idle tail): nothing was
+			// consumed, so lastRecordID is 0. Reset must NOT error and must iterate the new
+			// data from the beginning. Previously it scanned for record id 0, never found
+			// it, exhausted the iterator and errored — which is why such a cursor could not
+			// be kept open and resumed with getMore.
+			c := r.NewCursor(ctx, iterator.Values(iterator.ForSlice([]*types.Document{})), params)
+
+			actual, err := iterator.ConsumeValues(c)
+			require.NoError(t, err)
+			assert.Empty(t, actual)
+
+			err = c.Reset(iterator.Values(iterator.ForSlice(all)))
+			require.NoError(t, err)
+
+			assert.Same(t, c, r.Get(c.ID), "cursor should not be removed")
+
+			actual, err = iterator.ConsumeValues(c)
+			require.NoError(t, err)
+			assert.Equal(t, all, actual)
+		})
 	})
 }

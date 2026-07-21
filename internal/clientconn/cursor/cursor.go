@@ -114,6 +114,16 @@ func (c *Cursor) Reset(iter types.DocumentsIterator) error {
 
 	c.m.Unlock()
 
+	// Nothing has been returned from this cursor yet — its first batch was empty (an
+	// idle tail). There is no position to skip to, so iterate the new iterator from the
+	// beginning. Without this, the loop below would scan the whole iterator looking for
+	// record id 0, never find it, exhaust the iterator and return an error — which is
+	// why a tailable cursor with an empty first batch could not be kept open and resumed
+	// with getMore, forcing clients to re-issue find instead.
+	if recordID == 0 {
+		return nil
+	}
+
 	for {
 		_, doc, err := c.Next()
 		if err != nil {

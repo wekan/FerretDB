@@ -176,15 +176,29 @@ func (h *Handler) MsgFind(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 	)
 
 	if params.SingleBatch || len(docs) < int(params.BatchSize) {
+		// Close the consumed iterator either way (Close is idempotent and, for a tailable
+		// cursor, does NOT remove it from the registry — getMore installs a fresh iterator
+		// via Reset).
 		c.Close()
 
-		// It is not entirely clear if we should do that; more tests are needed.
-		if c.Type != cursor.Normal {
-			h.cursors.CloseAndRemove(c)
-		}
+		// A tailable / awaitData cursor must STAY OPEN when there is simply no more data
+		// *yet*: an idle tail returns an empty or under-full first batch, but the client
+		// keeps the cursor alive with getMore to wait for new data. Previously such a
+		// cursor was removed here and the response returned id=0, so a client tailing an
+		// otherwise-idle capped collection (e.g. a Meteor 3 driver tailing local.oplog.rs)
+		// re-issued find continuously — a fresh find, and a fresh collection scan, roughly
+		// every 100ms. Keep it registered with its non-zero id so the client resumes with
+		// getMore instead. Only a Normal cursor (or an explicit SingleBatch request) is
+		// exhausted here.
+		tailable := c.Type == cursor.Tailable || c.Type == cursor.TailableAwait
+		if !tailable || params.SingleBatch {
+			if c.Type != cursor.Normal {
+				h.cursors.CloseAndRemove(c)
+			}
 
-		// let the client know that there are no more results
-		cursorID = 0
+			// let the client know that there are no more results
+			cursorID = 0
+		}
 	}
 
 	firstBatch := types.MakeArray(len(docs))
