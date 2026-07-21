@@ -2,13 +2,13 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
-## Upcoming FerretDB release
+## [v1.37.0](https://github.com/wekan/FerretDB/releases/tag/v1.37.0) (2026-07-21)
 
 ### Fixed 🐛
 
 - OpLog: keep tailable cursors OPEN on an empty first batch, so an idle tail is resumed with `getMore` instead of re-issuing `find` every ~100ms (wekan/wekan#6480). A tailable/awaitData `find` whose first batch was under-full — which for an idle tail is always (0 documents) — closed the cursor and returned `id: 0`, so a client tailing an otherwise-idle capped collection (e.g. a Meteor 3 driver tailing `local.oplog.rs`) had to re-issue `find` continuously, each time re-scanning the collection — a residual constant CPU load even after the v1.36.0 awaitData poll fix. Now only a Normal cursor (or an explicit `singleBatch`) is exhausted there; a tailable cursor stays registered with its non-zero id so the client resumes with `getMore`. This required fixing `Cursor.Reset` for the not-yet-consumed case (`lastRecordID == 0`, the empty-first-batch tail), which previously scanned the new iterator for record id 0, never found it, exhausted the iterator and errored — the very reason an empty tailable cursor could not be kept open before; it now iterates from the beginning in that case. Covered by `internal/clientconn/cursor/cursor_test.go` (`TestCursor/Tailable/ResetFromEmpty`) and a real-backend integration test `internal/handler/msg_find_test.go` (`TestFindTailableKeepsCursorOpenOnEmptyCapped`: a tailable find on an empty capped collection returns a non-zero cursor id, while a normal find is still exhausted) by @xet7. Thanks to bluetopaz1204, mueschel, crochu and xet7.
 
-## [v1.36.0](https://github.com/wekan/FerretDB/releases/tag/v1.35.0) (2026-07-21)
+## [v1.36.0](https://github.com/wekan/FerretDB/releases/tag/v1.36.0) (2026-07-21)
 
 ### Fixed 🐛
 
