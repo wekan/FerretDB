@@ -292,7 +292,7 @@ func (h *Handler) setup() error {
 
 // oplogCappedSizeBytes is the size of the auto-created capped `local.oplog.rs`.
 //
-// wekan/wekan#6492: on the SQLite backend a large oplog is the main driver of high
+// #6492: on the SQLite backend a large oplog is the main driver of high
 // FerretDB CPU. Meteor tails this collection constantly, and every tail scans the
 // live rows while writers hold SQLite's file-level lock; a 128 MiB oplog kept
 // local.sqlite big and made those scans/locks expensive, so CPU pegged at 300%+ even

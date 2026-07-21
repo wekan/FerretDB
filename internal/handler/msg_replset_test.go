@@ -194,7 +194,7 @@ func TestEnsureOplogNoopWithoutReplSet(t *testing.T) {
 }
 
 // TestOplogCappedSizeBounded checks the auto-created local.oplog.rs cap size
-// (wekan/wekan#6492). On the SQLite backend a large oplog kept local.sqlite big and
+// (#6492). On the SQLite backend a large oplog kept local.sqlite big and
 // made Meteor's constant tailing/locking expensive, pegging FerretDB CPU at 300%+
 // even when idle, so the cap must stay SMALL — but still be a real, positive size so
 // the collection is genuinely capped (a 0 size would create an UNBOUNDED oplog).
@@ -222,7 +222,7 @@ func TestOplogCappedSizeBounded(t *testing.T) {
 // TestEnsureOplogCreatesCappedOplog is an integration test against a real SQLite
 // backend: with a replica-set name, ensureOplog must create local.oplog.rs as a
 // CAPPED collection sized at oplogCappedSizeBytes (and that size must stay small so
-// the SQLite oplog cannot bloat — wekan/wekan#6492).
+// the SQLite oplog cannot bloat — #6492).
 func TestEnsureOplogCreatesCappedOplog(t *testing.T) {
 	t.Parallel()
 
