@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- OpLog: cap `local.oplog.rs` much smaller (16 MiB, was 128 MiB) so the SQLite OpLog cannot bloat and drive high FerretDB CPU (wekan/wekan#6492). Meteor tails `local.oplog.rs` constantly, and on the SQLite backend every tail scans the collection's live rows while writers hold SQLite's file-level lock; a 128 MiB OpLog kept `local.sqlite` large and made those scans and lock holds expensive, so FerretDB CPU pegged at 300%+ even when idle (users confirmed that deleting `local.sqlite*` dropped CPU straight back to ~10%). Only a small sliding window of the most recent mutations is needed for tailing — a client that falls behind the window simply falls back to poll-and-diff, with no data loss — so `oplogCappedSizeBytes` (`internal/handler/handler.go`) is reduced to 16 MiB, keeping `local.sqlite` tiny and the tail cheap; the existing capped-collection cleanup (every minute) trims older entries down to this size. Covered by `internal/handler/msg_replset_test.go`: `TestOplogCappedSizeBounded` (positive: a real positive cap that is genuinely capped; negatives: below the old 128 MiB and never 0/unbounded), an integration test `TestEnsureOplogCreatesCappedOplog` that opens a real SQLite backend and asserts `ensureOplog` creates `local.oplog.rs` capped at exactly `oplogCappedSizeBytes`, and a negative `TestEnsureOplogNoopWithBackendButNoReplSet` (no replica-set name → no OpLog created) by @xet7. Thanks to bluetopaz1204, mueschel and xet7.
+
 ## [v1.34.0](https://github.com/wekan/FerretDB/releases/tag/v1.34.0) (2026-07-20)
 
 ### New Features 🎉

@@ -21,8 +21,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/backends/sqlite"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/util/state"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
 // newReplSetTestHandler builds a minimal Handler for unit-testing the
@@ -187,4 +191,93 @@ func TestMsgReplSetGetConfig(t *testing.T) {
 func TestEnsureOplogNoopWithoutReplSet(t *testing.T) {
 	h := &Handler{NewOpts: &NewOpts{}} // no ReplSetName, no backend
 	assert.NotPanics(t, func() { h.ensureOplog() })
+}
+
+// TestOplogCappedSizeBounded checks the auto-created local.oplog.rs cap size
+// (wekan/wekan#6492). On the SQLite backend a large oplog kept local.sqlite big and
+// made Meteor's constant tailing/locking expensive, pegging FerretDB CPU at 300%+
+// even when idle, so the cap must stay SMALL — but still be a real, positive size so
+// the collection is genuinely capped (a 0 size would create an UNBOUNDED oplog).
+func TestOplogCappedSizeBounded(t *testing.T) {
+	t.Parallel()
+
+	const mib = int64(1024 * 1024)
+
+	// Positive: a real, positive cap so the oplog is genuinely capped and tailable.
+	assert.Positive(t, oplogCappedSizeBytes, "oplog cap must be a positive size")
+
+	// Positive: small enough to keep local.sqlite tiny and the tail/scan cheap.
+	assert.LessOrEqual(t, oplogCappedSizeBytes, 16*mib,
+		"oplog cap must stay small (<=16 MiB) to bound local.sqlite and CPU (#6492)")
+
+	// Negative: must NOT be back at (or above) the old oversized 128 MiB that bloated
+	// local.sqlite and drove the high CPU.
+	assert.Less(t, oplogCappedSizeBytes, 128*mib,
+		"oplog cap must be well below the old 128 MiB (#6492)")
+
+	// Negative: a 0 cap would make the oplog uncapped/unbounded — never allow it.
+	assert.NotZero(t, oplogCappedSizeBytes, "a 0 cap would make the oplog unbounded")
+}
+
+// TestEnsureOplogCreatesCappedOplog is an integration test against a real SQLite
+// backend: with a replica-set name, ensureOplog must create local.oplog.rs as a
+// CAPPED collection sized at oplogCappedSizeBytes (and that size must stay small so
+// the SQLite oplog cannot bloat — wekan/wekan#6492).
+func TestEnsureOplogCreatesCappedOplog(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := sqlite.NewBackend(&sqlite.NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	h := &Handler{NewOpts: &NewOpts{ReplSetName: "rs0", L: testutil.Logger(t)}, b: b}
+
+	h.ensureOplog()
+
+	db, err := b.Database("local")
+	require.NoError(t, err)
+
+	cList, err := db.ListCollections(ctx, &backends.ListCollectionsParams{Name: "oplog.rs"})
+	require.NoError(t, err)
+	require.Len(t, cList.Collections, 1, "local.oplog.rs must be auto-created")
+
+	c := cList.Collections[0]
+	assert.True(t, c.Capped(), "local.oplog.rs must be a CAPPED collection")
+	assert.Equal(t, oplogCappedSizeBytes, c.CappedSize, "cap size must be oplogCappedSizeBytes")
+	assert.LessOrEqual(t, c.CappedSize, int64(16*1024*1024), "oplog cap must stay small (#6492)")
+}
+
+// TestEnsureOplogNoopWithBackendButNoReplSet is a negative integration test: with a
+// real backend but NO replica-set name, ensureOplog must create no oplog at all.
+func TestEnsureOplogNoopWithBackendButNoReplSet(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := sqlite.NewBackend(&sqlite.NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	h := &Handler{NewOpts: &NewOpts{ReplSetName: "", L: testutil.Logger(t)}, b: b}
+
+	h.ensureOplog()
+
+	db, err := b.Database("local")
+	require.NoError(t, err)
+
+	cList, err := db.ListCollections(ctx, &backends.ListCollectionsParams{Name: "oplog.rs"})
+	require.NoError(t, err)
+	assert.Empty(t, cList.Collections, "no oplog must be created without a replica-set name")
 }

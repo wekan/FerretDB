@@ -291,9 +291,17 @@ func (h *Handler) setup() error {
 }
 
 // oplogCappedSizeBytes is the size of the auto-created capped `local.oplog.rs`.
-// 128 MiB holds a large sliding window of recent mutations for tailing without
-// growing unbounded; the capped-collection cleanup trims older entries.
-const oplogCappedSizeBytes = int64(128 * 1024 * 1024)
+//
+// wekan/wekan#6492: on the SQLite backend a large oplog is the main driver of high
+// FerretDB CPU. Meteor tails this collection constantly, and every tail scans the
+// live rows while writers hold SQLite's file-level lock; a 128 MiB oplog kept
+// local.sqlite big and made those scans/locks expensive, so CPU pegged at 300%+ even
+// when idle. Only a small sliding window of the most recent mutations is needed for
+// tailing — if a client ever falls behind the window it simply falls back to
+// poll-and-diff (no data loss) — so cap it small (16 MiB) to keep local.sqlite tiny
+// and the tail cheap. The capped-collection cleanup (every minute) trims older
+// entries down to this size.
+const oplogCappedSizeBytes = int64(16 * 1024 * 1024)
 
 // ensureOplog creates the capped `local.oplog.rs` collection when a replica-set
 // name is configured (FERRETDB_REPL_SET_NAME) and it does not already exist.
