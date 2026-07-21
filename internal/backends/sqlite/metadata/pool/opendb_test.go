@@ -17,7 +17,10 @@ package pool
 import (
 	"context"
 	"database/sql"
+	"io"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +28,103 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite" // register database/sql driver
 )
+
+// quietLogger discards output, for exercising the auto-repair path without noise.
+func quietLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// openTestFileDB opens a fresh on-disk SQLite database in a temp dir.
+func openTestFileDB(t *testing.T) *sql.DB {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "test.sqlite"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+	require.NoError(t, db.Ping())
+
+	return db
+}
+
+// TestSqliteQuickCheckHealthy: a healthy database passes the fast integrity check.
+func TestSqliteQuickCheckHealthy(t *testing.T) {
+	t.Parallel()
+
+	db := openTestFileDB(t)
+	_, err := db.Exec(`CREATE TABLE t (x TEXT)`)
+	require.NoError(t, err)
+
+	res, err := sqliteQuickCheck(context.Background(), db)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", res)
+}
+
+// TestSqliteBloatedAndVacuum: a file with a large freelist is detected as bloated,
+// and checkAndRepairSQLite VACUUMs it so the free pages are reclaimed (#6492).
+func TestSqliteBloatedAndVacuum(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openTestFileDB(t)
+
+	_, err := db.Exec(`CREATE TABLE t (id INTEGER PRIMARY KEY, blob TEXT)`)
+	require.NoError(t, err)
+
+	// Grow the file well past the min-pages threshold...
+	blob := strings.Repeat("x", 400)
+	for i := 0; i < 5000; i++ {
+		_, err = db.Exec(`INSERT INTO t (blob) VALUES (?)`, blob)
+		require.NoError(t, err)
+	}
+
+	// ...then delete 90% to leave a large freelist (bloat) without shrinking the file.
+	_, err = db.Exec(`DELETE FROM t WHERE id % 10 != 0`)
+	require.NoError(t, err)
+
+	bloated, pageCount, freeCount, err := sqliteBloated(ctx, db)
+	require.NoError(t, err)
+	require.True(t, bloated, "expected bloat (pages=%d free=%d)", pageCount, freeCount)
+
+	checkAndRepairSQLite(db, "test", false, quietLogger())
+
+	var freeAfter int64
+	require.NoError(t, db.QueryRowContext(ctx, `PRAGMA freelist_count`).Scan(&freeAfter))
+	assert.LessOrEqualf(t, freeAfter, int64(1), "VACUUM must reclaim the %d free pages", freeCount)
+}
+
+// TestSqliteBloatedNegativeSmallDB: a small healthy database is NOT flagged as
+// bloated — tiny files are never churned.
+func TestSqliteBloatedNegativeSmallDB(t *testing.T) {
+	t.Parallel()
+
+	db := openTestFileDB(t)
+	_, err := db.Exec(`CREATE TABLE t (x TEXT)`)
+	require.NoError(t, err)
+	_, err = db.Exec(`INSERT INTO t VALUES ('hello')`)
+	require.NoError(t, err)
+
+	bloated, _, _, err := sqliteBloated(context.Background(), db)
+	require.NoError(t, err)
+	assert.False(t, bloated, "a tiny database must never be considered bloated")
+}
+
+// TestCheckAndRepairSQLiteNoopWhenDisabledOrMemory is a negative test: the repair is
+// skipped for in-memory databases and when disabled via the env var.
+func TestCheckAndRepairSQLiteNoopWhenDisabledOrMemory(t *testing.T) {
+	db := openTestFileDB(t)
+
+	// memory=true -> skipped (no panic).
+	assert.NotPanics(t, func() { checkAndRepairSQLite(db, "mem", true, quietLogger()) })
+
+	// disabled via env -> skipped, and the toggle reads false.
+	t.Setenv("FERRETDB_SQLITE_AUTO_REPAIR", "false")
+	assert.False(t, sqliteAutoRepairEnabled())
+	assert.NotPanics(t, func() { checkAndRepairSQLite(db, "test", false, quietLogger()) })
+
+	// default (any other value) -> enabled.
+	t.Setenv("FERRETDB_SQLITE_AUTO_REPAIR", "")
+	assert.True(t, sqliteAutoRepairEnabled())
+}
 
 // TestIdleConnLimit pins the warm (idle) connection cap: proportional to the
 // machine, with a floor of 4 and a cap of 16.

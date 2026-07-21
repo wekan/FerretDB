@@ -18,6 +18,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"os"
 	"runtime"
 
 	_ "modernc.org/sqlite" // register database/sql driver
@@ -47,6 +48,8 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 		return nil, lazyerrors.Error(err)
 	}
 
+	checkAndRepairSQLite(db, name, memory, l)
+
 	// do it only once because version can't change
 	if sp.Get().BackendVersion == "" {
 		err := sp.Update(func(s *state.State) {
@@ -63,6 +66,85 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 	}
 
 	return fsql.WrapDB(db, name, l), nil
+}
+
+// sqliteAutoRepairEnabled reports whether automatic SQLite corruption detection and
+// bloat repair is on (the default). Set FERRETDB_SQLITE_AUTO_REPAIR=false to disable.
+func sqliteAutoRepairEnabled() bool {
+	return os.Getenv("FERRETDB_SQLITE_AUTO_REPAIR") != "false"
+}
+
+// sqliteQuickCheck runs SQLite's fast, read-only integrity check and returns its
+// result ("ok" when healthy, otherwise the first reported problem).
+func sqliteQuickCheck(ctx context.Context, db *sql.DB) (string, error) {
+	var res string
+	err := db.QueryRowContext(ctx, "PRAGMA quick_check(1)").Scan(&res)
+
+	return res, err
+}
+
+// sqliteBloatMinPages is the smallest database (in pages) worth VACUUMing — ~1 MiB
+// at 4 KiB pages — so tiny databases are never churned.
+const sqliteBloatMinPages = int64(256)
+
+// sqliteBloated reports whether the database file is bloated with free pages — at
+// least sqliteBloatMinPages total and at least a quarter of them on the freelist —
+// so a VACUUM would reclaim meaningful space. Returns the page counts for logging.
+func sqliteBloated(ctx context.Context, db *sql.DB) (bloated bool, pageCount, freeCount int64, err error) {
+	if err = db.QueryRowContext(ctx, "PRAGMA page_count").Scan(&pageCount); err != nil {
+		return false, 0, 0, err
+	}
+
+	if err = db.QueryRowContext(ctx, "PRAGMA freelist_count").Scan(&freeCount); err != nil {
+		return false, pageCount, 0, err
+	}
+
+	bloated = pageCount >= sqliteBloatMinPages && freeCount*4 >= pageCount
+
+	return bloated, pageCount, freeCount, nil
+}
+
+// checkAndRepairSQLite is an automatic safety measure (#6492) run when a
+// persistent SQLite database is opened:
+//
+//  1. DETECT corruption with a fast quick_check and log it prominently. Corruption
+//     cannot be repaired in place — the client restores from its backup copy
+//     or re-migrates the text data from MongoDB — so this only detects and reports.
+//  2. FIX bloat automatically: VACUUM a file whose free pages dominate it. The
+//     simulated OpLog and busy client collections churn heavily, leaving free pages
+//     that keep the file large and the CPU high; reclaiming them shrinks the file.
+//
+// In-memory databases have nothing to check or reclaim. Best-effort: every failure
+// is logged but never blocks opening the database.
+func checkAndRepairSQLite(db *sql.DB, name string, memory bool, l *slog.Logger) {
+	if memory || !sqliteAutoRepairEnabled() {
+		return
+	}
+
+	ctx := context.Background()
+	l = logging.WithName(l, "autorepair")
+
+	if res, err := sqliteQuickCheck(ctx, db); err != nil {
+		l.Warn("quick_check could not run", slog.String("db", name), logging.Error(err))
+	} else if res != "ok" {
+		l.Error("SQLite CORRUPTION DETECTED - restore from backup or re-migrate text data",
+			slog.String("db", name), slog.String("quick_check", res))
+	}
+
+	bloated, pageCount, freeCount, err := sqliteBloated(ctx, db)
+	if err != nil {
+		l.Warn("bloat check could not run", slog.String("db", name), logging.Error(err))
+		return
+	}
+
+	if bloated {
+		l.Info("VACUUMing bloated database to reclaim free pages",
+			slog.String("db", name), slog.Int64("pages", pageCount), slog.Int64("freePages", freeCount))
+
+		if _, err := db.ExecContext(ctx, "VACUUM"); err != nil {
+			l.Warn("VACUUM failed", slog.String("db", name), logging.Error(err))
+		}
+	}
 }
 
 // idleConnLimit returns how many connections are kept WARM (idle) for a
