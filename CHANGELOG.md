@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- Release automation: releasing is now one command that runs the whole chain. `build.sh` "Release FerretDB" (option 15 / `./build.sh release-ferretdb`) renames the `## Upcoming FerretDB release` heading to the next version (with the correct git-tag link), commits, tags `vX.Y.Z` and pushes, then triggers "Release via GitHub Actions" (`release-all.yml`, which builds every per-arch binary and publishes the GitHub Release), and `release-all.yml` in turn dispatches "Docker via GitHub Actions" (`docker.yml`, which builds and pushes the multi-arch image to Docker Hub, Quay.io and GHCR — no recompilation). `docker.yml` already listened for a published release, but a release created with the default `GITHUB_TOKEN` does not emit that event, so `release-all.yml` now dispatches it explicitly (via `workflow_dispatch`, passing the release version, plus the `actions: write` permission it needs) by @xet7. Thanks to xet7.
+
 ## [v1.37.0](https://github.com/wekan/FerretDB/releases/tag/v1.37.0) (2026-07-21)
 
 ### Fixed 🐛
