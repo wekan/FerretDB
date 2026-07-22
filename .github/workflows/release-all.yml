@@ -12,7 +12,10 @@ name: Release All (FerretDB v1)
 #
 # The multi-arch Docker image is built by a SEPARATE workflow, docker.yml, which
 # repackages the prebuilt binaries from the newest release into images and pushes
-# them to Docker Hub, Quay.io and GHCR (no recompilation).
+# them to Docker Hub, Quay.io and GHCR (no recompilation). This workflow dispatches
+# docker.yml automatically as its final step (docker.yml also listens for a published
+# release, but a release created here with the default GITHUB_TOKEN does not emit that
+# event, so it is dispatched explicitly — workflow_dispatch is allowed for GITHUB_TOKEN).
 #
 # Usage:
 #   gh workflow run release-all.yml -f version=v1.25.0
@@ -32,6 +35,7 @@ on:
 
 permissions:
   contents: write
+  actions: write   # dispatch docker.yml after the release is published
 
 env:
   GO_VERSION: '1.25.11'
@@ -129,3 +133,17 @@ jobs:
               --title "$V" \
               --notes-file "$NOTES_FILE"
           fi
+
+      - name: Trigger the Docker image build for this release
+        # Build the multi-arch Docker image from the per-arch binaries just published.
+        # docker.yml listens for a published release too, but a release created above
+        # with the default GITHUB_TOKEN does NOT emit that event — so dispatch it here.
+        # workflow_dispatch is one of the events GITHUB_TOKEN is allowed to trigger, so
+        # docker.yml runs and repackages this release's binaries into images.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="${{ steps.ver.outputs.version }}"
+          echo "Dispatching docker.yml for release $V ..."
+          gh workflow run docker.yml --ref "${{ github.ref_name }}" -f version="$V"
