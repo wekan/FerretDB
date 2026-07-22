@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- Pushdown: a `$in` filter that mixes pushdown-safe strings with a `null` now pushes down its safe subset instead of bailing out entirely. `{field: {$in: [id, null]}}` becomes `(expr IN (?) OR expr IS NULL OR <array-arm>)` — all three arms reference the field's expression index, so SQLite serves it as an OR-union of index lookups. A `null` `$in` element also matches a missing field, and both render as SQL NULL under `->`, so `expr IS NULL` is an exact, index-usable superset arm; the in-Go filter stays the authority. Previously the first non-string element (the `null`) made `inCondition` bail, so the whole WHERE was dropped and the entire collection was full-scanned and sjson-decoded on every poll — which, for a poll-and-diff client (e.g. a Meteor 3 driver) issuing `{boardId: {$in: [boardId, null]}}` card queries on a big board, meant the board's lists loaded but its cards never did (`internal/backends/sqlite/query.go`). Numbers, bools, unsafe strings and nested docs/arrays still leave the whole `$in` to the Go filter. Covered by `internal/backends/sqlite/query_test.go` (`InWithNullPushed` / `InOnlyNullPushed` / `InIdWithNullPushed` / `InNumberElementNotPushed`) and `internal/backends/sqlite/metadata/registry_test.go` (`TestInWithNullUsesIndex`, which asserts via `EXPLAIN QUERY PLAN` that the planner uses the index and does not SCAN) by @xet7. Thanks to xet7.
+
 ## [v1.38.0](https://github.com/wekan/FerretDB/releases/tag/v1.38.0) (2026-07-22)
 
 ### Fixed 🐛
