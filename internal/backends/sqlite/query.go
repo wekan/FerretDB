@@ -16,6 +16,7 @@ package sqlite
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -298,7 +299,14 @@ func rangeConditions(scalarExpr string, doc *types.Document) (string, []any, boo
 
 // numericBound returns the SQL argument for a range bound that can be compared
 // numerically by ->>, or ok=false for a non-number/date bound (left to Go). A
-// date is compared as its Unix-millis, matching how sjson stores it.
+// date is compared as its Unix-millis, matching how sjson stores it; a BSON
+// Timestamp is compared as its uint64, also matching how sjson stores it (as a
+// JSON number). Pushing a Timestamp $gt/$gte down matters for a client that tails
+// a capped collection with a `{ts: {$gt: <last>}}` cursor (e.g. a Meteor 3 driver
+// tailing local.oplog.rs): without it, every awaitData poll had to sjson-decode
+// and range-filter the whole collection in Go — a residual CPU load on an idle
+// tail. The Go filter still re-applies the exact filter, so this only ever prunes
+// rows the bound proves cannot match.
 func numericBound(v any) (any, bool) {
 	switch n := v.(type) {
 	case int32:
@@ -309,6 +317,16 @@ func numericBound(v any) (any, bool) {
 		return n, true
 	case time.Time:
 		return n.UnixMilli(), true
+	case types.Timestamp:
+		// sjson stores a Timestamp as its uint64. Decline to push a value that
+		// would not fit a signed 64-bit integer (only reachable in the far future),
+		// so the SQL argument stays an exact integer comparison; the Go filter
+		// remains authoritative, so declining is safe (never a subset).
+		if uint64(n) > math.MaxInt64 {
+			return nil, false
+		}
+
+		return int64(n), true
 	default:
 		return nil, false
 	}

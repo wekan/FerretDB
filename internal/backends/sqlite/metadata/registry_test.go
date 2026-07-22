@@ -17,6 +17,7 @@ package metadata
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -153,6 +154,69 @@ func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	// And the adopted collection must be usable (insert + read back).
 	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (%s) VALUES (?)", tableName, DefaultColumn), `{"_id":"x"}`)
 	require.NoError(t, err)
+}
+
+// The capped oplog gets an expression index on its Timestamp value, and SQLite's
+// planner USES it for the tail's {ts: {$gt: ?}} range — so an idle tail is an index
+// range scan, not a full scan of the whole capped collection on every awaitData poll.
+func TestOplogTsIndexUsedForTailRange(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	// The oplog ts index is created only for the capped local.oplog.rs.
+	db, err := r.DatabaseGetOrCreate(ctx, "local")
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	created, err := r.CollectionCreate(ctx, &CollectionCreateParams{
+		DBName: "local", Name: "oplog.rs", CappedSize: 16 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	c := r.CollectionGet(ctx, "local", "oplog.rs")
+	require.NotNil(t, c)
+	tableName := c.TableName
+	indexName := tableName + "_ts"
+
+	// The ts expression index exists on the oplog table.
+	var idxCount int
+	err = db.QueryRowContext(ctx,
+		`SELECT count(*) FROM sqlite_master WHERE type='index' AND tbl_name=? AND name=?`,
+		tableName, indexName,
+	).Scan(&idxCount)
+	require.NoError(t, err)
+	require.Equal(t, 1, idxCount, "the oplog ts expression index must be created")
+
+	// The planner uses it for the range predicate query.go emits for {ts: {$gt: ?}}.
+	q := fmt.Sprintf(
+		`EXPLAIN QUERY PLAN SELECT %s FROM %q WHERE %s->>"ts" > ?`,
+		DefaultColumn, tableName, DefaultColumn,
+	)
+	rows, err := db.QueryContext(ctx, q, 5)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var usesIndex bool
+	var plan string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &notused, &detail))
+		plan += detail + "\n"
+		if strings.Contains(detail, indexName) {
+			usesIndex = true
+		}
+	}
+	require.NoError(t, rows.Err())
+	require.True(t, usesIndex, "the planner must use the oplog ts index for the tail range; plan was:\n%s", plan)
 }
 
 func TestCreateDropStress(t *testing.T) {

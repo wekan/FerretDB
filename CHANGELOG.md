@@ -4,6 +4,10 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- OpLog tail: push down and index the `{ts: {$gt: <last>}}` cursor filter, so an idle tail is an index range scan instead of decoding and scanning the whole capped collection on every awaitData poll. A BSON `Timestamp` is stored as its uint64 (a JSON number), so a `$gt`/`$gte` bound now pushes down as a numeric `->>` comparison (`internal/backends/sqlite/query.go`); previously `ts` was left entirely to the in-Go filter, so each awaitData poll re-decoded every document's sjson in Go — a residual CPU load that could peg the FerretDB process (300%+) while the client sat idle. The capped `local.oplog.rs` also gets a matching expression index on its Timestamp value (`internal/backends/sqlite/metadata/registry.go`), and `EXPLAIN QUERY PLAN` confirms the planner uses it for the tail range. This mainly helps a client that tails a capped collection with a `{ts: {$gt}}` cursor (e.g. a Meteor 3 driver tailing the OpLog) — wekan/wekan#6480. Covered by `internal/backends/sqlite/query_test.go` (`RangeTimestampPushed` / `RangeTimestampOverflowNotPushed`) and `internal/backends/sqlite/metadata/registry_test.go` (`TestOplogTsIndexUsedForTailRange`) by @xet7. Thanks to xet7.
+
 ### Other Changes 🤖
 
 - Release automation: releasing is now one command that runs the whole chain. `build.sh` "Release FerretDB" (option 15 / `./build.sh release-ferretdb`) renames the `## Upcoming FerretDB release` heading to the next version (with the correct git-tag link), commits, tags `vX.Y.Z` and pushes, then triggers "Release via GitHub Actions" (`release-all.yml`, which builds every per-arch binary and publishes the GitHub Release), and `release-all.yml` in turn dispatches "Docker via GitHub Actions" (`docker.yml`, which builds and pushes the multi-arch image to Docker Hub, Quay.io and GHCR — no recompilation). `docker.yml` already listened for a published release, but a release created with the default `GITHUB_TOKEN` does not emit that event, so `release-all.yml` now dispatches it explicitly (via `workflow_dispatch`, passing the release version, plus the `actions: write` permission it needs) by @xet7. Thanks to xet7.

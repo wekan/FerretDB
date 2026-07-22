@@ -334,6 +334,24 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 		return false, lazyerrors.Error(err)
 	}
 
+	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor
+	// — a Timestamp range that query.go pushes down as a numeric ->> comparison.
+	// Add a matching expression index on exactly that value, so an idle tail
+	// resumes with an index range scan instead of re-scanning the whole capped
+	// collection on every awaitData poll. Internal optimization (not a
+	// client-visible index) and best-effort: on failure the tail still works via a
+	// scan, so it never blocks collection creation. The expression must match
+	// query.go's range expression byte-for-byte for SQLite to use the index.
+	if dbName == "local" && collectionName == "oplog.rs" {
+		idxQ := fmt.Sprintf(
+			`CREATE INDEX IF NOT EXISTS %q ON %q (%s->>"ts")`,
+			tableName+"_ts", tableName, DefaultColumn,
+		)
+		if _, err = db.ExecContext(ctx, idxQ); err != nil {
+			r.l.WarnContext(ctx, "Failed to create oplog ts index", slog.Any("error", err))
+		}
+	}
+
 	return true, nil
 }
 

@@ -265,6 +265,22 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("title",
 				must.NotFail(types.NewDocument("$gt", "abc")))),
 		},
+		"RangeTimestampPushed": {
+			// the capped-collection tail shape {ts: {$gt: <Timestamp>}}: a BSON
+			// Timestamp is stored as its uint64 (a JSON number), so it pushes down
+			// as a numeric ->> comparison — so an idle tail no longer decodes the
+			// whole collection in Go on every awaitData poll.
+			filter: must.NotFail(types.NewDocument("ts",
+				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
+			expectWhere: ` WHERE ` + scalarExpr("ts") + ` > ?`,
+			expectArgs:  []any{int64(7300000000000000000)},
+		},
+		"RangeTimestampOverflowNotPushed": {
+			// a Timestamp that would not fit a signed 64-bit int is left to Go, so
+			// the SQL arg stays an exact integer (never a wrong/subset comparison).
+			filter: must.NotFail(types.NewDocument("ts",
+				must.NotFail(types.NewDocument("$gt", types.Timestamp(1<<63))))),
+		},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
