@@ -10,7 +10,7 @@
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
 #   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
-#   ./build.sh release-ferretdb        # rename '## Upcoming' -> next version (auto), tag + push (no version arg)
+#   ./build.sh release-ferretdb        # full release: rename Upcoming, tag + push, then run release-all.yml (-> docker.yml)
 #   ./build.sh docker-release [version]# trigger docker.yml (multi-arch image to registries)
 #   ./build.sh test                    # integration tests, parallel (default)
 #   ./build.sh test-seq                # integration tests, sequential (one at a time)
@@ -411,10 +411,13 @@ act_release_docker() {
   trigger_workflow docker.yml "$version"
 }
 
-# "Release FerretDB": after confirming CHANGELOG.md is up to date, read the new
-# version from the top of CHANGELOG.md (the first "## [vX.Y.Z]" heading), then
-# commit everything, tag it with that version and push the branch and the tag.
-# Exits the script when done (or if CHANGELOG isn't ready / has no version).
+# "Release FerretDB": the one-command full release. Renames "## Upcoming FerretDB
+# release" to the next version (auto, with the correct tag link), commits everything,
+# tags vX.Y.Z and pushes the branch + tag, and THEN kicks off the GitHub Actions
+# release — it runs "Release via GitHub Actions" (release-all.yml: build every per-arch
+# binary + publish the GitHub Release), which in turn runs "Docker via GitHub Actions"
+# (docker.yml: multi-arch image -> Docker Hub, Quay.io, GHCR). Exits when done (or if
+# CHANGELOG isn't ready / the tag already exists).
 act_release_ferretdb() {
   printf "Did you add your changes under '## Upcoming FerretDB release' in CHANGELOG.md (y/n) ? "
   read -r ans
@@ -487,6 +490,14 @@ act_release_ferretdb() {
   git tag -a "$version" -m "$version"
   git push origin "$version"
   git push
+
+  # Then kick off the whole GitHub Actions release, so one command does everything:
+  # this runs "Release via GitHub Actions" (release-all.yml — builds every per-arch
+  # binary and publishes the GitHub Release), which in turn dispatches "Docker via
+  # GitHub Actions" (docker.yml — builds and pushes the multi-arch image to Docker Hub,
+  # Quay.io and GHCR). Nothing is built locally.
+  info "Starting the GitHub Actions release (release-all.yml, which then triggers docker.yml) for $version ..."
+  act_release "$version"
   exit 0
 }
 
@@ -511,8 +522,8 @@ menu() {
                                     binaries + publish GitHub Release w/ notes)
  14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
                                     release binaries -> Docker Hub, Quay.io, GHCR)
- 15) Release FerretDB             (confirm CHANGELOG, read version from its top,
-                                    then commit all + tag vX.Y.Z + push)
+ 15) Release FerretDB             (rename Upcoming -> version, commit + tag + push,
+                                    then run 13 Release + 14 Docker via GitHub Actions)
   g) Show / install Go toolchain
   0) Exit
 EOF
