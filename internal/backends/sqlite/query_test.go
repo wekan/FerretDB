@@ -199,6 +199,36 @@ func TestPrepareWhereClause(t *testing.T) {
 			expectWhere: ` WHERE ` + expr("_id") + ` IN (?, ?)`,
 			expectArgs:  []any{`"a"`, `"b"`},
 		},
+		"InWithNullPushed": {
+			// {boardId: {$in: [id, null]}} — a board's card-scope shape when no
+			// subtasks-default board is set. The id pushes as an IN, the null as an
+			// IS NULL arm (a null $in element also matches a missing field), plus the
+			// array arm — all index-usable, so it no longer full-scans on FerretDB.
+			filter: must.NotFail(types.NewDocument("boardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
+			expectWhere: ` WHERE ` + fmt.Sprintf(
+				`(%[1]s IN (?) OR %[1]s IS NULL OR (%[1]s >= '[' AND %[1]s < '\'))`, expr("boardId")),
+			expectArgs: []any{`"B"`},
+		},
+		"InOnlyNullPushed": {
+			// {field: {$in: [null]}} pushes just the IS NULL + array arm (no args).
+			filter: must.NotFail(types.NewDocument("boardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray(types.Null)))))),
+			expectWhere: ` WHERE ` + fmt.Sprintf(
+				`(%[1]s IS NULL OR (%[1]s >= '[' AND %[1]s < '\'))`, expr("boardId")),
+		},
+		"InIdWithNullPushed": {
+			// _id needs no array arm, but the null still gets an IS NULL arm.
+			filter: must.NotFail(types.NewDocument("_id",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", types.Null)))))),
+			expectWhere: ` WHERE ` + fmt.Sprintf(`(%[1]s IN (?) OR %[1]s IS NULL)`, expr("_id")),
+			expectArgs:  []any{`"a"`},
+		},
+		"InNumberElementNotPushed": {
+			// a number element has no safe superset arm -> the whole $in stays in Go.
+			filter: must.NotFail(types.NewDocument("x",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", int32(5))))))),
+		},
 		"InEmptyNotPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray()))))),

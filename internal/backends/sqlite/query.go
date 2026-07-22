@@ -332,10 +332,20 @@ func numericBound(v any) (any, bool) {
 	}
 }
 
-// inCondition pushes {field: {$in: [...]}} only when EVERY element is a
-// pushdown-safe string or ObjectID — dropping any element would make IN a
-// SUBSET, not a superset, so it is all-or-nothing. Keeps the array-containment
-// arm for non-_id fields, exactly like equality.
+// inCondition pushes {field: {$in: [...]}} as a SUPERSET: it pushes the
+// pushdown-safe string / ObjectID elements as an index-usable IN, and — because a
+// `null` element of $in also matches a field that is null OR missing, both of which
+// render as SQL NULL under ->  — adds an `expr IS NULL` arm for a null element. Both
+// arms reference the exact indexed expression, so SQLite serves the whole thing as
+// an OR-union of index seeks. This is why {boardId: {$in: [id, null]}} — the shape a
+// board's card queries use when no subtasks-default board is set — still uses the
+// index instead of full-scanning the collection (the previous version bailed out
+// entirely on the null, dropping the WHERE and pinning CPU on a poll-and-diff client,
+// e.g. a Meteor 3 driver: boards then loaded lists but never cards).
+//
+// It still bails (leaving the whole condition to the in-Go filter) when an element is
+// something with no safe superset arm — a number, bool, unsafe string, or nested
+// doc/array — since pushing only the other elements would make IN a SUBSET.
 func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 	if arr.Len() == 0 {
 		return "", nil, false
@@ -343,6 +353,7 @@ func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 
 	placeholders := make([]string, 0, arr.Len())
 	condArgs := make([]any, 0, arr.Len())
+	hasNull := false
 
 	for i := 0; i < arr.Len(); i++ {
 		e := must.NotFail(arr.Get(i))
@@ -352,22 +363,39 @@ func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 			if !pushdownSafeString(ev) {
 				return "", nil, false
 			}
+			placeholders = append(placeholders, "?")
+			condArgs = append(condArgs, marshalPushdownValue(e))
 		case types.ObjectID:
+			placeholders = append(placeholders, "?")
+			condArgs = append(condArgs, marshalPushdownValue(e))
+		case types.NullType:
+			hasNull = true
 		default:
 			return "", nil, false
 		}
-
-		placeholders = append(placeholders, "?")
-		condArgs = append(condArgs, marshalPushdownValue(e))
 	}
 
-	in := strings.Join(placeholders, ", ")
-
-	if key == "_id" {
-		return fmt.Sprintf(`%s IN (%s)`, expr, in), condArgs, true
+	arms := make([]string, 0, 3)
+	if len(placeholders) > 0 {
+		arms = append(arms, fmt.Sprintf(`%s IN (%s)`, expr, strings.Join(placeholders, ", ")))
+	}
+	if hasNull {
+		arms = append(arms, fmt.Sprintf(`%s IS NULL`, expr))
+	}
+	if len(arms) == 0 {
+		return "", nil, false
 	}
 
-	return fmt.Sprintf(`(%[1]s IN (%[2]s) OR (%[1]s >= '[' AND %[1]s < '\'))`, expr, in), condArgs, true
+	// _id is never an array, so it needs no array-containment arm.
+	if key != "_id" {
+		arms = append(arms, fmt.Sprintf(`(%[1]s >= '[' AND %[1]s < '\')`, expr))
+	}
+
+	if len(arms) == 1 {
+		return arms[0], condArgs, true
+	}
+
+	return "(" + strings.Join(arms, " OR ") + ")", condArgs, true
 }
 
 // quoteJSONLabel quotes a field name for the -> operator the same way

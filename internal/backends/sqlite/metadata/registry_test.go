@@ -219,6 +219,68 @@ func TestOplogTsIndexUsedForTailRange(t *testing.T) {
 	require.True(t, usesIndex, "the planner must use the oplog ts index for the tail range; plan was:\n%s", plan)
 }
 
+// A `{field: {$in: [id, null]}}` filter (a board's card scope when no subtasks
+// default board is set) pushes down as `(expr IN (?) OR expr IS NULL OR array-arm)`,
+// and SQLite's planner uses the field's expression index for it (an OR-union of
+// index lookups) — so such a query is an index search, not a full-table scan that
+// pins CPU on every poll. Regression guard for the 10.22 "lists load but cards never
+// do" fix.
+func TestInWithNullUsesIndex(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	dbName := testutil.DatabaseName(t)
+	db, err := r.DatabaseGetOrCreate(ctx, dbName)
+	require.NoError(t, err)
+
+	collectionName := testutil.CollectionName(t)
+	_, err = r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
+	require.NoError(t, err)
+
+	// The Mongo-level index WeKan declares on boardId (built as an expression index
+	// on _ferretdb_sjson->"boardId", the same expression the WHERE references).
+	require.NoError(t, r.indexesCreate(ctx, dbName, collectionName, []IndexInfo{{
+		Name: "boardId",
+		Key:  []IndexKeyPair{{Field: "boardId"}},
+	}}))
+
+	c := r.CollectionGet(ctx, dbName, collectionName)
+	require.NotNil(t, c)
+	tableName := c.TableName
+
+	// The exact WHERE inCondition emits for {boardId: {$in: [id, null]}} (see
+	// query_test.go InWithNullPushed): all three arms reference the indexed expression.
+	e := fmt.Sprintf(`%s->"boardId"`, DefaultColumn)
+	where := fmt.Sprintf(`(%[1]s IN (?) OR %[1]s IS NULL OR (%[1]s >= '[' AND %[1]s < '\'))`, e)
+	q := fmt.Sprintf(`EXPLAIN QUERY PLAN SELECT %s FROM %q WHERE %s`, DefaultColumn, tableName, where)
+
+	rows, err := db.QueryContext(ctx, q, `"B"`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var usesIndex bool
+	var plan string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &notused, &detail))
+		plan += detail + "\n"
+		if strings.Contains(detail, "USING INDEX") || strings.Contains(detail, "_boardId") {
+			usesIndex = true
+		}
+	}
+	require.NoError(t, rows.Err())
+	require.True(t, usesIndex, "the $in-with-null WHERE must use the boardId index, not SCAN; plan was:\n%s", plan)
+	require.NotContains(t, plan, "SCAN", "must not full-scan the table; plan was:\n%s", plan)
+}
+
 func TestCreateDropStress(t *testing.T) {
 	// Otherwise, the test might fail with "database schema has changed".
 	// That error code is SQLITE_SCHEMA (17).
