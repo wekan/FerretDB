@@ -38,11 +38,11 @@ the table will be updated frequently.
 | ------ | ------ | ----- | ----------------------- | ------ | ------ | -------- | ------- | ---- | ---- | ----- | ------- | --------- | ----------------------- |
 | `=`    | ✖️     | ✖️    | ⚠️ <sub>[[1]](#1)</sub> | ✅     | ✖️     | ✅       | ✅      | ✅   | ✖️   | ✖️    | ✅      | ✖️        | ⚠️ <sub>[[1]](#1)</sub> |
 | `$eq`  | ✖️     | ✖️    | ⚠️ <sub>[[1]](#1)</sub> | ✅     | ✖️     | ✅       | ✅      | ✅   | ✖️   | ✖️    | ✅      | ✖️        | ⚠️ <sub>[[1]](#1)</sub> |
-| `$gt`  | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
-| `$gte` | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
-| `$lt`  | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
-| `$lte` | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
-| `$in`  | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
+| `$gt`  | ✖️     | ✖️    | ✅ <sub>[[2]](#2)</sub> | ✖️     | ✖️     | ✖️       | ✖️      | ✅   | ✖️   | ✖️    | ✅      | ✅        | ✅ <sub>[[2]](#2)</sub> |
+| `$gte` | ✖️     | ✖️    | ✅ <sub>[[2]](#2)</sub> | ✖️     | ✖️     | ✖️       | ✖️      | ✅   | ✖️   | ✖️    | ✅      | ✅        | ✅ <sub>[[2]](#2)</sub> |
+| `$lt`  | ✖️     | ✖️    | ✅ <sub>[[2]](#2)</sub> | ✖️     | ✖️     | ✖️       | ✖️      | ✅   | ✖️   | ✖️    | ✅      | ✅        | ✅ <sub>[[2]](#2)</sub> |
+| `$lte` | ✖️     | ✖️    | ✅ <sub>[[2]](#2)</sub> | ✖️     | ✖️     | ✖️       | ✖️      | ✅   | ✖️   | ✖️    | ✅      | ✅        | ✅ <sub>[[2]](#2)</sub> |
+| `$in`  | ✖️     | ✖️    | ✅ <sub>[[2]](#2)</sub> | ✅     | ✖️     | ✅       | ✅      | ✅   | ✅   | ✖️    | ✅      | ✖️        | ✅ <sub>[[2]](#2)</sub> |
 | `$ne`  | ✖️     | ✖️    | ⚠️ <sub>[[1]](#1)</sub> | ✅     | ✖️     | ✅       | ✅      | ✅   | ✖️   | ✖️    | ✅      | ✖️        | ⚠️ <sub>[[1]](#1)</sub> |
 | `$nin` | ✖️     | ✖️    | ✖️                      | ✖️     | ✖️     | ✖️       | ✖️      | ✖️   | ✖️   | ✖️    | ✖️      | ✖️        | ✖️                      |
 
@@ -50,5 +50,18 @@ the table will be updated frequently.
 
 Numbers outside the range of the safe IEEE 754 precision (`< -9007199254740991.0, 9007199254740991.0 >`),
 will prefetch all numbers larger/smaller than max/min value of the range.
+
+###### [2] {#2}
+
+**WeKan v1 fork (`main-v1`) addition.** This fork pushes down numeric/date/BSON-Timestamp
+range filters (`$gt`/`$gte`/`$lt`/`$lte`) and `$in` on the **sqlite, postgresql, mysql and
+hana** backends (upstream pushed neither, on PostgreSQL only). It is why an idle Meteor OpLog
+tail's `{ts: {$gt: <last>}}` — and a `{field: {$in: [id, null]}}` client filter — resume as
+an indexed scan instead of re-decoding the whole (capped) collection on every poll. Each is a
+SUPERSET: a range is type-guarded (SQLite `->>` numeric compare; PostgreSQL
+`jsonb_typeof = 'number'`; MySQL `JSON_TYPE IN (...)`; HANA numeric compare) so a non-number
+value can never crash a strict cast, and `$in` pushes only its safe elements plus a
+null-or-missing arm for a `null` element; the in-Go filter re-applies the exact,
+type-bracketed comparison in all cases. See the [WeKan compatibility ROADMAP](../ROADMAP.md).
 
 <!-- markdownlint-restore -->

@@ -33,7 +33,8 @@ validated against the actual code on the `main-v1` and `main` branches (see
 4. [FerretDB settings (SQLite pragmas + environment variables)](#ferretdb-settings-sqlite-pragmas--environment-variables)
 5. [Features & fixes added AFTER xet7 forked FerretDB](#features--fixes-added-after-xet7-forked-ferretdb)
 6. [Features & fixes already present BEFORE the fork](#features--fixes-already-present-before-the-fork)
-7. [Compatibility matrix](#compatibility-matrix) — the detailed capability-by-capability reference
+7. [Backend parity for Meteor (PostgreSQL / MySQL / MariaDB / SAP HANA)](#backend-parity-for-meteor-postgresql--mysql--mariadb--sap-hana)
+8. [Compatibility matrix](#compatibility-matrix) — the detailed capability-by-capability reference
 
 ---
 
@@ -355,6 +356,84 @@ SQLite backend** in this stack; the Go compatibility layer is backend-independen
 only SQLite is run in CI here (PostgreSQL is untested here; MySQL/HANA are partial
 backends). Source paths in `v1` cells are relative to this repo; WeKan sources link to
 `github.com/wekan/wekan`.
+
+---
+
+## Backend parity for Meteor (PostgreSQL / MySQL / MariaDB / SAP HANA)
+
+Everything above is validated against the **SQLite** backend, which carries all the
+WeKan/Meteor-specific fork work. This section tracks bringing the fork's other v1
+backends — **PostgreSQL**, **MySQL** (and **MariaDB**, which speaks the MySQL wire
+protocol and runs through the `mysql` backend), and **SAP HANA** — to the same level
+of Meteor support.
+
+**Headline: the reactivity machinery is already backend-agnostic.** The OpLog,
+capped-collection, replica-set/`hello` handshake and tailable+`awaitData` cursor code
+lives in `internal/handler/` and `internal/backends/decorators/oplog/`, wraps whatever
+backend is configured, and every backend implements the primitives it needs (capped
+tables with a `RecordID` column, `$natural`/RecordID ordering, `Stats`, `Compact`). So
+Meteor can **tail `local.oplog.rs` on PostgreSQL/MySQL/HANA today** once the backend is
+running with a replica-set name — the same registration path forwards `ReplSetName` for
+every backend (`internal/handler/registry/*.go`). The genuine gaps are **query
+pushdown breadth**, **indexes**, and the **launcher/operations**, not reactivity
+correctness. (This is unlike upstream **FerretDB v2**, which has no OpLog at all.)
+
+### Parity status
+
+| Item | sqlite | postgresql | mysql / MariaDB | hana |
+| --- | --- | --- | --- | --- |
+| Scalar/`$eq`/`$ne`/`$regex`(literal) pushdown | ✅ | ✅ (native `@>`) | ✅ | ✅ (best-effort) |
+| **Numeric/date/Timestamp range** `$gt/$gte/$lt/$lte` | ✅ | ✅ **(added)** | ✅ **(added)** | ✅ **(added, best-effort)** |
+| **`$in`** (incl. an `[id, null]` element) | ✅ | ✅ **(added)** | ✅ **(added)** | ✅ **(added, best-effort)** |
+| Dotted-path equality/`$in` uses the nested index | ✅ | native (JSONB path) | ⬜ TODO | ⬜ TODO |
+| OpLog `ts` index for the tail | ✅ | ⬜ TODO | ⬜ TODO | ⬜ TODO |
+| Declared Mongo index → usable engine index for the hot query | ✅ (expr index) | ⚠️ verify (`@>` needs GIN; equality vs `=`) | ⚠️ verify | ⚠️ verify |
+| Corruption/bloat auto-repair on open | ✅ | n/a (PG WAL/autovacuum) | n/a | n/a |
+| Runs in the WeKan snap | ✅ (`--handler=sqlite`) | ⬜ launcher (external DB) | ⬜ launcher (external DB) | ⬜ launcher (external DB) |
+
+✅ done · **(added)** = added by this fork work · ⚠️ = implemented but needs live-engine
+`EXPLAIN` verification · ⬜ = not yet.
+
+### What is done
+
+The range (`$gt/$gte/$lt/$lte`) and `$in` filter pushdown has been added to the
+`postgresql`, `mysql` and `hana` backends, matching `sqlite`. Each is a **superset**
+(the in-Go filter re-applies the exact, type-bracketed comparison) and type-guarded so a
+non-number value cannot crash a strict numeric cast:
+
+- postgresql — `jsonb_typeof(_jsonb->'f') = 'number' AND (_jsonb->>'f')::numeric <op> $n`;
+  `$in` as `_jsonb->'f' @> $` arms + `(x IS NULL OR x = 'null'::jsonb)`.
+- mysql — `JSON_TYPE(...) IN ('INTEGER','DOUBLE','DECIMAL') AND ...`; `$in` as
+  `JSON_CONTAINS(...)` arms + a null-or-missing arm.
+- hana — numeric comparison via `makeFilter` (best-effort DocStore); `$in` as `=` arms
+  + an `IS NULL` arm.
+
+Covered by each backend's `internal/backends/<engine>/query_test.go`
+(`RangeTimestampGt` / `RangeNumberLte` / `RangeStringBoundNotPushed` / `InPushed` /
+`InWithNullPushed`).
+
+### What is next
+
+1. **OpLog `ts` index** on `local.oplog.rs` per backend, and confirming a declared Mongo
+   index accelerates the hot equality (on PostgreSQL a `@>` containment needs a GIN
+   index, or the equality must switch to `=` against the existing expression index) —
+   requires `EXPLAIN (ANALYZE)` on the live engine.
+2. **Launcher** — gate `snap-src/bin/ferretdb-control` to run `--handler=postgresql`
+   (or `mysql`) against an **external** database via `FERRETDB_POSTGRESQL_URL` /
+   `FERRETDB_MYSQL_URL`, with the SQLite-file steps (rotating backup, reset-oplog,
+   corruption pre-open restore) scoped to `sqlite` and PG/MySQL equivalents
+   (`pg_dump` / `mysqldump`) where wanted.
+3. **MariaDB** — assess whether MariaDB's JSON functions diverge enough from MySQL 8 to
+   need special handling in the `mysql` backend.
+
+### Verification boundary
+
+The SQLite backend is fully verified in-repo (its tests run against a real SQLite,
+including `EXPLAIN QUERY PLAN` index-usage assertions). The PostgreSQL, MySQL, MariaDB
+and HANA changes above are **compile- and unit-tested (WHERE-string generation) only**;
+their correctness against the real engine's JSON semantics and their index usage must be
+confirmed with the FerretDB **integration test suite against a live engine** before
+release. HANA is explicitly best-effort.
 
 ---
 
