@@ -132,6 +132,28 @@ func TestPrepareWhereClause(t *testing.T) {
 			expected: whereContainDotNotation,
 		},
 
+		// Numeric / date / Timestamp range pushdown, guarded by jsonb_typeof so a
+		// non-number value can never crash PostgreSQL's strict ::numeric cast.
+		"RangeTimestampGt": {
+			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape.
+			filter: must.NotFail(types.NewDocument("ts",
+				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
+			expected: ` WHERE jsonb_typeof(_jsonb->$1) = 'number' AND (_jsonb->>$2)::numeric > $3`,
+			args:     []any{"ts", "ts", int64(7300000000000000000)},
+		},
+		"RangeNumberLte": {
+			filter: must.NotFail(types.NewDocument("count",
+				must.NotFail(types.NewDocument("$lte", int64(100))))),
+			expected: ` WHERE jsonb_typeof(_jsonb->$1) = 'number' AND (_jsonb->>$2)::numeric <= $3`,
+			args:     []any{"count", "count", int64(100)},
+		},
+		"RangeStringBoundNotPushed": {
+			// a non-number bound stays in the Go filter (no WHERE).
+			filter: must.NotFail(types.NewDocument("v",
+				must.NotFail(types.NewDocument("$gt", "abc")))),
+			expected: "",
+		},
+
 		"ImplicitString": {
 			filter:   must.NotFail(types.NewDocument("v", "foo")),
 			expected: whereContain,

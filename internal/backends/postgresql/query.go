@@ -17,6 +17,7 @@ package postgresql
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -205,9 +206,44 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 						panic(fmt.Sprintf("Unexpected type of value: %v", v))
 					}
 
+				case "$gt", "$gte", "$lt", "$lte":
+					// Push down a numeric / date / BSON-Timestamp range bound. sjson
+					// stores int/double/Date(UnixMilli)/Timestamp(uint64) all as JSON
+					// numbers, so compare the ->>-extracted text cast to numeric. GUARD
+					// with jsonb_typeof(...) = 'number' first: PostgreSQL's ::numeric
+					// cast THROWS on a non-numeric value (unlike SQLite), so without the
+					// guard a range over a mixed-type field would error the whole query;
+					// the guard also keeps this a SUPERSET (only number-typed docs are
+					// pre-filtered — the in-Go filter re-applies exact, type-bracketed
+					// comparison). Mainly this makes an idle OpLog tail's {ts:{$gt}}
+					// resume as an indexed range scan instead of re-decoding the whole
+					// capped collection every awaitData poll.
+					num, ok := numericBoundPG(v)
+					if !ok {
+						continue
+					}
+
+					var sqlOp string
+					switch k {
+					case "$gt":
+						sqlOp = ">"
+					case "$gte":
+						sqlOp = ">="
+					case "$lt":
+						sqlOp = "<"
+					case "$lte":
+						sqlOp = "<="
+					}
+
+					// keyOperator is "->" or "#>"; the text-extraction form is "->>"/"#>>".
+					filters = append(filters, fmt.Sprintf(
+						`jsonb_typeof(%[1]s%[2]s%[3]s) = 'number' AND (%[1]s%[4]s%[5]s)::numeric %[6]s %[7]s`,
+						metadata.DefaultColumn, keyOperator, p.Next(), keyOperator+">", p.Next(), sqlOp, p.Next(),
+					))
+					args = append(args, key, key, num)
+
 				default:
-					// $gt and $lt
-					// TODO https://github.com/FerretDB/FerretDB/issues/1875
+					// other operators ($regex, $exists, …) stay in the Go filter.
 					continue
 				}
 			}
@@ -256,6 +292,33 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 	}
 
 	return fmt.Sprintf(" ORDER BY %s%s", metadata.RecordIDColumn, order), nil
+}
+
+// numericBoundPG returns the numeric argument for a range bound that sjson stores as
+// a JSON number — int32/int64/double, a Date (as its Unix-millis) and a BSON
+// Timestamp (as its uint64) — so a `(_jsonb->>'field')::numeric` comparison can push
+// it down, or ok=false for a non-number bound (left to the Go filter). A Timestamp
+// that would not fit a signed 64-bit integer is declined so the pushed value stays an
+// exact integer (never a wrong/subset comparison); the Go filter stays authoritative.
+func numericBoundPG(v any) (any, bool) {
+	switch n := v.(type) {
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return n, true
+	case time.Time:
+		return n.UnixMilli(), true
+	case types.Timestamp:
+		if uint64(n) > math.MaxInt64 {
+			return nil, false
+		}
+
+		return int64(n), true
+	default:
+		return nil, false
+	}
 }
 
 // filterEqual returns the proper SQL filter with arguments that filters documents
