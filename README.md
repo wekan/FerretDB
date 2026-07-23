@@ -1,4 +1,33 @@
-# FerretDB
+# FerretDB v1 Fork by xet7
+
+Tested to work with WeKan:
+
+- SQLite
+- [PostgreSQL](https://github.com/wekan/wekan/issues/6509#issuecomment-5064527521)
+
+Someone please test:
+
+- MySQL
+- MariaDB
+- SAP Hana
+
+# Download
+
+https://github.com/wekan/FerretDB/releases
+
+# Docker
+
+- GitHub:
+- Docker Hub: https://hub.docker.com/r/wekanteam/ferretdb
+- RedHat Quay.io: 
+
+# Roadmap
+
+[ROADMAP](ROADMAP.md]
+
+
+
+# Original FerretDB info
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/FerretDB/FerretDB/ferretdb.svg)](https://pkg.go.dev/github.com/FerretDB/FerretDB/ferretdb)
 
