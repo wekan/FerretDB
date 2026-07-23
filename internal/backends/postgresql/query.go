@@ -161,6 +161,20 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 						args = append(args, a...)
 					}
 
+				case "$in":
+					// Push down {field: {$in: [...]}} as an OR of containment arms (one
+					// per pushable element) plus, for a `null` element, a
+					// null-or-missing arm — a SUPERSET; the Go filter re-applies the
+					// exact $in. Parity with the sqlite backend. If any element has no
+					// safe arm (a nested doc/array/binary/regex/Timestamp) the whole
+					// $in stays in the Go filter (pushing a subset would be wrong).
+					if arr, ok := v.(*types.Array); ok {
+						if f, a, ok := filterIn(p, key, keyOperator, arr); ok {
+							filters = append(filters, f)
+							args = append(args, a...)
+						}
+					}
+
 				case "$ne":
 					sql := `NOT ( ` +
 						// does document contain the key,
@@ -292,6 +306,56 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 	}
 
 	return fmt.Sprintf(" ORDER BY %s%s", metadata.RecordIDColumn, order), nil
+}
+
+// filterIn pushes down {field: {$in: [...]}} as an OR-union of JSONB containment arms
+// (index-friendly, same shape as equality) — one per pushable element — plus, for a
+// `null` element, a `(x IS NULL OR x = 'null'::jsonb)` arm that matches a missing OR
+// JSON-null field (what a `null` $in element matches). It returns ok=false when any
+// element has no safe arm (a nested doc/array/binary/regex/Timestamp), since dropping
+// one would make IN a SUBSET, not a superset. The Go filter re-applies the exact $in.
+func filterIn(p *metadata.Placeholder, key any, keyOperator string, arr *types.Array) (string, []any, bool) {
+	var arms []string
+	var args []any
+	hasNull := false
+
+	for i := 0; i < arr.Len(); i++ {
+		e := must.NotFail(arr.Get(i))
+
+		switch ev := e.(type) {
+		case types.NullType:
+			hasNull = true
+
+		case string, types.ObjectID, float64, bool, int32, int64, time.Time:
+			// One containment arm, exactly like filterEqual's default (the @> form).
+			arms = append(arms, fmt.Sprintf(
+				`%[1]s%[2]s%[3]s @> %[4]s`, metadata.DefaultColumn, keyOperator, p.Next(), p.Next()))
+
+			switch ev.(type) {
+			case string, types.ObjectID, time.Time:
+				args = append(args, key, string(must.NotFail(sjson.MarshalSingleValue(e))))
+			default:
+				args = append(args, key, e)
+			}
+
+		default:
+			// nested doc/array/binary/regex/Timestamp: no safe arm -> leave to Go.
+			return "", nil, false
+		}
+	}
+
+	if hasNull {
+		arms = append(arms, fmt.Sprintf(
+			`(%[1]s%[2]s%[3]s IS NULL OR %[1]s%[2]s%[4]s = 'null'::jsonb)`,
+			metadata.DefaultColumn, keyOperator, p.Next(), p.Next()))
+		args = append(args, key, key)
+	}
+
+	if len(arms) == 0 {
+		return "", nil, false
+	}
+
+	return "(" + strings.Join(arms, " OR ") + ")", args, true
 }
 
 // numericBoundPG returns the numeric argument for a range bound that sjson stores as

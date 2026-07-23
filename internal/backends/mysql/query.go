@@ -171,6 +171,19 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 						args = append(args, a...)
 					}
 
+				case "$in":
+					// {field: {$in: [...]}} -> OR of JSON_CONTAINS arms (one per pushable
+					// element) + a null-or-missing arm; a SUPERSET, the Go filter
+					// re-applies the exact $in. Parity with the other backends. Any
+					// element with no safe arm (nested doc/array/binary/regex/Timestamp)
+					// leaves the whole $in to the Go filter.
+					if arr, ok := v.(*types.Array); ok {
+						if f, a, ok := filterIn(rootKey, arr); ok {
+							filters = append(filters, f)
+							args = append(args, a...)
+						}
+					}
+
 				case "$ne":
 					sql := `NOT ( ` +
 						// check if the value under the key is equal to filter value
@@ -264,6 +277,48 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 	}
 
 	return filter, args, nil
+}
+
+// filterIn pushes down {field: {$in: [...]}} as an OR of JSON_CONTAINS arms (one per
+// pushable element, same shape as equality) plus, for a `null` element, a
+// null-or-missing arm. A SUPERSET; the Go filter re-applies the exact $in. Returns
+// ok=false when any element has no safe arm (nested doc/array/binary/regex/Timestamp).
+func filterIn(k string, arr *types.Array) (string, []any, bool) {
+	var arms []string
+	var args []any
+	hasNull := false
+
+	for i := 0; i < arr.Len(); i++ {
+		e := must.NotFail(arr.Get(i))
+
+		switch e.(type) {
+		case types.NullType:
+			hasNull = true
+
+		case string, types.ObjectID, time.Time:
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(%s->$.?, ?, '$')`, metadata.DefaultColumn))
+			args = append(args, k, string(must.NotFail(sjson.MarshalSingleValue(e))))
+
+		case float64, bool, int32, int64:
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(%s->$.?, ?, '$')`, metadata.DefaultColumn))
+			args = append(args, k, e)
+
+		default:
+			return "", nil, false
+		}
+	}
+
+	if hasNull {
+		arms = append(arms, fmt.Sprintf(
+			`(%[1]s->$.? IS NULL OR JSON_TYPE(%[1]s->$.?) = 'NULL')`, metadata.DefaultColumn))
+		args = append(args, k, k)
+	}
+
+	if len(arms) == 0 {
+		return "", nil, false
+	}
+
+	return "(" + strings.Join(arms, " OR ") + ")", args, true
 }
 
 // numericBound returns the numeric argument for a range bound that sjson stores as a

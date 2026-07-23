@@ -37,6 +37,43 @@ func jsonToHanaQueryString(jsonStr string) string {
 	return strings.ReplaceAll(hanaString, "\"", "'")
 }
 
+// filterIn pushes down {field: {$in: [...]}} as an OR of equality arms plus, for a
+// `null` element, an `IS NULL` arm — best-effort on the HANA DocStore. A SUPERSET; the
+// Go filter re-applies the exact $in. Returns ok=false when any element has no safe arm.
+func filterIn(table, key string, arr *types.Array) (string, bool) {
+	var arms []string
+	hasNull := false
+
+	for i := 0; i < arr.Len(); i++ {
+		e := must.NotFail(arr.Get(i))
+
+		switch e.(type) {
+		case types.NullType:
+			hasNull = true
+
+		case string, types.ObjectID, time.Time, float64, bool, int32, int64:
+			if f := makeFilter(table, key, "=", e); f != "" {
+				arms = append(arms, f)
+			}
+
+		default:
+			return "", false
+		}
+	}
+
+	if hasNull {
+		if f := makeFilter(table, key, "IS", nil); f != "" {
+			arms = append(arms, f)
+		}
+	}
+
+	if len(arms) == 0 {
+		return "", false
+	}
+
+	return "(" + strings.Join(arms, " OR ") + ")", true
+}
+
 // numericBound returns the numeric argument for a range bound that sjson stores as a
 // JSON number — int32/int64/double, a Date (as its Unix-millis) and a BSON Timestamp
 // (as its uint64) — or ok=false for a non-number bound (left to the Go filter). A
@@ -150,6 +187,16 @@ func prepareWhereClause(table string, filter *types.Document) (string, error) {
 				case "$eq":
 					if f := makeFilter(table, rootKey, "=", v); f != "" {
 						filters = append(filters, f)
+					}
+
+				case "$in":
+					// {field: {$in: [...]}} -> OR of equality arms + a null arm
+					// (best-effort DocStore); a SUPERSET, the Go filter re-applies the
+					// exact $in. Parity with the other backends.
+					if arr, ok := v.(*types.Array); ok {
+						if f, ok := filterIn(table, rootKey, arr); ok {
+							filters = append(filters, f)
+						}
 					}
 
 				case "$ne":

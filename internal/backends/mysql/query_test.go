@@ -148,6 +148,20 @@ func TestPrepareWhereClause(t *testing.T) {
 				must.NotFail(types.NewDocument("$gt", "abc")))),
 		},
 
+		// $in pushdown: an OR of JSON_CONTAINS arms, plus a null-or-missing arm.
+		"InPushed": {
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
+			expected: ` WHERE (JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$') OR JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$'))`,
+			args:     []any{"labelIds", `"a"`, "labelIds", `"b"`},
+		},
+		"InWithNullPushed": {
+			filter: must.NotFail(types.NewDocument("boardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
+			expected: ` WHERE (JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$') OR (_ferretdb_sjson->$.? IS NULL OR JSON_TYPE(_ferretdb_sjson->$.?) = 'NULL'))`,
+			args:     []any{"boardId", `"B"`, "boardId", "boardId"},
+		},
+
 		"ImplicitString": {
 			filter:   must.NotFail(types.NewDocument("v", "foo")),
 			expected: whereContain,

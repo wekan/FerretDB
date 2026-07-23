@@ -98,6 +98,16 @@ func TestPrepareWhereClause(t *testing.T) {
 				must.NotFail(types.NewDocument("$gt", "abc")))),
 			expected: "",
 		},
+		"InPushed": {
+			filter: must.NotFail(types.NewDocument("test",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
+			expected: " WHERE (\"test\" = 'a' OR \"test\" = 'b')",
+		},
+		"InWithNullPushed": {
+			filter: must.NotFail(types.NewDocument("test",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
+			expected: " WHERE (\"test\" = 'B' OR \"test\" IS NULL)",
+		},
 		"EqOpObjectID": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", objectID)),

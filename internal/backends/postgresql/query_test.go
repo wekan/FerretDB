@@ -154,6 +154,27 @@ func TestPrepareWhereClause(t *testing.T) {
 			expected: "",
 		},
 
+		// $in pushdown: an OR of containment arms, plus a null-or-missing arm.
+		"InPushed": {
+			filter: must.NotFail(types.NewDocument("labelIds",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
+			expected: ` WHERE (_jsonb->$1 @> $2 OR _jsonb->$3 @> $4)`,
+			args:     []any{"labelIds", `"a"`, "labelIds", `"b"`},
+		},
+		"InWithNullPushed": {
+			filter: must.NotFail(types.NewDocument("boardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
+			expected: ` WHERE (_jsonb->$1 @> $2 OR (_jsonb->$3 IS NULL OR _jsonb->$4 = 'null'::jsonb))`,
+			args:     []any{"boardId", `"B"`, "boardId", "boardId"},
+		},
+		"InNestedElementNotPushed": {
+			// a nested-array element has no safe arm -> the whole $in stays in Go.
+			filter: must.NotFail(types.NewDocument("v",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a",
+					must.NotFail(types.NewArray("x")))))))),
+			expected: "",
+		},
+
 		"ImplicitString": {
 			filter:   must.NotFail(types.NewDocument("v", "foo")),
 			expected: whereContain,
