@@ -81,6 +81,23 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter:   must.NotFail(types.NewDocument("test", time.Date(2021, 11, 1, 10, 18, 42, 123000000, time.UTC))),
 			expected: " WHERE \"test\" = 1635761922123",
 		},
+		"RangeTimestampGt": {
+			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape, pushed as a numeric bound.
+			filter: must.NotFail(types.NewDocument("ts",
+				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
+			expected: " WHERE \"ts\" > 7300000000000000000",
+		},
+		"RangeNumberLte": {
+			filter: must.NotFail(types.NewDocument("count",
+				must.NotFail(types.NewDocument("$lte", int64(100))))),
+			expected: " WHERE \"count\" <= 100",
+		},
+		"RangeStringBoundNotPushed": {
+			// a non-number bound stays in the Go filter (no WHERE).
+			filter: must.NotFail(types.NewDocument("test",
+				must.NotFail(types.NewDocument("$gt", "abc")))),
+			expected: "",
+		},
 		"EqOpObjectID": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", objectID)),

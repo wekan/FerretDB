@@ -17,6 +17,7 @@ package mysql
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -204,9 +205,41 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 						panic(fmt.Sprintf("Unexpected type of value: %v", v))
 					}
 
+				case "$gt", "$gte", "$lt", "$lte":
+					// Push down a numeric / date / BSON-Timestamp range bound. sjson
+					// stores int/double/Date(UnixMilli)/Timestamp(uint64) all as JSON
+					// numbers. GUARD with JSON_TYPE(...) IN number types first, so a
+					// non-number value cannot mis-compare and the pushed filter stays a
+					// SUPERSET (only number-typed docs are pre-filtered; the in-Go filter
+					// re-applies exact, type-bracketed comparison). Mainly this makes an
+					// idle OpLog tail's {ts:{$gt}} an indexed range scan instead of a
+					// whole-collection re-decode every awaitData poll. (Parity with the
+					// sqlite/postgresql backends.)
+					num, ok := numericBound(v)
+					if !ok {
+						continue
+					}
+
+					var sqlOp string
+					switch k {
+					case "$gt":
+						sqlOp = ">"
+					case "$gte":
+						sqlOp = ">="
+					case "$lt":
+						sqlOp = "<"
+					case "$lte":
+						sqlOp = "<="
+					}
+
+					filters = append(filters, fmt.Sprintf(
+						`JSON_TYPE(%[1]s->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND %[1]s->$.? %[2]s ?`,
+						metadata.DefaultColumn, sqlOp,
+					))
+					args = append(args, rootKey, rootKey, num)
+
 				default:
-					// $gt and $lt
-					// TODO https://github.com/FerretDB/FerretDB/issues/1875
+					// other operators ($regex, $exists, …) stay in the Go filter.
 					continue
 				}
 			}
@@ -231,6 +264,32 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 	}
 
 	return filter, args, nil
+}
+
+// numericBound returns the numeric argument for a range bound that sjson stores as a
+// JSON number — int32/int64/double, a Date (as its Unix-millis) and a BSON Timestamp
+// (as its uint64) — or ok=false for a non-number bound (left to the Go filter). A
+// Timestamp above signed-64-bit is declined so the pushed value stays an exact
+// integer; the Go filter stays authoritative.
+func numericBound(v any) (any, bool) {
+	switch n := v.(type) {
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return n, true
+	case time.Time:
+		return n.UnixMilli(), true
+	case types.Timestamp:
+		if uint64(n) > math.MaxInt64 {
+			return nil, false
+		}
+
+		return int64(n), true
+	default:
+		return nil, false
+	}
 }
 
 // filterEqual returns the proper SQL filter with arguments that filters documents

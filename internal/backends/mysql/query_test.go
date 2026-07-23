@@ -127,6 +127,27 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("v.arr.0", "foo")),
 		},
 
+		// Numeric / date / Timestamp range pushdown, guarded by JSON_TYPE so a
+		// non-number value can never mis-compare.
+		"RangeTimestampGt": {
+			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape.
+			filter: must.NotFail(types.NewDocument("ts",
+				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
+			expected: ` WHERE JSON_TYPE(_ferretdb_sjson->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND _ferretdb_sjson->$.? > ?`,
+			args:     []any{"ts", "ts", int64(7300000000000000000)},
+		},
+		"RangeNumberLte": {
+			filter: must.NotFail(types.NewDocument("count",
+				must.NotFail(types.NewDocument("$lte", int64(100))))),
+			expected: ` WHERE JSON_TYPE(_ferretdb_sjson->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND _ferretdb_sjson->$.? <= ?`,
+			args:     []any{"count", "count", int64(100)},
+		},
+		"RangeStringBoundNotPushed": {
+			// a non-number bound stays in the Go filter (no WHERE).
+			filter: must.NotFail(types.NewDocument("v",
+				must.NotFail(types.NewDocument("$gt", "abc")))),
+		},
+
 		"ImplicitString": {
 			filter:   must.NotFail(types.NewDocument("v", "foo")),
 			expected: whereContain,

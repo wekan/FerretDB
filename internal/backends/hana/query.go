@@ -17,6 +17,7 @@ package hana
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -34,6 +35,31 @@ func prepareSelectClause(schema, table string) string {
 func jsonToHanaQueryString(jsonStr string) string {
 	hanaString := string(strToHanaJSON([]byte(jsonStr)))
 	return strings.ReplaceAll(hanaString, "\"", "'")
+}
+
+// numericBound returns the numeric argument for a range bound that sjson stores as a
+// JSON number — int32/int64/double, a Date (as its Unix-millis) and a BSON Timestamp
+// (as its uint64) — or ok=false for a non-number bound (left to the Go filter). A
+// Timestamp above signed-64-bit is declined so the pushed value stays an exact integer.
+func numericBound(v any) (any, bool) {
+	switch n := v.(type) {
+	case int32:
+		return int64(n), true
+	case int64:
+		return n, true
+	case float64:
+		return n, true
+	case time.Time:
+		return n.UnixMilli(), true
+	case types.Timestamp:
+		if uint64(n) > math.MaxInt64 {
+			return nil, false
+		}
+
+		return int64(n), true
+	default:
+		return nil, false
+	}
 }
 
 func makeFilter(table, key, op string, value any) string {
@@ -130,9 +156,32 @@ func prepareWhereClause(table string, filter *types.Document) (string, error) {
 					if f := makeFilter(table, rootKey, "<>", v); f != "" {
 						filters = append(filters, f)
 					}
+				case "$gt", "$gte", "$lt", "$lte":
+					// Best-effort numeric/date/Timestamp range pushdown (parity with the
+					// other backends). sjson stores int/double/Date(UnixMilli)/
+					// Timestamp(uint64) as JSON numbers; convert the bound to that
+					// numeric and let makeFilter render the comparison against the
+					// DocStore field. Non-number bounds stay in the Go filter, which
+					// re-applies the exact, type-bracketed comparison regardless.
+					var sqlOp string
+					switch k {
+					case "$gt":
+						sqlOp = ">"
+					case "$gte":
+						sqlOp = ">="
+					case "$lt":
+						sqlOp = "<"
+					case "$lte":
+						sqlOp = "<="
+					}
+
+					if num, ok := numericBound(v); ok {
+						if f := makeFilter(table, rootKey, sqlOp, num); f != "" {
+							filters = append(filters, f)
+						}
+					}
 				default:
-					// $gt and $lt
-					// TODO https://github.com/FerretDB/FerretDB/issues/1875
+					// other operators ($regex, $exists, …) stay in the Go filter.
 					continue
 				}
 			}
