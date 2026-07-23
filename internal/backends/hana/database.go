@@ -17,6 +17,7 @@ package hana
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"sort"
 
@@ -29,13 +30,15 @@ import (
 type database struct {
 	hdb  *fsql.DB
 	name string
+	l    *slog.Logger
 }
 
 // newDatabase creates a new Database.
-func newDatabase(hdb *fsql.DB, name string) backends.Database {
+func newDatabase(hdb *fsql.DB, name string, l *slog.Logger) backends.Database {
 	return backends.DatabaseContract(&database{
 		hdb:  hdb,
 		name: name,
+		l:    l,
 	})
 }
 
@@ -115,8 +118,36 @@ func (db *database) CreateCollection(ctx context.Context, params *backends.Creat
 	}
 
 	err = createCollection(ctx, db.hdb, db.name, params.Name)
+	if err != nil {
+		return getHanaErrorIfExists(err)
+	}
 
-	return getHanaErrorIfExists(err)
+	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor. Add a
+	// best-effort index on the ts field so an idle OpLog tail need not re-scan the whole
+	// capped collection on every awaitData poll. SAP HANA JSON DocStore supports HASH
+	// indexes (the searched HANA syntax; see createIndexes), which serve equality — so this
+	// may not accelerate the RANGE tail and the maintainer must confirm with EXPLAIN on a
+	// live HANA whether the range predicate uses it; if HANA declines a range on a HASH
+	// index the tail simply falls back to a scan. BEST-EFFORT: a failure here is logged with
+	// the error and never fails collection creation.
+	if db.name == "local" && params.Name == "oplog.rs" {
+		_, idxErr := createIndexes(ctx, db.hdb, db.name, params.Name, &backends.CreateIndexesParams{
+			Indexes: []backends.IndexInfo{{
+				Name: "ts_",
+				Key:  []backends.IndexKeyPair{{Field: "ts"}},
+			}},
+		})
+		if idxErr != nil {
+			db.l.WarnContext(
+				ctx,
+				"Failed to create the oplog ts index on the hana backend; "+
+					"the OpLog tail will fall back to a sequential scan",
+				slog.Any("error", idxErr),
+			)
+		}
+	}
+
+	return nil
 }
 
 // DropCollection implements backends.Database interface.

@@ -87,7 +87,7 @@ func (b *backend) Status(ctx context.Context, params *backends.StatusParams) (*b
 			return nil, lazyerrors.Error(err)
 		}
 
-		list, errDB := newDatabase(b.hdb, dbName).ListCollections(ctx, new(backends.ListCollectionsParams))
+		list, errDB := newDatabase(b.hdb, dbName, b.l).ListCollections(ctx, new(backends.ListCollectionsParams))
 		if errDB != nil {
 			return nil, lazyerrors.Error(errDB)
 		}
@@ -110,7 +110,7 @@ func (b *backend) Status(ctx context.Context, params *backends.StatusParams) (*b
 
 // Database implements backends.Backend interface.
 func (b *backend) Database(name string) (backends.Database, error) {
-	return newDatabase(b.hdb, name), nil
+	return newDatabase(b.hdb, name, b.l), nil
 }
 
 // ListDatabases implements backends.Backend interface.

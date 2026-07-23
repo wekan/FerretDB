@@ -564,6 +564,34 @@ func (r *Registry) collectionCreate(ctx context.Context, p *pgxpool.Pool, params
 		return false, lazyerrors.Error(err)
 	}
 
+	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor — a
+	// BSON Timestamp range that query.go pushes down as (_jsonb->>'ts')::numeric <op>.
+	// Add a matching btree expression index on exactly that value, so an idle OpLog tail
+	// resumes with an index range scan instead of re-scanning the whole capped collection
+	// on every awaitData poll. The index expression MUST match query.go's range expression
+	// for PostgreSQL to use it (verified against the searched PostgreSQL docs for a jsonb
+	// ->> ::numeric expression index). Internal optimization (not a client-visible index)
+	// and BEST-EFFORT: on failure the tail still works via a sequential scan, so a failed
+	// CREATE INDEX never blocks collection creation — it is logged with the exact SQL and
+	// error so a live-engine problem is visible. Verify usage with EXPLAIN on the engine.
+	if dbName == "local" && collectionName == "oplog.rs" {
+		idxQ := fmt.Sprintf(
+			`CREATE INDEX IF NOT EXISTS %s ON %s (((%s->>'ts')::numeric))`,
+			pgx.Identifier{tableName + "_ts_idx"}.Sanitize(),
+			pgx.Identifier{dbName, tableName}.Sanitize(),
+			DefaultColumn,
+		)
+		if _, err = p.Exec(ctx, idxQ); err != nil {
+			r.l.WarnContext(
+				ctx,
+				"Failed to create the oplog ts index on the postgresql backend; "+
+					"the OpLog tail will fall back to a sequential scan",
+				slog.String("sql", idxQ),
+				slog.Any("error", err),
+			)
+		}
+	}
+
 	return true, nil
 }
 

@@ -10,6 +10,23 @@
 
 - Pushdown: a DOTTED-path field equality / `$in` (e.g. `{'meta.cardId': X}`) now pushes down as the nested `->` expression `col->"meta"->"cardId"` — which matches the nested expression index the registry already builds for a dotted index key — instead of being dropped from the WHERE. Previously `prepareWhereClause` skipped any key containing a `.`, so a client's dotted lookup (e.g. a Meteor-Files attachment find `{'meta.cardId': X}` when a card is opened) emitted no WHERE and full-scanned the whole collection with a per-row sjson decode on every poll — turning a small card into a ~40s open and keeping an idle poll-and-diff session's CPU high. Only scalar string/ObjectID equality and `$in` are pushed for a dotted path (their SQL references only the nested expression); ranges and `$regex` on a dotted path stay in the Go filter, and the Go filter remains authoritative in all cases (`internal/backends/sqlite/query.go`). Covered by `internal/backends/sqlite/query_test.go` (`DottedPathEqualityPushed` / `DottedPathInPushed` / `DottedPathRangeNotPushed`) and `internal/backends/sqlite/metadata/registry_test.go` (`TestDottedPathEqualityUsesIndex`, which asserts via `EXPLAIN QUERY PLAN` that the nested index is used and there is no SCAN) by @xet7. Thanks to xet7.
 
+- OpLog `ts` index on the **postgresql**, **mysql** and **hana** backends, mirroring the
+  **sqlite** backend: when the capped `local.oplog.rs` collection is created, a matching
+  index on the `ts` value is created so an idle tail's `{ts: {$gt: <last>}}` cursor can
+  resume with an index range scan instead of re-scanning the whole capped collection on
+  every awaitData poll. postgresql builds a btree expression index
+  `CREATE INDEX … (((_jsonb->>'ts')::numeric))` — the same expression the range pushdown
+  emits, so it is actually used; mysql builds a functional index
+  `((CAST(_ferretdb_sjson->>'$.ts' AS DECIMAL(65,10))))` (a JSON expression cannot be
+  indexed directly), which needs a live `EXPLAIN` to confirm the pushdown expression
+  matches it; hana attempts a DocStore index on `ts`, but its indexes are HASH (equality),
+  so range acceleration must be confirmed on a live engine. Every index is created
+  BEST-EFFORT and non-fatally: a failed `CREATE INDEX` is logged with the exact SQL and
+  error (so a wrong syntax on a live engine is visible) and the tail simply falls back to a
+  sequential scan — it never blocks collection creation. Index USABILITY on live
+  PostgreSQL / MySQL / SAP HANA still needs `EXPLAIN` verification with the integration
+  suite by @xet7. Thanks to xet7.
+
 ## [v1.39.0](https://github.com/wekan/FerretDB/releases/tag/v1.39.0) (2026-07-22)
 
 ### Fixed 🐛

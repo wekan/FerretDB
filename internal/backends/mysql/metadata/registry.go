@@ -573,6 +573,33 @@ func (r *Registry) collectionCreate(ctx context.Context, p *fsql.DB, params *Col
 		return false, lazyerrors.Error(err)
 	}
 
+	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor. MySQL
+	// cannot index a JSON column/expression directly, so add a FUNCTIONAL index on the ts
+	// value CAST to DECIMAL — the searched MySQL 8 way to index a JSON field
+	// (CAST(col->>'$.key' AS <type>)) — so an idle OpLog tail can resume with an index
+	// range scan instead of re-scanning the whole capped collection on every awaitData
+	// poll. BEST-EFFORT: on failure the tail still works via a sequential scan, so a failed
+	// CREATE INDEX never blocks collection creation; it is logged with the exact SQL and
+	// error so a live-engine problem is visible (MySQL has no CREATE INDEX IF NOT EXISTS).
+	// NOTE: MySQL only uses a functional index when the query expression matches it exactly,
+	// so confirm with EXPLAIN on the engine that query.go's range pushdown uses this index
+	// (the pushdown may need to emit the same CAST expression).
+	if dbName == "local" && collectionName == "oplog.rs" {
+		idxQ := fmt.Sprintf(
+			"CREATE INDEX %s ON %s.%s ((CAST(%s->>'$.ts' AS DECIMAL(65,10))))",
+			tableName+"_ts_idx", dbName, tableName, DefaultColumn,
+		)
+		if _, err = p.ExecContext(ctx, idxQ); err != nil {
+			r.l.WarnContext(
+				ctx,
+				"Failed to create the oplog ts index on the mysql backend; "+
+					"the OpLog tail will fall back to a sequential scan",
+				slog.String("sql", idxQ),
+				slog.Any("error", err),
+			)
+		}
+	}
+
 	return true, nil
 }
 
