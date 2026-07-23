@@ -23,9 +23,7 @@ https://github.com/wekan/FerretDB/releases
 
 # Roadmap
 
-[ROADMAP](ROADMAP.md]
-
-
+[ROADMAP](ROADMAP.md)
 
 # Original FerretDB info
 
