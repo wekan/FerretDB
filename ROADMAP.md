@@ -386,7 +386,7 @@ correctness. (This is unlike upstream **FerretDB v2**, which has no OpLog at all
 | **Numeric/date/Timestamp range** `$gt/$gte/$lt/$lte` | ✅ | ✅ **(added)** | ✅ **(added)** | ✅ **(added, best-effort)** |
 | **`$in`** (incl. an `[id, null]` element) | ✅ | ✅ **(added)** | ✅ **(added)** | ✅ **(added, best-effort)** |
 | Dotted-path equality/`$in` uses the nested index | ✅ | native (JSONB path) | ⬜ TODO | ⬜ TODO |
-| OpLog `ts` index for the tail | ✅ | ⬜ TODO | ⬜ TODO | ⬜ TODO |
+| OpLog `ts` index for the tail | ✅ | ✅ **(added)** ⚠️ | ✅ **(added, incl. MariaDB)** ⚠️ | ✅ **(added, best-effort)** ⚠️ |
 | Declared Mongo index → usable engine index for the hot query | ✅ (expr index) | ⚠️ verify (`@>` needs GIN; equality vs `=`) | ⚠️ verify | ⚠️ verify |
 | Corruption/bloat auto-repair on open | ✅ | n/a (PG WAL/autovacuum) | n/a | n/a |
 | Runs in the WeKan snap | ✅ (`--handler=sqlite`) | ⬜ launcher (external DB) | ⬜ launcher (external DB) | ⬜ launcher (external DB) |
@@ -412,19 +412,65 @@ Covered by each backend's `internal/backends/<engine>/query_test.go`
 (`RangeTimestampGt` / `RangeNumberLte` / `RangeStringBoundNotPushed` / `InPushed` /
 `InWithNullPushed`).
 
+The **OpLog `ts` index** on `local.oplog.rs` is now created (best-effort, non-fatal)
+when the capped collection is created, in every backend's `metadata/registry.go`
+`collectionCreate` (hana in `database.go` `CreateCollection`): postgresql a btree
+expression index `(((_jsonb->>'ts')::numeric))`; mysql a functional index
+`((CAST(_ferretdb_sjson->>'$.ts' AS DECIMAL(65,10))))` with a **MariaDB fallback** to a
+`STORED` generated column on that CAST plus a plain index on the column (MariaDB has no
+functional key parts); hana a DocStore index on `ts`. A failed `CREATE INDEX` is logged
+with the exact SQL and error and the tail falls back to a sequential scan.
+
 ### What is next
 
-1. **OpLog `ts` index** on `local.oplog.rs` per backend, and confirming a declared Mongo
-   index accelerates the hot equality (on PostgreSQL a `@>` containment needs a GIN
-   index, or the equality must switch to `=` against the existing expression index) —
-   requires `EXPLAIN (ANALYZE)` on the live engine.
+1. **Confirm the OpLog `ts` index (and a declared Mongo index) is actually USED** —
+   `EXPLAIN (ANALYZE)` on each live engine. The index now EXISTS on every backend, but
+   the optimizer uses it only when `query.go`'s range pushdown expression MATCHES the
+   indexed expression: today the mysql pushdown compares `col->'$.ts'` (raw JSON) while
+   the index is on `CAST(col->>'$.ts' AS DECIMAL)`, so the pushdown likely needs to emit
+   the same CAST for the index to bind; on PostgreSQL a declared-index `@>` containment
+   needs a GIN index, or the equality must switch to `=` against the existing expression
+   index. This alignment is the remaining step and cannot be settled without a live
+   `EXPLAIN`.
 2. **Launcher** — gate `snap-src/bin/ferretdb-control` to run `--handler=postgresql`
    (or `mysql`) against an **external** database via `FERRETDB_POSTGRESQL_URL` /
    `FERRETDB_MYSQL_URL`, with the SQLite-file steps (rotating backup, reset-oplog,
    corruption pre-open restore) scoped to `sqlite` and PG/MySQL equivalents
    (`pg_dump` / `mysqldump`) where wanted.
-3. **MariaDB** — assess whether MariaDB's JSON functions diverge enough from MySQL 8 to
-   need special handling in the `mysql` backend.
+
+### MariaDB vs the `mysql` backend — assessment
+
+MariaDB speaks the MySQL wire protocol, so the `mysql` backend runs against it through
+the same `go-sql-driver/mysql` driver, and the backend does **not** gate or reject on
+vendor/version (`openDB` only records `SELECT version()`). Reviewing every
+MariaDB-sensitive statement the backend emits:
+
+- **Works on MariaDB (10.2+):** the document column `CREATE TABLE (col json)` (MariaDB
+  aliases `JSON`→`LONGTEXT` + a `JSON_VALID` check); the JSON accessors `->`, `->>'$.p'`,
+  `JSON_CONTAINS`, `JSON_TYPE`; the regular-index workaround `VARCHAR(255) GENERATED
+  ALWAYS AS ((expr)) STORED` + index (MariaDB supports `STORED` generated columns and
+  indexing them); `EXPLAIN FORMAT=JSON` — the parser (`unmarshalExplain`) is a generic
+  JSON→Document conversion with no MySQL-specific keys, so MariaDB's different plan JSON
+  is tolerated, not rejected; and the `information_schema` catalog queries.
+- **Was the one concrete break, now fixed:** the OpLog `ts` index used a MySQL-8.0.13
+  *functional key part* `CREATE INDEX ... ((CAST(...)))`, which **MariaDB does not
+  support** — it parsed-errored, so on MariaDB the tail lost its index acceleration
+  (best-effort, so collection creation still succeeded). The mysql backend now falls back
+  to the generated-`STORED`-column + column-index form, which MariaDB accepts, so the
+  index EXISTS on both engines.
+- **Correctness is preserved regardless:** every pushdown is a superset with an exact
+  in-Go re-filter, so even where an engine difference makes a predicate less selective (or
+  the index is not chosen), results stay correct — MariaDB never returns wrong data, only
+  potentially a slower scan.
+- **Left to verify on a live MariaDB (`EXPLAIN`):** whether the generated-column ts index
+  is actually chosen for the `{ts:{$gt}}` tail (same pushdown-alignment question as MySQL,
+  item 1 above); and whether MariaDB's `JSON_TYPE` returns the same `INTEGER`/`DOUBLE`/
+  `DECIMAL` tokens the range guard tests for (a mismatch only reduces selectivity, never
+  correctness).
+
+Conclusion: the `mysql` backend is safe to point at MariaDB today (no hard block,
+correctness intact); the remaining work is the same live-`EXPLAIN` index-usage
+verification as MySQL, not vendor-specific query rewrites.
 
 ### Verification boundary
 

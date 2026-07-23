@@ -573,30 +573,57 @@ func (r *Registry) collectionCreate(ctx context.Context, p *fsql.DB, params *Col
 		return false, lazyerrors.Error(err)
 	}
 
-	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor. MySQL
-	// cannot index a JSON column/expression directly, so add a FUNCTIONAL index on the ts
-	// value CAST to DECIMAL — the searched MySQL 8 way to index a JSON field
-	// (CAST(col->>'$.key' AS <type>)) — so an idle OpLog tail can resume with an index
-	// range scan instead of re-scanning the whole capped collection on every awaitData
-	// poll. BEST-EFFORT: on failure the tail still works via a sequential scan, so a failed
-	// CREATE INDEX never blocks collection creation; it is logged with the exact SQL and
-	// error so a live-engine problem is visible (MySQL has no CREATE INDEX IF NOT EXISTS).
-	// NOTE: MySQL only uses a functional index when the query expression matches it exactly,
-	// so confirm with EXPLAIN on the engine that query.go's range pushdown uses this index
-	// (the pushdown may need to emit the same CAST expression).
+	// The capped oplog (local.oplog.rs) is tailed with a {ts: {$gt: <last>}} cursor. A JSON
+	// column/expression cannot be indexed directly here, so index the ts value CAST to
+	// DECIMAL, letting an idle OpLog tail resume with an index range scan instead of
+	// re-scanning the whole capped collection on every awaitData poll. Two portable forms are
+	// tried so the same backend works on MySQL AND MariaDB:
+	//   1. MySQL 8.0.13+ functional key part: CREATE INDEX ... ((CAST(col->>'$.ts' AS ...))).
+	//   2. MariaDB (and pre-8.0.13 MySQL) have no functional key parts, so fall back to the
+	//      SAME generated-STORED-column workaround the regular indexes use (see
+	//      databaseGetOrCreate / indexesCreate): add a STORED column holding the CAST and
+	//      index THAT column. MariaDB supports STORED generated columns and indexing them.
+	// BEST-EFFORT: every step is non-fatal — on failure the tail still works via a sequential
+	// scan, so it never blocks collection creation; each failed statement is logged with its
+	// exact SQL and error (MySQL has no CREATE INDEX IF NOT EXISTS). NOTE: the engine only uses
+	// the index when query.go's range pushdown expression matches the indexed expression, so a
+	// live EXPLAIN on MySQL AND MariaDB must confirm the {ts:{$gt}} pushdown actually uses it
+	// (the pushdown may need to emit the same CAST expression); until then this only ensures
+	// the index EXISTS on both engines.
 	if dbName == "local" && collectionName == "oplog.rs" {
-		idxQ := fmt.Sprintf(
-			"CREATE INDEX %s ON %s.%s ((CAST(%s->>'$.ts' AS DECIMAL(65,10))))",
-			tableName+"_ts_idx", dbName, tableName, DefaultColumn,
-		)
-		if _, err = p.ExecContext(ctx, idxQ); err != nil {
-			r.l.WarnContext(
-				ctx,
-				"Failed to create the oplog ts index on the mysql backend; "+
-					"the OpLog tail will fall back to a sequential scan",
-				slog.String("sql", idxQ),
-				slog.Any("error", err),
+		idxName := tableName + "_ts_idx"
+		castExpr := fmt.Sprintf("CAST(%s->>'$.ts' AS DECIMAL(65,10))", DefaultColumn)
+
+		// 1. MySQL: a functional index directly on the CAST expression.
+		funcIdxQ := fmt.Sprintf("CREATE INDEX %s ON %s.%s ((%s))", idxName, dbName, tableName, castExpr)
+		if _, err = p.ExecContext(ctx, funcIdxQ); err != nil {
+			// 2. MariaDB fallback: a STORED generated column on the CAST, then index the column.
+			tsCol := tableName + "_ts"
+			genColQ := fmt.Sprintf(
+				"ALTER TABLE %s.%s ADD COLUMN %s DECIMAL(65,10) GENERATED ALWAYS AS (%s) STORED",
+				dbName, tableName, tsCol, castExpr,
 			)
+			colIdxQ := fmt.Sprintf("CREATE INDEX %s ON %s.%s (%s)", idxName, dbName, tableName, tsCol)
+
+			_, genErr := p.ExecContext(ctx, genColQ)
+			var colErr error
+			if genErr == nil {
+				_, colErr = p.ExecContext(ctx, colIdxQ)
+			}
+
+			if genErr != nil || colErr != nil {
+				r.l.WarnContext(
+					ctx,
+					"Failed to create the oplog ts index on the mysql/mariadb backend; "+
+						"the OpLog tail will fall back to a sequential scan",
+					slog.String("functional_index_sql", funcIdxQ),
+					slog.Any("functional_index_error", err),
+					slog.String("generated_column_sql", genColQ),
+					slog.Any("generated_column_error", genErr),
+					slog.String("column_index_sql", colIdxQ),
+					slog.Any("column_index_error", colErr),
+				)
+			}
 		}
 	}
 
