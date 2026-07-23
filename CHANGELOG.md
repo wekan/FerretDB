@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- Release automation: `build.sh` now dispatches the release workflow reliably instead of leaving you to click "Run workflow" in the Actions tab. `trigger_workflow` (used by `./build.sh release-ferretdb` and option 13) now resolves `OWNER/REPO` from the git remote and pins it with `gh workflow run -R`, so `gh` targets the right repo even when the repo is not auto-detected; runs an auth + scope preflight (`gh auth status`) that fails fast if `gh` is not authenticated and warns, with the exact `gh auth refresh -h github.com -s workflow` fix, when the token is missing the `workflow` scope (the usual silent 403 cause); retries the dispatch five times to ride out the few-second delay before GitHub registers a just-pushed new workflow; and falls back to the REST dispatch API (`gh api .../actions/workflows/<wf>/dispatches`) when the direct `gh workflow run` still does not take. The three FerretDB workflows already declare `on: workflow_dispatch` on the default branch, so the remaining requirement is only that `gh` is authenticated with the `workflow` scope by @xet7. Thanks to xet7.
+
 ## [v1.40.0](https://github.com/wekan/FerretDB/releases/tag/v1.40.0) (2026-07-23)
 
 ### Fixed 🐛

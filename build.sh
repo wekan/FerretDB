@@ -365,24 +365,84 @@ act_clean() {
 # and trigger a workflow via `gh`. Both FerretDB workflows take an optional
 # `version` input, so this shared helper handles both.
 #   trigger_workflow <workflow-file> [version]
+#
+# Requirements so this dispatches automatically (instead of you clicking
+# "Run workflow" in the Actions tab):
+#   1. `gh` installed and authenticated for github.com (`gh auth login`, or a
+#      GH_TOKEN / GITHUB_TOKEN env var).
+#   2. The token MUST carry the `workflow` scope (plus `repo`). A token with only
+#      `repo` can push but `gh workflow run` then returns 403 "Resource not
+#      accessible" — the most common silent cause of a failed dispatch. Add it with
+#      `gh auth refresh -h github.com -s workflow`.
+#   3. The workflow must exist on the default branch with `on: workflow_dispatch`
+#      (all FerretDB workflows do). A JUST-pushed new workflow is not dispatchable
+#      until GitHub registers it (a few seconds) — handled by the retry loop below.
+# This function pins the repo with `-R`, verifies auth/scope, retries the
+# registration race, and falls back to the REST dispatch API.
 trigger_workflow() {
   command -v gh >/dev/null 2>&1 || {
     err "'gh' (GitHub CLI) is required and must be authenticated: run 'gh auth login'."
     return 1
   }
-  local wf="$1" version="${2:-}" branch
+  local wf="$1" version="${2:-}" branch repo scopes i ok
+
+  # Resolve OWNER/REPO from the git remote so `gh` targets the right repo even when
+  # run outside a detected checkout; fall back to the fork's canonical path.
+  repo="$(git remote get-url origin 2>/dev/null \
+    | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')"
+  [ -n "$repo" ] || repo="wekan/FerretDB"
+
+  # Auth + scope preflight. Missing auth is fatal; a missing `workflow` scope is only
+  # warned (a GH_TOKEN env auth may not report its scopes, so we cannot hard-fail).
+  if ! gh auth status -h github.com >/dev/null 2>&1; then
+    err "gh is not authenticated for github.com. Run: gh auth login  (or set GH_TOKEN)."
+    return 1
+  fi
+  scopes="$(gh auth status -h github.com 2>&1 | grep -i 'token scopes' || true)"
+  if [ -n "$scopes" ] && ! printf '%s' "$scopes" | grep -q 'workflow'; then
+    warn "gh token is missing the 'workflow' scope — dispatch will 403."
+    warn "Fix it with: gh auth refresh -h github.com -s workflow"
+  fi
+
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main-v1)"
 
   info "Pushing '$branch' so the workflow runs the latest committed version ..."
   git push origin "$branch" || warn "git push reported no changes / failed; continuing to trigger."
 
-  info "Triggering $wf on '$branch'${version:+ (version $version)} ..."
-  if [ -n "$version" ]; then
-    gh workflow run "$wf" --ref "$branch" -f version="$version" || return 1
-  else
-    gh workflow run "$wf" --ref "$branch" || return 1
+  info "Triggering $wf on '$repo' ('$branch')${version:+ (version $version)} ..."
+  # `gh workflow run`, retried for the new-workflow registration race.
+  ok=0
+  for i in 1 2 3 4 5; do
+    if [ -n "$version" ]; then
+      gh workflow run "$wf" -R "$repo" --ref "$branch" -f version="$version" && { ok=1; break; }
+    else
+      gh workflow run "$wf" -R "$repo" --ref "$branch" && { ok=1; break; }
+    fi
+    warn "trigger attempt $i/5 failed (GitHub may still be registering '$wf'); retrying in 5s ..."
+    sleep 5
+  done
+
+  # Fallback: the REST dispatch API (some gh versions resolve the workflow id more
+  # reliably this way). Body is built as explicit JSON to avoid input-syntax issues.
+  if [ "$ok" -ne 1 ]; then
+    warn "Direct 'gh workflow run' did not succeed; trying the REST dispatch API ..."
+    if [ -n "$version" ]; then
+      printf '{"ref":"%s","inputs":{"version":"%s"}}' "$branch" "$version" \
+        | gh api "repos/$repo/actions/workflows/$wf/dispatches" --input - && ok=1
+    else
+      printf '{"ref":"%s"}' "$branch" \
+        | gh api "repos/$repo/actions/workflows/$wf/dispatches" --input - && ok=1
+    fi
   fi
-  info "Triggered. Track progress at: https://github.com/wekan/FerretDB/actions"
+
+  if [ "$ok" -ne 1 ]; then
+    err "Could not dispatch $wf on $repo. Check: 'gh auth status' shows the 'workflow' scope,"
+    err "$wf exists on the default branch, and you can push to $repo."
+    err "You can start it manually at: https://github.com/$repo/actions"
+    return 1
+  fi
+
+  info "Triggered. Track progress at: https://github.com/$repo/actions"
   info "Requires the DOCKERHUB_AUTH / QUAY_AUTH / GHCR_AUTH secrets in this repo."
 }
 
