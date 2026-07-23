@@ -281,6 +281,66 @@ func TestInWithNullUsesIndex(t *testing.T) {
 	require.NotContains(t, plan, "SCAN", "must not full-scan the table; plan was:\n%s", plan)
 }
 
+// A dotted-path equality (e.g. a Meteor-Files attachment lookup `{'meta.cardId': X}`)
+// pushes down as the NESTED expression `col->"meta"->"cardId"`, which matches the
+// nested expression index the registry builds for a dotted index key — so SQLite
+// serves it as an index search, not a full-table scan on every poll (the card-open
+// 42s / idle-CPU fix).
+func TestDottedPathEqualityUsesIndex(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	dbName := testutil.DatabaseName(t)
+	db, err := r.DatabaseGetOrCreate(ctx, dbName)
+	require.NoError(t, err)
+
+	collectionName := testutil.CollectionName(t)
+	_, err = r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
+	require.NoError(t, err)
+
+	// The nested index WeKan declares on the denormalized attachment key.
+	require.NoError(t, r.indexesCreate(ctx, dbName, collectionName, []IndexInfo{{
+		Name: "meta_cardId",
+		Key:  []IndexKeyPair{{Field: "meta.cardId"}},
+	}}))
+
+	c := r.CollectionGet(ctx, dbName, collectionName)
+	require.NotNil(t, c)
+	tableName := c.TableName
+
+	// The exact WHERE prepareWhereClause emits for {'meta.cardId': X} (see
+	// query_test.go DottedPathEqualityPushed): the nested -> expression + array arm.
+	e := fmt.Sprintf(`%s->"meta"->"cardId"`, DefaultColumn)
+	where := fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, e)
+	q := fmt.Sprintf(`EXPLAIN QUERY PLAN SELECT %s FROM %q WHERE %s`, DefaultColumn, tableName, where)
+
+	rows, err := db.QueryContext(ctx, q, `"C"`)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	var usesIndex bool
+	var plan string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		require.NoError(t, rows.Scan(&id, &parent, &notused, &detail))
+		plan += detail + "\n"
+		if strings.Contains(detail, "USING INDEX") || strings.Contains(detail, "meta_cardId") {
+			usesIndex = true
+		}
+	}
+	require.NoError(t, rows.Err())
+	require.True(t, usesIndex, "the dotted-path WHERE must use the nested meta.cardId index; plan was:\n%s", plan)
+	require.NotContains(t, plan, "SCAN", "must not full-scan; plan was:\n%s", plan)
+}
+
 func TestCreateDropStress(t *testing.T) {
 	// Otherwise, the test might fail with "database schema has changed".
 	// That error code is SQLITE_SCHEMA (17).

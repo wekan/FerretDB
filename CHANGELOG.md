@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- Pushdown: a DOTTED-path field equality / `$in` (e.g. `{'meta.cardId': X}`) now pushes down as the nested `->` expression `col->"meta"->"cardId"` — which matches the nested expression index the registry already builds for a dotted index key — instead of being dropped from the WHERE. Previously `prepareWhereClause` skipped any key containing a `.`, so a client's dotted lookup (e.g. a Meteor-Files attachment find `{'meta.cardId': X}` when a card is opened) emitted no WHERE and full-scanned the whole collection with a per-row sjson decode on every poll — turning a small card into a ~40s open and keeping an idle poll-and-diff session's CPU high. Only scalar string/ObjectID equality and `$in` are pushed for a dotted path (their SQL references only the nested expression); ranges and `$regex` on a dotted path stay in the Go filter, and the Go filter remains authoritative in all cases (`internal/backends/sqlite/query.go`). Covered by `internal/backends/sqlite/query_test.go` (`DottedPathEqualityPushed` / `DottedPathInPushed` / `DottedPathRangeNotPushed`) and `internal/backends/sqlite/metadata/registry_test.go` (`TestDottedPathEqualityUsesIndex`, which asserts via `EXPLAIN QUERY PLAN` that the nested index is used and there is no SCAN) by @xet7. Thanks to xet7.
+
 ## [v1.39.0](https://github.com/wekan/FerretDB/releases/tag/v1.39.0) (2026-07-22)
 
 ### Fixed 🐛

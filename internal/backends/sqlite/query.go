@@ -124,17 +124,29 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	var args []any
 
 	for _, k := range filter.Keys() {
-		// dotted paths and $-operator top-level keys (e.g. $or) stay in the Go filter
-		if k == "" || strings.HasPrefix(k, "$") || strings.ContainsRune(k, '.') {
+		// $-operator top-level keys (e.g. $or) stay in the Go filter.
+		if k == "" || strings.HasPrefix(k, "$") {
 			continue
 		}
 
 		v := must.NotFail(filter.Get(k))
 
-		// the same expression Registry.indexesCreate indexes
-		expr := fmt.Sprintf(`%s->%s`, metadata.DefaultColumn, quoteJSONLabel(k))
+		// The same expression Registry.indexesCreate indexes. A DOTTED path becomes
+		// a nested -> chain (`col->"a"->"b"`), so SQLite can pair the WHERE with the
+		// nested expression index — e.g. a client's `{'meta.cardId': X}` attachment
+		// lookup, which otherwise dropped the WHERE and full-scanned the collection.
+		expr := jsonPathExpr(k)
 
-		if cond, condArgs, ok := pushdownFieldCondition(expr, k, v); ok {
+		var cond string
+		var condArgs []any
+		var ok bool
+		if strings.ContainsRune(k, '.') {
+			cond, condArgs, ok = pushdownDottedFieldCondition(expr, v)
+		} else {
+			cond, condArgs, ok = pushdownFieldCondition(expr, k, v)
+		}
+
+		if ok {
 			conds = append(conds, cond)
 			args = append(args, condArgs...)
 		}
@@ -173,6 +185,53 @@ func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {
 
 	case *types.Document:
 		return operatorCondition(expr, key, val)
+
+	default:
+		return "", nil, false
+	}
+}
+
+// jsonPathExpr builds the DefaultColumn -> accessor for a (possibly dotted) field
+// key, EXACTLY like Registry.indexesCreate builds its expression index, so SQLite
+// can pair a WHERE on the key with that index: "a" -> `col->"a"`, "a.b" ->
+// `col->"a"->"b"`.
+func jsonPathExpr(key string) string {
+	segments := strings.Split(key, ".")
+	for i, s := range segments {
+		segments[i] = quoteJSONLabel(s)
+	}
+
+	return fmt.Sprintf(`%s->%s`, metadata.DefaultColumn, strings.Join(segments, "->"))
+}
+
+// pushdownDottedFieldCondition pushes down a DOTTED-path field (e.g. "meta.cardId")
+// for scalar string/ObjectID equality and {$in: [...]} only — the conditions whose
+// SQL references ONLY `expr` (the nested -> chain that matches the expression index
+// Registry.indexesCreate builds for a dotted key). Range ($gt/…) and $regex on a
+// dotted path build a scalar ->> on the raw key, which is not a valid nested JSON
+// path, so they stay in the Go filter. `expr` is the nested chain; the key is passed
+// as "" so equality/inCondition use their non-_id (array-containment) form — a dotted
+// path is never _id. Still a SUPERSET, so the Go filter stays authoritative.
+func pushdownDottedFieldCondition(expr string, v any) (string, []any, bool) {
+	switch val := v.(type) {
+	case string:
+		if !pushdownSafeString(val) {
+			return "", nil, false
+		}
+
+		return equalityCondition(expr, ""), []any{marshalPushdownValue(v)}, true
+
+	case types.ObjectID:
+		return equalityCondition(expr, ""), []any{marshalPushdownValue(v)}, true
+
+	case *types.Document:
+		if inAny, err := val.Get("$in"); err == nil {
+			if arr, ok := inAny.(*types.Array); ok {
+				return inCondition(expr, "", arr)
+			}
+		}
+
+		return "", nil, false
 
 	default:
 		return "", nil, false

@@ -170,9 +170,6 @@ func TestPrepareWhereClause(t *testing.T) {
 			expectWhere: ` WHERE ` + arrayArm("boardId"),
 			expectArgs:  []any{`"b1"`},
 		},
-		"DottedPathNotPushed": {
-			filter: must.NotFail(types.NewDocument("a.b", "x")),
-		},
 		"OperatorNotPushed": {
 			filter: must.NotFail(types.NewDocument("$comment", "x")),
 		},
@@ -228,6 +225,30 @@ func TestPrepareWhereClause(t *testing.T) {
 			// a number element has no safe superset arm -> the whole $in stays in Go.
 			filter: must.NotFail(types.NewDocument("x",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", int32(5))))))),
+		},
+		"DottedPathEqualityPushed": {
+			// {'meta.cardId': 'C'} — a Meteor-Files attachment lookup. Pushes down as
+			// the NESTED expression that matches the meta.cardId expression index, so
+			// the attachments collection is no longer full-scanned on every poll.
+			filter: must.NotFail(types.NewDocument("meta.cardId", "C")),
+			expectWhere: ` WHERE ` + fmt.Sprintf(
+				`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`,
+				metadata.DefaultColumn+`->"meta"->"cardId"`),
+			expectArgs: []any{`"C"`},
+		},
+		"DottedPathInPushed": {
+			filter: must.NotFail(types.NewDocument("meta.cardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
+			expectWhere: ` WHERE ` + fmt.Sprintf(
+				`(%[1]s IN (?, ?) OR (%[1]s >= '[' AND %[1]s < '\'))`,
+				metadata.DefaultColumn+`->"meta"->"cardId"`),
+			expectArgs: []any{`"a"`, `"b"`},
+		},
+		"DottedPathRangeNotPushed": {
+			// a range on a dotted path would need a scalar ->> on the raw key, which
+			// is not a valid nested path, so it stays in the Go filter (no WHERE).
+			filter: must.NotFail(types.NewDocument("meta.n",
+				must.NotFail(types.NewDocument("$gt", int64(5))))),
 		},
 		"InEmptyNotPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
