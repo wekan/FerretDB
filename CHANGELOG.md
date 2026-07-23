@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- Release automation: removed the misleading "gh token is missing the 'workflow' scope — dispatch will 403" pre-check from `build.sh` `trigger_workflow`. It fired a false warning during the v1.41.0 release even though the dispatch then succeeded: `gh auth status` does not report the dispatch capability for a fine-grained PAT or a GitHub App token (both dispatch fine without the classic `workflow` scope), so pre-judging the scope is unreliable. The fatal "gh is not authenticated" preflight stays, and a real permission error is now explained only when the dispatch actually fails — the final error message covers both a classic PAT (needs the `workflow` scope, `gh auth refresh -h github.com -s workflow`) and a fine-grained PAT / app token (needs Actions: write) by @xet7. Thanks to xet7.
+
 ## [v1.41.0](https://github.com/wekan/FerretDB/releases/tag/v1.41.0) (2026-07-23)
 
 ### Other Changes 🤖

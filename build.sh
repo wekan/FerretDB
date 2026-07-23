@@ -370,21 +370,25 @@ act_clean() {
 # "Run workflow" in the Actions tab):
 #   1. `gh` installed and authenticated for github.com (`gh auth login`, or a
 #      GH_TOKEN / GITHUB_TOKEN env var).
-#   2. The token MUST carry the `workflow` scope (plus `repo`). A token with only
-#      `repo` can push but `gh workflow run` then returns 403 "Resource not
-#      accessible" — the most common silent cause of a failed dispatch. Add it with
-#      `gh auth refresh -h github.com -s workflow`.
+#   2. The token must be able to dispatch workflows. A classic PAT needs the
+#      `workflow` scope (plus `repo`); a fine-grained PAT / GitHub App token needs
+#      Actions: write. A classic token with only `repo` returns 403 "Resource not
+#      accessible" — the usual silent cause; fix that one with
+#      `gh auth refresh -h github.com -s workflow`. We do NOT pre-flag the scope,
+#      because `gh auth status` does not report the capability for fine-grained /
+#      app tokens (which dispatch fine) — so a pre-check gives false 403 warnings.
+#      A real permission error surfaces in the final error message below instead.
 #   3. The workflow must exist on the default branch with `on: workflow_dispatch`
 #      (all FerretDB workflows do). A JUST-pushed new workflow is not dispatchable
 #      until GitHub registers it (a few seconds) — handled by the retry loop below.
-# This function pins the repo with `-R`, verifies auth/scope, retries the
-# registration race, and falls back to the REST dispatch API.
+# This function pins the repo with `-R`, verifies auth, retries the registration
+# race, and falls back to the REST dispatch API.
 trigger_workflow() {
   command -v gh >/dev/null 2>&1 || {
     err "'gh' (GitHub CLI) is required and must be authenticated: run 'gh auth login'."
     return 1
   }
-  local wf="$1" version="${2:-}" branch repo scopes i ok
+  local wf="$1" version="${2:-}" branch repo i ok
 
   # Resolve OWNER/REPO from the git remote so `gh` targets the right repo even when
   # run outside a detected checkout; fall back to the fork's canonical path.
@@ -392,16 +396,11 @@ trigger_workflow() {
     | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')"
   [ -n "$repo" ] || repo="wekan/FerretDB"
 
-  # Auth + scope preflight. Missing auth is fatal; a missing `workflow` scope is only
-  # warned (a GH_TOKEN env auth may not report its scopes, so we cannot hard-fail).
+  # Auth preflight — missing auth is fatal (the scope/permission is NOT pre-checked;
+  # see note 2 above — a real 403 is reported by the final error handler).
   if ! gh auth status -h github.com >/dev/null 2>&1; then
     err "gh is not authenticated for github.com. Run: gh auth login  (or set GH_TOKEN)."
     return 1
-  fi
-  scopes="$(gh auth status -h github.com 2>&1 | grep -i 'token scopes' || true)"
-  if [ -n "$scopes" ] && ! printf '%s' "$scopes" | grep -q 'workflow'; then
-    warn "gh token is missing the 'workflow' scope — dispatch will 403."
-    warn "Fix it with: gh auth refresh -h github.com -s workflow"
   fi
 
   branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main-v1)"
@@ -436,8 +435,10 @@ trigger_workflow() {
   fi
 
   if [ "$ok" -ne 1 ]; then
-    err "Could not dispatch $wf on $repo. Check: 'gh auth status' shows the 'workflow' scope,"
-    err "$wf exists on the default branch, and you can push to $repo."
+    err "Could not dispatch $wf on $repo. If this is a 403, the token cannot dispatch"
+    err "workflows: a classic PAT needs the 'workflow' scope"
+    err "(gh auth refresh -h github.com -s workflow); a fine-grained PAT / app token needs"
+    err "Actions: write. Also check $wf exists on the default branch and you can push to $repo."
     err "You can start it manually at: https://github.com/$repo/actions"
     return 1
   fi
