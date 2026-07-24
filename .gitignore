@@ -17,6 +17,7 @@ vendor/
 # build.sh: local Go toolchain and SQLite data dir
 .goroot/
 state/
+.tools/
 
 # build.sh: cross-compiled per-arch FerretDB binaries (menu options 11/12)
 dist/
