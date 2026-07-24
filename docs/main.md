@@ -25,6 +25,12 @@ With FerretDB, users can run the same MongoDB protocol queries without needing t
 FerretDB is compatible with MongoDB drivers and can be used as a direct replacement for MongoDB 5.0+.
 We are constantly adding features to increase compatibility based on user feedback.
 
+In this fork (`wekan/FerretDB`, `main-v1`), **both v1 backends are confirmed working**:
+the embedded **SQLite** backend (the default, and what CI runs here) and the vanilla
+**PostgreSQL** backend — see
+[wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509).
+MySQL and SAP HANA remain partial/experimental backends.
+
 See our [public roadmap](https://github.com/orgs/FerretDB/projects/2/views/1),
 a list of [known differences with MongoDB](diff.md),
 and [contributing guidelines](https://github.com/FerretDB/FerretDB/blob/main-v1/CONTRIBUTING.md).

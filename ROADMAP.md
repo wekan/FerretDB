@@ -352,8 +352,10 @@ detail):
 
 Notes in the **v1** column name the covering integration test (in `integration/`)
 where one exists. Unless stated otherwise, **v1 feature rows are exercised on the
-SQLite backend** in this stack; the Go compatibility layer is backend-independent, but
-only SQLite is run in CI here (PostgreSQL is untested here; MySQL/HANA are partial
+SQLite backend** in this stack; the Go compatibility layer is backend-independent, and
+**both SQLite and vanilla PostgreSQL are confirmed working with WeKan** (see
+[wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509)) — SQLite is what CI runs
+here, PostgreSQL was verified by running WeKan against it (MySQL/HANA remain partial
 backends). Source paths in `v1` cells are relative to this repo; WeKan sources link to
 `github.com/wekan/wekan`.
 
@@ -488,8 +490,8 @@ release. HANA is explicitly best-effort.
 | Capability | WeKan | v1 (`main-v1`) | v2 (`main`) |
 |---|:--:|---|---|
 | **— Storage backends / databases —** | | | |
-| SQLite (embedded, single file) | ✅ (this stack) | ✅ **complete & the only tested target**: full CRUD, single/compound/unique + capped collections, and the **only** backend that persists & round-trips this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) via `sqlite/metadata` + `sqlite/collection.go`. All `integration/` tests run here | ❌ no `internal/backends` |
-| PostgreSQL (vanilla, no extension) | — | ✅ complete & mature (`internal/backends/postgresql`: full CRUD, indexes, capped) but **untested in this stack**; new index-option round-tripping **not** threaded (0 refs) | ❌ requires the DocumentDB extension |
+| SQLite (embedded, single file) | ✅ (this stack) | ✅ **complete, confirmed working with WeKan and the CI target**: full CRUD, single/compound/unique + capped collections, and the **only** backend that persists & round-trips this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) via `sqlite/metadata` + `sqlite/collection.go`. All `integration/` tests run here | ❌ no `internal/backends` |
+| PostgreSQL (vanilla, no extension) | ✅ (works) | ✅ complete & mature (`internal/backends/postgresql`: full CRUD, indexes, capped) and **confirmed working with WeKan** ([wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509)); CI here still runs SQLite, and this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) are round-tripped only by the SQLite backend | ❌ requires the DocumentDB extension |
 | PostgreSQL + DocumentDB extension | — | ❌ | ✅ the only engine (`internal/documentdb/`) |
 | MySQL | — | ⚠️ partial/experimental (`internal/backends/mysql`): implements the full `Collection` interface (CRUD/indexes/stats/compact) but is a beta backend; new index options not threaded | ❌ |
 | SAP HANA | — | ⚠️ experimental (`internal/backends/hana`): CRUD as string-built SQL keyed on `_id`, `Compact` is a no-op, column-mode collections "not supported yet", no `metadata`/`insert.go`; new index options not threaded | ❌ |
@@ -583,15 +585,17 @@ SAP HANA).** v1 splits into two layers, and only one of them is backend-specific
   (`handler.go runTTLCleanup`, which deletes via the backend's `DeleteAll`). This layer
   runs in Go on documents *after* the backend returns them, so it is **backend-
   independent**: every non-storage matrix row above behaves identically on SQLite,
-  PostgreSQL, MySQL and HANA. Only SQLite is *tested* here, but the code path is shared.
+  PostgreSQL, MySQL and HANA. SQLite is what CI runs here and PostgreSQL is confirmed
+  working with WeKan; the code path is shared across all four.
 - **Storage layer** (`internal/backends/{sqlite,postgresql,mysql,hana}`) — raw CRUD,
   cursors, capped collections, and index **persistence**. This is where the backends
   differ:
   - **SQLite** — complete; the reference/tested target; the **only** backend wired to
     persist & round-trip this fork's new index options (text `weights`/`default_language`,
     `hidden`, `collation`, `partialFilterExpression`, `2dsphere`).
-  - **PostgreSQL (vanilla)** — complete and mature, but untested here and **not** wired
-    for the new index-option round-tripping.
+  - **PostgreSQL (vanilla)** — complete and mature, and **confirmed working with WeKan**
+    ([wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509)); not covered by CI
+    here, and **not** wired for the new index-option round-tripping.
   - **MySQL** — beta/partial: full interface, usable CRUD, but not production-hardened
     and not wired for the new index options.
   - **SAP HANA** — experimental: string-built SQL keyed on `_id`, `Compact` no-op,

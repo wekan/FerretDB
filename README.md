@@ -75,7 +75,47 @@ See our [public roadmap](https://github.com/orgs/FerretDB/projects/2/views/1),
 a list of [known differences with MongoDB](https://docs.ferretdb.io/v1.24/diff/),
 and [contributing guidelines](CONTRIBUTING.md).
 
+## This fork's Docker images
+
+`.github/workflows/docker.yml` builds one multi-arch image from `Dockerfile.release`
+and pushes the same `:<version>` and `:latest` tags to **three** registries, each
+independently — so a registry being down never blocks the others:
+
+| Registry | Image | Browse |
+|---|---|---|
+| Docker Hub | `wekanteam/ferretdb` | https://hub.docker.com/r/wekanteam/ferretdb |
+| Quay.io | `quay.io/wekan/ferretdb` | https://quay.io/repository/wekan/ferretdb |
+| GitHub Container Registry | `ghcr.io/wekan/ferretdb` | https://github.com/wekan/FerretDB/pkgs/container/ferretdb |
+
+The image is `FROM scratch` (a static binary, no shell) and defaults to the **SQLite**
+backend on `0.0.0.0:27017` with state in `/state` and telemetry disabled:
+
+```sh
+docker run -d --rm --name ferretdb -p 27017:27017 -v ferretdb-state:/state wekanteam/ferretdb
+```
+
+Use any of the three images interchangeably — they are the same build:
+
+```sh
+docker run -d --rm --name ferretdb -p 27017:27017 -v ferretdb-state:/state quay.io/wekan/ferretdb
+docker run -d --rm --name ferretdb -p 27017:27017 -v ferretdb-state:/state ghcr.io/wekan/ferretdb
+```
+
+To use the PostgreSQL backend instead, point it at a running PostgreSQL — **both the
+SQLite and the vanilla PostgreSQL backends of this v1 fork are confirmed working**
+(see [wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509)):
+
+```sh
+docker run -d --rm --name ferretdb -p 27017:27017 \
+  -e FERRETDB_HANDLER=postgresql \
+  -e FERRETDB_POSTGRESQL_URL=postgres://username:password@host:5432/ferretdb \
+  wekanteam/ferretdb
+```
+
 ## Quickstart
+
+Upstream also publishes an all-in-one image that bundles FerretDB, the database and
+MongoDB Shell in one container, which is handy for quick experiments.
 
 Run this command to start FerretDB with PostgreSQL backend:
 

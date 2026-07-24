@@ -6,7 +6,28 @@ description: How to set up FerretDB using Docker
 
 # Docker
 
-We provide three Docker images for various deployments:
+## This fork's images
+
+This fork (`wekan/FerretDB`, `main-v1`) builds one multi-arch image from
+`Dockerfile.release` and pushes identical `:<version>` and `:latest` tags to three
+registries — Docker Hub `wekanteam/ferretdb`, Quay.io `quay.io/wekan/ferretdb` and
+GHCR `ghcr.io/wekan/ferretdb`. Each push is independent, so one registry failing does
+not block the others. The image is `FROM scratch` and defaults to the **SQLite**
+backend (`FERRETDB_HANDLER=sqlite`, state in `/state`, telemetry disabled):
+
+```sh
+docker run -d --rm --name ferretdb -p 27017:27017 -v ferretdb-state:/state wekanteam/ferretdb
+```
+
+Set `FERRETDB_HANDLER=postgresql` and `FERRETDB_POSTGRESQL_URL=...` to use PostgreSQL
+instead. **Both backends are confirmed working** — see
+[wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509).
+
+The upstream images described below remain available and are documented unchanged.
+
+## Upstream images
+
+Upstream provides three Docker images for various deployments:
 **"all-in-one"** for quick testing and experiments,
 **a development image** for debugging problems,
 and **a production image** for all other cases.
