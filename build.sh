@@ -133,6 +133,18 @@ act_deps() {
 
 act_build() {
   go_env
+  # Regenerate build/version FIRST, exactly as act_dist does. Go stamps the VCS
+  # revision into the binary, and build/version/version.go panics at STARTUP when
+  # that revision disagrees with the committed build/version/commit.txt:
+  #
+  #   panic: commit.txt value "e7820f36..." != vcs.revision value "cd795fa7..."
+  #
+  # Those files are only refreshed by this generator, so every commit made after
+  # the last refresh produced a binary that could not start at all - which is what
+  # `./build.sh build` did until now, while the release build was fine because it
+  # already regenerated them.
+  info "Generating version info (build/version) ..."
+  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
   info "Building FerretDB (sqlite, postgresql, mysql, hana handlers) -> bin/ferretdb ..."
   mkdir -p bin
   # Same build tag as the release build below, so a local binary answers the same
