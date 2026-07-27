@@ -357,6 +357,53 @@ act_unit() {
   go test -count=1 -short -tags=ferretdb_debug ./internal/... ./cmd/...
 }
 
+# act_test_all — every FerretDB test there is, SEQUENTIALLY, in one go.
+#
+# Unit tests, then vet, then the integration suite one test at a time. Sequential
+# because that is what makes a failure readable: a parallel integration run
+# interleaves the output of a dozen tests, and the point of "run everything" is to
+# find out what is broken, not to find out quickly.
+#
+# WeKan's own build.sh calls this (FerretDB is a subdirectory of the wekan repo),
+# so it must run without a menu and return a meaningful exit code: 0 only when
+# every stage passed.
+act_test_all() {
+  go_env
+
+  # ../log/<datetime>/ - the same place every WeKan test run writes, because
+  # FerretDB is a subdirectory of the wekan repo and an admin looking for "the
+  # newest test logs" should find all of them in one directory. WEKAN_LOGDIR is
+  # set when WeKan's build.sh is driving this, so one run shares one directory.
+  local logdir="${WEKAN_LOGDIR:-}"
+  if [ -z "$logdir" ]; then
+    # $ROOT is wekan/FerretDB, so ../../log is the ../log/ WeKan writes to.
+    logdir="$ROOT/../../log/$(date '+%Y-%m-%d_%H-%M-%S')"
+  fi
+  mkdir -p "$logdir" 2>/dev/null || logdir="$ROOT/tmp"
+  logdir="$(cd "$logdir" && pwd)"
+
+  local failed=""
+
+  info "=== 1/3 unit tests ===   -> $logdir/ferretdb-unit.log"
+  act_unit 2>&1 | tee "$logdir/ferretdb-unit.log"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || failed="$failed unit"
+
+  info "=== 2/3 vet ===          -> $logdir/ferretdb-vet.log"
+  act_lint 2>&1 | tee "$logdir/ferretdb-vet.log"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || failed="$failed vet"
+
+  info "=== 3/3 integration tests (SQLite, sequential) === -> $logdir/ferretdb-integration.log"
+  act_test seq 2>&1 | tee "$logdir/ferretdb-integration.log"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || failed="$failed integration"
+
+  if [ -n "$failed" ]; then
+    err "FerretDB tests FAILED:$failed  (logs: $logdir/)"
+    return 1
+  fi
+
+  info "All FerretDB tests passed (unit, vet, integration). Logs: $logdir/"
+}
+
 act_lint() {
   go_env
   info "go vet ./... ..."
@@ -594,6 +641,9 @@ menu() {
   7) Run unit tests               (./internal/... ./cmd/...)
   8) Lint / vet
   9) Build & run with Docker      (docker compose up --build)
+ 16) Run all FerretDB tests      — SEQUENTIAL (unit + vet + integration, one at a
+                                    time; logs to ../log/<datetime>/ with WeKan's,
+                                    and the same thing WeKan's build.sh runs)
  10) Clean build artifacts
  11) Build per-arch binaries      — SEQUENTIAL (all platforms, one at a time)
  12) Build per-arch binaries      — PARALLEL (all platforms at once)
@@ -619,6 +669,7 @@ EOF
          case "$m" in [sS]*) act_test_one "$t" seq ;; *) act_test_one "$t" par ;; esac ;;
       7) act_unit ;;
       8) act_lint ;;
+      16) act_test_all ;;
       9) act_docker ;;
       10) act_clean ;;
       11) act_dist seq ;;
@@ -647,6 +698,7 @@ case "${1:-}" in
   release-ferretdb) act_release_ferretdb ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
+  test-all)   act_test_all ;;
   test-par)   shift; [ -n "${1:-}" ] && export TEST_PARALLEL="$1"; act_test par ;;
   test-one)   shift; act_test_one "${1:-}" "${2:-par}" ;;
   unit)       act_unit ;;
