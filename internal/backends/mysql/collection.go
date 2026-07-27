@@ -189,8 +189,8 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 	}
 
 	q := fmt.Sprintf(
-		`UPDATE %q.%q SET %s = ? WHERE %s = ?`,
-		c.dbName, meta.TableName,
+		`UPDATE %s.%s SET %s = ? WHERE %s = ?`,
+		quoteIdent(c.dbName), quoteIdent(meta.TableName),
 		metadata.DefaultColumn,
 		metadata.IDColumn,
 	)
@@ -272,8 +272,8 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 	}
 
 	q := fmt.Sprintf(
-		`DELETE FROM %q.%q WHERE %s IN (%s)`,
-		c.dbName, meta.TableName,
+		`DELETE FROM %s.%s WHERE %s IN (%s)`,
+		quoteIdent(c.dbName), quoteIdent(meta.TableName),
 		column,
 		strings.Join(placeholders, ", "),
 	)
@@ -482,7 +482,7 @@ func (c *collection) Compact(ctx context.Context, params *backends.CompactParams
 	}
 
 	q := "OPTIMIZE TABLE "
-	q += fmt.Sprintf("%q.%q", c.dbName, coll.TableName)
+	q += fmt.Sprintf("%s.%s", quoteIdent(c.dbName), quoteIdent(coll.TableName))
 
 	if _, err = p.ExecContext(ctx, q); err != nil {
 		return nil, lazyerrors.Error(err)

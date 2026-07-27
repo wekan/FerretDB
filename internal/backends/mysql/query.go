@@ -58,28 +58,28 @@ func prepareSelectClause(params *selectParams) string {
 
 	if params.Capped && params.OnlyRecordIDs {
 		return fmt.Sprintf(
-			`SELECT %s %s FROM %q.%q`,
+			`SELECT %s %s FROM %s.%s`,
 			params.Comment,
 			metadata.RecordIDColumn,
-			params.Schema, params.Table,
+			quoteIdent(params.Schema), quoteIdent(params.Table),
 		)
 	}
 
 	if params.Capped {
 		return fmt.Sprintf(
-			`SELECT %s %s, %s FROM %q.%q`,
+			`SELECT %s %s, %s FROM %s.%s`,
 			params.Comment,
 			metadata.RecordIDColumn,
 			metadata.DefaultColumn,
-			params.Schema, params.Table,
+			quoteIdent(params.Schema), quoteIdent(params.Table),
 		)
 	}
 
 	return fmt.Sprintf(
-		`SELECT %s %s FROM %q.%q`,
+		`SELECT %s %s FROM %s.%s`,
 		params.Comment,
 		metadata.DefaultColumn,
-		params.Schema, params.Table,
+		quoteIdent(params.Schema), quoteIdent(params.Table),
 	)
 }
 

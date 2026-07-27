@@ -44,7 +44,7 @@ func TestPrepareSelectClause(t *testing.T) {
 			capped:        true,
 			onlyRecordIDs: true,
 			expectQuery: fmt.Sprintf(
-				`SELECT %s %s FROM "%s"."%s"`,
+				"SELECT %s %s FROM `%s`.`%s`",
 				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
 				metadata.RecordIDColumn,
 				schema,
@@ -54,7 +54,7 @@ func TestPrepareSelectClause(t *testing.T) {
 		"Capped": {
 			capped: true,
 			expectQuery: fmt.Sprintf(
-				`SELECT %s %s, %s FROM "%s"."%s"`,
+				"SELECT %s %s, %s FROM `%s`.`%s`",
 				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
 				metadata.RecordIDColumn,
 				metadata.DefaultColumn,
@@ -64,7 +64,7 @@ func TestPrepareSelectClause(t *testing.T) {
 		},
 		"FullRecord": {
 			expectQuery: fmt.Sprintf(
-				`SELECT %s %s FROM "%s"."%s"`,
+				"SELECT %s %s FROM `%s`.`%s`",
 				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
 				metadata.DefaultColumn,
 				schema,

@@ -45,14 +45,24 @@ func parseURI(uri string) (string, error) {
 
 	// mysql url requires a specified format to work
 	// For example: username:password@tcp(127.0.0.1:3306)/ferretdb
-	cfg := mysql.Config{
-		User:   username,
-		Passwd: password,
-		Net:    "tcp",
-		Addr:   u.Host,
-		DBName: strings.TrimPrefix(u.Path, "/"),
-		Params: params,
-	}
+	//
+	// NewConfig, not a Config literal: the zero value has AllowNativePasswords
+	// FALSE, and the driver then refuses any server that asks for the native
+	// password handshake with
+	//
+	//	this user requires mysql native password authentication
+	//
+	// which is every MariaDB with a default root account - so the mysql backend
+	// could not connect to MariaDB at all, while MySQL (caching_sha2_password by
+	// default) happened to work. NewConfig applies the driver's documented
+	// defaults; the fields below are then the only things this URL decides.
+	cfg := mysql.NewConfig()
+	cfg.User = username
+	cfg.Passwd = password
+	cfg.Net = "tcp"
+	cfg.Addr = u.Host
+	cfg.DBName = strings.TrimPrefix(u.Path, "/")
+	cfg.Params = params
 	mysqlURL := cfg.FormatDSN()
 
 	return mysqlURL, nil
