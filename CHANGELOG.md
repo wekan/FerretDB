@@ -4,6 +4,10 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- `./build.sh build` produced a binary that could not start: `panic: commit.txt value "..." != vcs.revision value "..."`. Go stamps the VCS revision into the binary, and `build/version/version.go` panics in `init()` when it disagrees with the committed `build/version/commit.txt` — and those files are only refreshed by the generator, so EVERY commit made after the last refresh built a binary that panicked, whatever the change was. `act_dist` already regenerated them before cross-compiling, which is why the released binaries are fine and only the local build was broken; `act_build` does the same now by @xet7. Thanks to xet7.
+
 ### Other Changes 🤖
 
 - The released binaries now carry the **hana** handler. It sits behind the `ferretdb_hana` build tag, and neither the per-arch release build nor the local `build.sh` build passed that tag — so every published `ferretdb-<arch>` answered `--handler=hana` with "unknown handler", and a SAP HANA deployment could only be had by building FerretDB from source with the tag. Both builds pass `-tags ferretdb_hana` now; `go-hdb` is pure Go, so it cross-compiles under `CGO_ENABLED=0` like the rest and no target loses its binary. This is what lets wekan/wekan ship a `docker-compose-ferretdb-v1-sap-hana.yml` that downloads a release binary. The backend itself is unchanged and still experimental by @xet7. Thanks to xet7.
