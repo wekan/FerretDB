@@ -2,6 +2,12 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- The released binaries now carry the **hana** handler. It sits behind the `ferretdb_hana` build tag, and neither the per-arch release build nor the local `build.sh` build passed that tag — so every published `ferretdb-<arch>` answered `--handler=hana` with "unknown handler", and a SAP HANA deployment could only be had by building FerretDB from source with the tag. Both builds pass `-tags ferretdb_hana` now; `go-hdb` is pure Go, so it cross-compiles under `CGO_ENABLED=0` like the rest and no target loses its binary. This is what lets wekan/wekan ship a `docker-compose-ferretdb-v1-sap-hana.yml` that downloads a release binary. The backend itself is unchanged and still experimental by @xet7. Thanks to xet7.
+
 ## [v1.42.0](https://github.com/wekan/FerretDB/releases/tag/v1.42.0) (2026-07-24)
 
 ### Fixed 🐛

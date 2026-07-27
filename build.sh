@@ -133,9 +133,11 @@ act_deps() {
 
 act_build() {
   go_env
-  info "Building FerretDB (SQLite handler) -> bin/ferretdb ..."
+  info "Building FerretDB (sqlite, postgresql, mysql, hana handlers) -> bin/ferretdb ..."
   mkdir -p bin
-  go build -o bin/ferretdb ./cmd/ferretdb || return 1
+  # Same build tag as the release build below, so a local binary answers the same
+  # --handler values the released ones do.
+  go build -tags ferretdb_hana -o bin/ferretdb ./cmd/ferretdb || return 1
   info "Built bin/ferretdb"
 }
 
@@ -186,8 +188,12 @@ build_ferretdb_target() {
   local name="$1" goos="$2" goarch="$3" goarm="$4" out="$5" rep="$6"
   local ext=""; [ "$goos" = windows ] && ext=".exe"
   mkdir -p "$out"
+  # -tags ferretdb_hana: the "hana" handler is behind that build tag, so without it
+  # the released binaries answer `--handler=hana` with "unknown handler" - which is
+  # what a client compose file for SAP HANA would hit. go-hdb is pure Go, so it
+  # cross-compiles with CGO_ENABLED=0 like the rest.
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-       go build -trimpath -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+       go build -trimpath -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
     chmod +x "$out/ferretdb-$name$ext"
     printf '%s\n' "$name" >> "$rep/built.list"
     info "  built   $name"
