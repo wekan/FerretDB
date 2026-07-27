@@ -28,6 +28,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/sqlguard"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
@@ -54,8 +55,11 @@ func prepareSelectClause(params *selectParams) string {
 
 	if params.Comment != "" {
 		params.Comment = strings.ReplaceAll(params.Comment, "/*", "/ *")
-		params.Comment = strings.ReplaceAll(params.Comment, "*/", "* /")
-		params.Comment = `/* ` + params.Comment + ` */`
+		// A comment is the ONE piece of client text written into SQL instead of
+		// bound, so it is made harmless first: sqlguard.SafeComment neutralises
+		// anything that could end the block, open a nested one, or start a line
+		// comment after it, and bounds the length.
+		params.Comment = `/* ` + sqlguard.SafeComment(params.Comment) + ` */`
 	}
 
 	if params.Capped && params.OnlyRecordIDs {

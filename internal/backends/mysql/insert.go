@@ -55,7 +55,7 @@ func prepareInsertStatement(schema, tableName string, capped bool, docs []*types
 
 	return fmt.Sprintf(
 		`INSERT INTO %s.%s (%s) VALUES %s`,
-		quoteIdent(schema), quoteIdent(tableName),
+		metadata.QuoteIdent(schema), metadata.QuoteIdent(tableName),
 		columns,
 		strings.Join(rows, ", "),
 	), args, nil

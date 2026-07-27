@@ -898,20 +898,33 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 			return lazyerrors.Error(err)
 		}
 
+		// An index KEY is a field path the client chose, and it used to be spliced
+		// into both statements below unescaped - so `createIndex({"a')) STORED,
+		// ADD COLUMN pwned VARCHAR(1) GENERATED ALWAYS AS (('x": 1})` wrote the
+		// client's DDL. The PostgreSQL backend already sanitized here ("It's
+		// important to sanitize field.Field data here, as it's a user-provided
+		// value"); this one did not. Two things follow from that:
+		//   * the COLUMN is named by SafeColumnName - the same replace-and-hash
+		//     treatment table and index names get, so it can only be a name;
+		//   * the JSON path is a quoted string LITERAL, because MySQL wants a
+		//     literal there and a quote in the field would otherwise end it.
+		// The generated name is also what the index is built on, which fixes a
+		// second bug: `columns[i] = key.Field` indexed `a.b`, a column that does
+		// not exist, so any dotted index key failed outright.
 		q = "ALTER TABLE %s.%s"
 
 		columns := make([]string, len(index.Key))
 
 		for i, key := range index.Key {
-			columnName := strings.ReplaceAll(key.Field, ".", "_")
+			columnName := SafeColumnName(key.Field)
 
 			// ensure that the column hasn't already been extracted
 			if !slices.Contains(allColumns, columnName) {
 				q += fmt.Sprintf(
-					` ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s->'%s')) STORED`,
-					columnName,
+					` ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s->%s)) STORED`,
+					QuoteIdent(columnName),
 					DefaultColumn,
-					"$."+key.Field,
+					QuoteString("$."+key.Field),
 				)
 
 				if i != len(index.Key)-1 {
@@ -919,7 +932,7 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 				}
 			}
 
-			columns[i] = key.Field
+			columns[i] = QuoteIdent(columnName)
 
 			if key.Descending {
 				columns[i] += " DESC"
@@ -928,7 +941,7 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 
 		q = fmt.Sprintf(
 			q,
-			dbName, c.TableName,
+			QuoteIdent(dbName), QuoteIdent(c.TableName),
 		)
 
 		if _, err = p.ExecContext(ctx, q); err != nil {
@@ -945,8 +958,8 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 
 		q = fmt.Sprintf(
 			q,
-			index.Index,
-			dbName, c.TableName,
+			QuoteIdent(index.Index),
+			QuoteIdent(dbName), QuoteIdent(c.TableName),
 			strings.Join(columns, ", "),
 		)
 

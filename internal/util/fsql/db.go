@@ -27,6 +27,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/logging"
 	"github.com/FerretDB/FerretDB/internal/util/resource"
+	"github.com/FerretDB/FerretDB/internal/util/sqlguard"
 )
 
 // DB wraps [*database/sql.DB] with tracing, metrics, logging, and resource tracking.
@@ -39,6 +40,7 @@ type DB struct {
 	sqlDB     *sql.DB
 	l         *slog.Logger
 	token     *resource.Token
+	dialect   sqlguard.Dialect
 	BatchSize int
 }
 
@@ -56,6 +58,7 @@ func WrapDB(db *sql.DB, name string, l *slog.Logger) *DB {
 		sqlDB:            db,
 		l:                logging.WithName(l, name),
 		token:            resource.NewToken(),
+		dialect:          sqlguard.DialectByName(name),
 	}
 
 	resource.Track(res, res.token)
@@ -76,6 +79,10 @@ func (db *DB) Ping(ctx context.Context) error {
 
 // QueryContext calls [*sql.DB.QueryContext].
 func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*Rows, error) {
+	if err := db.guard(ctx, query); err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 
 	fields := []any{slog.Any("args", args)}
@@ -110,6 +117,10 @@ func (db *DB) QueryRowContext(ctx context.Context, query string, args ...any) *s
 
 // ExecContext calls [*sql.DB.ExecContext].
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	if err := db.guard(ctx, query); err != nil {
+		return nil, err
+	}
+
 	start := time.Now()
 
 	fields := []any{slog.Any("args", args)}
@@ -183,3 +194,26 @@ func (db *DB) InTransaction(ctx context.Context, f func(*Tx) error) (err error) 
 var (
 	_ prometheus.Collector = (*DB)(nil)
 )
+
+// guard is the last look at a statement before the database sees it.
+//
+// Values are bound, never formatted in, and names are sanitised where they are
+// made - so nothing should ever reach here carrying a statement separator, a
+// comment introducer or an unclosed quote. If something does, it is either a bug
+// in a statement builder or an injection that got past one, and both are worth
+// refusing rather than executing.
+//
+// The refusal is LOGGED at error level with a "SECURITY:" prefix and the
+// statement, because that line is the only evidence such a thing happened. WeKan
+// surfaces it in Admin Panel / Problems.
+func (db *DB) guard(ctx context.Context, query string) error {
+	err := sqlguard.Check(db.dialect, query)
+	if err == nil {
+		return nil
+	}
+
+	db.l.ErrorContext(ctx, fmt.Sprintf("SECURITY: refusing to execute a suspicious statement: %s", err),
+		slog.String("statement", query))
+
+	return err
+}
