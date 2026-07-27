@@ -4,6 +4,10 @@
 
 ## Upcoming FerretDB release
 
+### New Features 🎉
+
+- The `$group` accumulators that answered `"$avg" is not implemented yet` are implemented: **`$avg`, `$min`, `$max`, `$first`, `$last`, `$push`, `$addToSet`, `$stdDevPop` and `$stdDevSamp`** — only `$sum` and `$count` existed before, on every backend. A WeKan conformance run (the same query catalogue against every v1 backend) is what found them. `$avg` counts only numeric values and answers a double, or Null for a group with nothing numeric — not zero, which would claim an average that does not exist. `$min`/`$max` use MongoDB's total ordering of BSON types and skip documents where the expression resolves to nothing, rather than treating them as smaller than everything. `$first`/`$last` take the value in the first/last document as it arrives. `$push` skips documents where the expression resolves to nothing (the array is shorter, it does not gain a null) and `$addToSet` compares with the query language's own equality, so 1 and 1.0 are one value. The deviations use Welford's method in one pass, which keeps the small differences that (sum of squares − square of sum) loses, and `$stdDevSamp` of a single sample is Null because that is undefined, not zero by @xet7. Thanks to xet7.
+
 ### Fixed 🐛
 
 - `./build.sh build` produced a binary that could not start: `panic: commit.txt value "..." != vcs.revision value "..."`. Go stamps the VCS revision into the binary, and `build/version/version.go` panics in `init()` when it disagrees with the committed `build/version/commit.txt` — and those files are only refreshed by the generator, so EVERY commit made after the last refresh built a binary that panicked, whatever the change was. `act_dist` already regenerated them before cross-compiling, which is why the released binaries are fine and only the local build was broken; `act_build` does the same now by @xet7. Thanks to xet7.
