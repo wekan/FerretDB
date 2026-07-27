@@ -273,6 +273,36 @@ v1.24.2 BSON API.
   trig/log, string, array, type-conversion, date, `$bsonSize`, and `$function`
   (server-side JS).
 
+**`$group` accumulators** — `$avg`, `$min`, `$max`, `$first`, `$last`, `$push`,
+`$addToSet`, `$stdDevPop`, `$stdDevSamp`. Only `$sum` and `$count` existed; every
+other accumulator answered `"$avg" is not implemented yet` on EVERY backend. Found
+by WeKan's conformance run — one query catalogue against every v1 backend — not by
+reading the code, which is why it had survived. MongoDB's own edge semantics are
+kept: `$avg` of nothing numeric is Null rather than zero, `$min`/`$max` skip
+documents where the field is absent instead of treating them as smallest, `$push`
+skips them too, `$addToSet` compares with the query language's equality so 1 and
+1.0 are one value, and `$stdDevSamp` of a single sample is Null because that is
+undefined.
+
+**SQL injection and a statement guard** — an index key is a field path the client
+chooses, and the `mysql` backend spliced it into `ADD COLUMN … GENERATED ALWAYS AS
+…` and `CREATE INDEX` unescaped, so `createIndex` could write the client's own DDL.
+It goes through `metadata.SafeColumnName` now (replace-and-hash, so it can only be
+a name) and the JSON path is a quoted literal — which also fixed dotted index keys,
+which had been failing outright. `internal/util/sqlguard` then reads every finished
+statement in `fsql`, the one place all backends pass through, and refuses anything
+carrying a statement separator, a comment introducer, an unclosed quote or
+unbalanced parentheses outside a literal; a refusal is logged with a `SECURITY:`
+prefix, which WeKan surfaces in Admin Panel / Problems. `sqlguard.SafeComment`
+neutralises the client's `$comment`, the one piece of text written into SQL rather
+than bound.
+
+**mysql backend, made able to store anything at all** — it quoted identifiers with
+double quotes (correct in the postgresql backend it was modelled on, and a string
+literal to MySQL), so every INSERT/SELECT/UPDATE/DELETE was rejected with
+`Error 1064`; and it built a `mysql.Config` literal, whose zero value refuses the
+native password handshake, so MariaDB could not connect at all.
+
 **Update operators** — `$push` modifiers `$slice`/`$sort`/`$position`; `$pullAll`
 tests.
 
@@ -390,6 +420,9 @@ correctness. (This is unlike upstream **FerretDB v2**, which has no OpLog at all
 | Dotted-path equality/`$in` uses the nested index | ✅ | native (JSONB path) | ⬜ TODO | ⬜ TODO |
 | OpLog `ts` index for the tail | ✅ | ✅ **(added)** ⚠️ | ✅ **(added, incl. MariaDB)** ⚠️ | ✅ **(added, best-effort)** ⚠️ |
 | Declared Mongo index → usable engine index for the hot query | ✅ (expr index) | ⚠️ verify (`@>` needs GIN; equality vs `=`) | ⚠️ verify | ⚠️ verify |
+| `$group` accumulators (`$avg`/`$min`/`$max`/`$first`/`$last`/`$push`/`$addToSet`/`$stdDev*`) | ✅ **(added)** | ✅ **(added)** | ✅ **(added)** | ✅ **(added)** |
+| Identifiers quoted; client data never spliced into SQL | ✅ | ✅ | ✅ **(fixed)** | ✅ |
+| Every statement checked before execution (`sqlguard`) | ✅ **(added)** | ✅ **(added)** | ✅ **(added)** | n/a (no SQL builder) |
 | Corruption/bloat auto-repair on open | ✅ | n/a (PG WAL/autovacuum) | n/a | n/a |
 | Runs in the WeKan snap | ✅ (`--handler=sqlite`) | ⬜ launcher (external DB) | ⬜ launcher (external DB) | ⬜ launcher (external DB) |
 
@@ -483,6 +516,17 @@ their correctness against the real engine's JSON semantics and their index usage
 confirmed with the FerretDB **integration test suite against a live engine** before
 release. HANA is explicitly best-effort.
 
+Since 2026-07 there is one more source of evidence, from the other side: WeKan runs a
+**conformance harness** — one catalogue of 100 cases covering every query, update and
+aggregation operator this fork implements — against every backend that has a Docker
+image for the machine it runs on, and compares the answers
+([`./build.sh` → Tests → All databases](https://github.com/wekan/wekan/blob/main/docs/Databases/FerretDB/1/Conformance.md)).
+On a live SQLite and a live PostgreSQL, **98 of 100 answered identically**; the two
+that did not are `$slice` and `$elemMatch` projections, which neither implements.
+That is not the integration suite and does not replace it — it does not look at
+`EXPLAIN` at all — but it is a real client against a real engine, and it is what found
+the missing `$group` accumulators and both MySQL/MariaDB blockers.
+
 ---
 
 ## Compatibility matrix
@@ -493,8 +537,8 @@ release. HANA is explicitly best-effort.
 | SQLite (embedded, single file) | ✅ (this stack) | ✅ **complete, confirmed working with WeKan and the CI target**: full CRUD, single/compound/unique + capped collections, and the **only** backend that persists & round-trips this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) via `sqlite/metadata` + `sqlite/collection.go`. All `integration/` tests run here | ❌ no `internal/backends` |
 | PostgreSQL (vanilla, no extension) | ✅ (works) | ✅ complete & mature (`internal/backends/postgresql`: full CRUD, indexes, capped) and **confirmed working with WeKan** ([wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509)); CI here still runs SQLite, and this fork's new index options (text `weights`/`default_language`, `hidden`, `collation`, `partialFilterExpression`, `2dsphere`) are round-tripped only by the SQLite backend | ❌ requires the DocumentDB extension |
 | PostgreSQL + DocumentDB extension | — | ❌ | ✅ the only engine (`internal/documentdb/`) |
-| MySQL | — | ⚠️ partial/experimental (`internal/backends/mysql`): implements the full `Collection` interface (CRUD/indexes/stats/compact) but is a beta backend; new index options not threaded | ❌ |
-| SAP HANA | — | ⚠️ experimental (`internal/backends/hana`): CRUD as string-built SQL keyed on `_id`, `Compact` is a no-op, column-mode collections "not supported yet", no `metadata`/`insert.go`; new index options not threaded | ❌ |
+| MySQL / MariaDB | — | ⚠️ experimental (`internal/backends/mysql`): implements the full `Collection` interface (CRUD/indexes/stats/compact). It could not store anything at all until it quoted identifiers as MySQL does and kept the driver's defaults (2026-07); **MariaDB runs on this same backend**, with a generated-column fallback for the OpLog `ts` index it cannot build as a functional key part. New index options not threaded; live verification still outstanding | ❌ |
+| SAP HANA | — | ⚠️ experimental (`internal/backends/hana`): CRUD as string-built SQL keyed on `_id`, `Compact` is a no-op, column-mode collections "not supported yet", no `metadata`/`insert.go`; new index options not threaded. The handler is behind the `ferretdb_hana` build tag — the released binaries carry it since 2026-07, a binary built elsewhere without the tag answers `--handler=hana` with "unknown handler" | ❌ |
 | Embeddable / no external DB server | ✅ | ✅ (SQLite in-process) | ❌ (needs PostgreSQL) |
 | MongoDB wire target | — | ~5.0 (reports FCV 7.0) | 5.0+ |
 | **— CRUD & cursors —** | | | |
@@ -523,6 +567,7 @@ release. HANA is explicitly best-effort.
 | `$replaceRoot` `$replaceWith` `$sortByCount` `$sample` `$facet` `$unionWith` | — | ✅ (`$facet`/`$bucket`/`$unionWith` `init()`-injected) · `aggregate_stages_extra_test.go`, `aggregate_facet_test.go`, `aggregate_unionwith_test.go` | ✅ᴰ |
 | `$bucket` `$bucketAuto` | — | ⚠️ (`$bucketAuto` `granularity` `ErrNotImplemented`) · `aggregate_bucket_test.go` | ✅ᴰ |
 | `$setWindowFields` | — | ⚠️ stage + window ops (see window rows) · `aggregate_setwindowfields_test.go` | ✅ᴰ |
+| `$group` **accumulators** `$sum` `$count` `$avg` `$min` `$max` `$first` `$last` `$push` `$addToSet` `$stdDevPop` `$stdDevSamp` | ⚙️ (board/card statistics) | ✅ — `$sum`/`$count` from upstream, the rest **added by this fork** (`operators/accumulators/`); `$mergeObjects`/`$accumulator`/`$top`/`$bottom`/`$*N` still `ErrNotImplemented` | ✅ᴰ |
 | `$graphLookup` `$merge` `$out` `$geoNear` | — | ❌ `ErrNotImplemented` (in `unsupportedStages`) | ✅ᴰ |
 | `$changeStream` (stage) | — | ❌ `ErrNotImplemented` | ❌ only in `internal/mongoerrors`; no handler |
 | **— Aggregation expression operators —** | | | |

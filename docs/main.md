@@ -29,7 +29,11 @@ In this fork (`wekan/FerretDB`, `main-v1`), **both v1 backends are confirmed wor
 the embedded **SQLite** backend (the default, and what CI runs here) and the vanilla
 **PostgreSQL** backend — see
 [wekan/wekan#6509](https://github.com/wekan/wekan/issues/6509).
-MySQL and SAP HANA remain partial/experimental backends.
+MySQL, MariaDB and SAP HANA remain experimental. MySQL and MariaDB became able to
+store anything at all in 2026-07 — the backend had been quoting identifiers the way
+PostgreSQL does, which MySQL rejects outright — and MariaDB runs on that same `mysql`
+backend. SAP HANA needs a binary built with the `ferretdb_hana` build tag; the
+releases of this fork carry it.
 
 See our [public roadmap](https://github.com/orgs/FerretDB/projects/2/views/1),
 a list of [known differences with MongoDB](diff.md),

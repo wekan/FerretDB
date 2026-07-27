@@ -112,6 +112,34 @@ docker run -d --rm --name ferretdb -p 27017:27017 \
   wekanteam/ferretdb
 ```
 
+The other three v1 backends are **experimental** — runnable, not verified against a
+live engine with the integration suite:
+
+```sh
+# MySQL, and MariaDB, which speaks the same protocol and uses the same backend.
+# FerretDB creates one SQL database per MongoDB database, so it needs a user that
+# may CREATE DATABASE - a grant on one database is not enough.
+docker run -d --rm --name ferretdb -p 27017:27017 \
+  -e FERRETDB_HANDLER=mysql \
+  -e FERRETDB_MYSQL_URL=mysql://root:password@host:3306/ferretdb \
+  wekanteam/ferretdb
+
+# SAP HANA. The handler is behind the `ferretdb_hana` build tag; these images and
+# the release binaries carry it, a binary built elsewhere may not.
+docker run -d --rm --name ferretdb -p 27017:27017 \
+  -e FERRETDB_HANDLER=hana \
+  -e FERRETDB_HANA_URL='hdb://SYSTEM:password@host:39017?databaseName=HXE' \
+  wekanteam/ferretdb
+```
+
+WeKan ships a Docker Compose file for each of them, with the same WeKan settings in
+every one:
+[SQLite](https://github.com/wekan/wekan/blob/main/docker-compose.yml) (the default),
+[PostgreSQL](https://github.com/wekan/wekan/blob/main/docker-compose-ferretdb-v1-postgresql.yml),
+[MySQL](https://github.com/wekan/wekan/blob/main/docker-compose-ferretdb-v1-mysql.yml),
+[MariaDB](https://github.com/wekan/wekan/blob/main/docker-compose-ferretdb-v1-mariadb.yml)
+and [SAP HANA](https://github.com/wekan/wekan/blob/main/docker-compose-ferretdb-v1-sap-hana.yml).
+
 ## Quickstart
 
 Upstream also publishes an all-in-one image that bundles FerretDB, the database and
