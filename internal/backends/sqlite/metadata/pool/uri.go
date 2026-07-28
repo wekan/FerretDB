@@ -86,6 +86,26 @@ func parseURI(u string) (*url.URL, error) {
 func setDefaultValues(values url.Values) {
 	var autoVacuum, busyTimeout, journalMode, synchronous, cacheSize, mmapSize, tempStore bool
 
+	// A write transaction must take the write lock at BEGIN.
+	//
+	// The driver's default is a DEFERRED transaction: it takes the write lock at
+	// the first write, and if another connection has written since the
+	// transaction's read snapshot, SQLite fails it with SQLITE_BUSY IMMEDIATELY -
+	// the busy handler is not called for that case, because waiting could not
+	// help a snapshot that is already stale. So `busy_timeout(30000)` did nothing
+	// for it, and a concurrent WeKan reported "database is locked (5)
+	// (SQLITE_BUSY)" out of UpdateAll under load however long the timeout was
+	// (wekan/wekan#6533).
+	//
+	// With `immediate`, BEGIN itself asks for the write lock, which IS covered by
+	// the busy handler: a contended writer waits its turn instead of failing.
+	// Only the two write paths (InsertAll, UpdateAll) use a transaction here -
+	// reads run as plain queries - so this serialises writers, which SQLite does
+	// anyway, and does not hold anything back for readers under WAL.
+	if values.Get("_txlock") == "" {
+		values.Set("_txlock", "immediate")
+	}
+
 	for _, v := range values["_pragma"] {
 		if strings.HasPrefix(v, "auto_vacuum") {
 			autoVacuum = true

@@ -24,8 +24,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// defaultPragmas is the URL-encoded _pragma query that setDefaultValues adds when
-// the operator supplies none, in insertion order. Kept in one place so adding a
+// defaultPragmas is the URL-encoded default query setDefaultValues adds when the
+// operator supplies none. url.Values.Encode sorts the keys, so `_pragma` comes
+// before `_txlock` and both before `mode`. Kept in one place so adding a
 // performance pragma is a single edit here (see setDefaultValues in uri.go).
 const defaultPragmas = "_pragma=busy_timeout%2830000%29" +
 	"&_pragma=journal_mode%28wal%29" +
@@ -33,7 +34,8 @@ const defaultPragmas = "_pragma=busy_timeout%2830000%29" +
 	"&_pragma=cache_size%28-65536%29" +
 	"&_pragma=mmap_size%28268435456%29" +
 	"&_pragma=temp_store%28memory%29" +
-	"&_pragma=auto_vacuum%28none%29"
+	"&_pragma=auto_vacuum%28none%29" +
+	"&_txlock=immediate"
 
 func TestParseURI(t *testing.T) {
 	t.Parallel()
@@ -212,6 +214,22 @@ func TestSetDefaultValues(t *testing.T) {
 		} {
 			assert.Contains(t, v["_pragma"], want)
 		}
+
+		// A write transaction takes the write lock at BEGIN, so a contended
+		// writer waits on the busy handler instead of failing outright with
+		// SQLITE_BUSY - which busy_timeout cannot help with for a DEFERRED
+		// transaction whose snapshot went stale (wekan/wekan#6533).
+		assert.Equal(t, "immediate", v.Get("_txlock"))
+	})
+
+	t.Run("OverrideTxLock", func(t *testing.T) {
+		t.Parallel()
+
+		v := url.Values{"_txlock": {"deferred"}}
+		setDefaultValues(v)
+
+		assert.Equal(t, []string{"deferred"}, v["_txlock"],
+			"an operator-supplied _txlock wins, and is not duplicated")
 	})
 
 	overrides := map[string]string{
