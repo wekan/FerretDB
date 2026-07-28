@@ -107,6 +107,13 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 	return fmt.Sprintf(" ORDER BY %s%s", metadata.RecordIDColumn, order), nil
 }
 
+// Note on JSON_CONTAINS: its second argument must be a JSON DOCUMENT, and a bound
+// parameter arrives as a string or a number, not as JSON - MySQL answered
+// "Error 3146 (22032): Invalid data type for JSON data in argument 2 to function
+// json_contains" for every equality, $ne and $in. So the candidate is always
+// wrapped in CAST(? AS JSON), which parses the value we bind (sjson's own JSON
+// text for a string/ObjectID/date, and the number or boolean itself otherwise).
+
 // jsonPath returns the MySQL JSON path of a top-level field, as a value to BIND.
 //
 // `col->$.?` is not MySQL: the `->` operator wants a literal path string, and a
@@ -215,7 +222,7 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					// piece of this that used to be formatted into the statement.
 					sql := `NOT ( ` +
 						// check if the value under the key is equal to filter value
-						`JSON_CONTAINS(JSON_EXTRACT(%[1]s, ?), ?, '$') AND ` +
+						`JSON_CONTAINS(JSON_EXTRACT(%[1]s, ?), CAST(? AS JSON), '$') AND ` +
 						// check if value type is equal to filter's
 						`JSON_UNQUOTE(JSON_EXTRACT(%[1]s, ?)) = ? )`
 
@@ -320,11 +327,11 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 			hasNull = true
 
 		case string, types.ObjectID, time.Time:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`, metadata.DefaultColumn))
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`, metadata.DefaultColumn))
 			args = append(args, jsonPath(k), string(must.NotFail(sjson.MarshalSingleValue(e))))
 
 		case float64, bool, int32, int64:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`, metadata.DefaultColumn))
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`, metadata.DefaultColumn))
 			args = append(args, jsonPath(k), e)
 
 		default:
@@ -376,7 +383,7 @@ func numericBound(v any) (any, bool) {
 // where the value under k is equal to v.
 func filterEqual(k string, v any) (filter string, args []any) {
 	// Select if value under the key is equal to provided value.
-	sql := `JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`
+	sql := `JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`
 
 	switch v := v.(type) {
 	case *types.Document, *types.Array, types.Binary,

@@ -101,9 +101,9 @@ func TestPrepareWhereClause(t *testing.T) {
 	// The path is BOUND, through JSON_EXTRACT: `col->$.?` is a MySQL syntax error
 	// (the `->` operator wants a literal path), which is what made every filtered
 	// query answer "Error 1064 (42000)".
-	whereContain := " WHERE JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$')"
+	whereContain := " WHERE JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), CAST(? AS JSON), '$')"
 	whereGt := " WHERE JSON_EXTRACT(_ferretdb_sjson, ?) > ?"
-	whereNotEq := ` WHERE NOT ( JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') AND ` +
+	whereNotEq := ` WHERE NOT ( JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), CAST(? AS JSON), '$') AND ` +
 		`JSON_UNQUOTE(JSON_EXTRACT(_ferretdb_sjson, ?)) = ? )`
 
 	for name, tc := range map[string]struct {
@@ -162,14 +162,14 @@ func TestPrepareWhereClause(t *testing.T) {
 		"InPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
-			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') ` +
-				`OR JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$'))`,
+			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), CAST(? AS JSON), '$') ` +
+				`OR JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), CAST(? AS JSON), '$'))`,
 			args: []any{`$."labelIds"`, `"a"`, `$."labelIds"`, `"b"`},
 		},
 		"InWithNullPushed": {
 			filter: must.NotFail(types.NewDocument("boardId",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
-			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') ` +
+			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), CAST(? AS JSON), '$') ` +
 				`OR (JSON_EXTRACT(_ferretdb_sjson, ?) IS NULL ` +
 				`OR JSON_TYPE(JSON_EXTRACT(_ferretdb_sjson, ?)) = 'NULL'))`,
 			args: []any{`$."boardId"`, `"B"`, `$."boardId"`, `$."boardId"`},

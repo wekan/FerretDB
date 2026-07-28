@@ -30,8 +30,14 @@ const (
 	// DefaultColumn is a column name for all fields.
 	DefaultColumn = backends.ReservedPrefix + "sjson"
 
-	// IDColumn is a MySQL path expression for _id field.
-	IDColumn = DefaultColumn + "->'$._id'"
+	// IDColumn is the expression for the _id field.
+	//
+	// JSON_EXTRACT, not the `->` operator: `->` is MySQL's, and MARIADB DOES NOT
+	// HAVE IT - every statement carrying one failed there with
+	// "Error 1064 (42000): ... near '>'$._id')) STORED'", so a MariaDB instance
+	// could not even create a collection. JSON_EXTRACT is the standard spelling and
+	// works on both.
+	IDColumn = "JSON_EXTRACT(" + DefaultColumn + ", '$._id')"
 
 	// IDIndexColumn is a column name for MySQL generated column on the field '_id'.
 	IDIndexColumn = DefaultColumn + "_id"

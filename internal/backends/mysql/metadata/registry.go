@@ -368,7 +368,7 @@ func (r *Registry) databaseGetOrCreate(ctx context.Context, p *fsql.DB, dbName s
 		`,
 		dbName, metadataTableName,
 		IDIndexColumn, IDColumn,
-		TableIndexColumn, DefaultColumn+"->'$.table'",
+		TableIndexColumn, "JSON_EXTRACT("+DefaultColumn+", '$.table')",
 	)
 
 	if _, err = p.ExecContext(ctx, q); err != nil {
@@ -622,7 +622,8 @@ func (r *Registry) collectionCreate(ctx context.Context, p *fsql.DB, params *Col
 	// the index EXISTS on both engines.
 	if dbName == "local" && collectionName == "oplog.rs" {
 		idxName := tableName + "_ts_idx"
-		castExpr := fmt.Sprintf("CAST(%s->>'$.ts' AS DECIMAL(65,10))", DefaultColumn)
+		// JSON_UNQUOTE(JSON_EXTRACT(...)), not `->>`: MariaDB has neither operator.
+		castExpr := fmt.Sprintf("CAST(JSON_UNQUOTE(JSON_EXTRACT(%s, '$.ts')) AS DECIMAL(65,10))", DefaultColumn)
 
 		// 1. MySQL: a functional index directly on the CAST expression.
 		funcIdxQ := fmt.Sprintf("CREATE INDEX %s ON %s.%s ((%s))", idxName, dbName, tableName, castExpr)
@@ -941,8 +942,14 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 		// The generated name is also what the index is built on, which fixes a
 		// second bug: `columns[i] = key.Field` indexed `a.b`, a column that does
 		// not exist, so any dotted index key failed outright.
-		q = "ALTER TABLE %s.%s"
-
+		// The ADD COLUMN clauses are collected and only then joined, because a key
+		// whose column already exists adds NONE - and the old code appended the
+		// separating comma by position anyway. So a second index on a field that
+		// already had one produced either a trailing comma or, when every key was
+		// already extracted, the bare statement `ALTER TABLE db.t`: MySQL answered
+		// "Error 1064 (42000): You have an error in your SQL syntax", and creating
+		// any index on an already-indexed field failed.
+		adds := make([]string, 0, len(index.Key))
 		columns := make([]string, len(index.Key))
 
 		for i, key := range index.Key {
@@ -950,16 +957,16 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 
 			// ensure that the column hasn't already been extracted
 			if !slices.Contains(allColumns, columnName) {
-				q += fmt.Sprintf(
-					` ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s->%s)) STORED`,
+				adds = append(adds, fmt.Sprintf(
+					`ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((JSON_EXTRACT(%s, %s))) STORED`,
 					QuoteIdent(columnName),
 					DefaultColumn,
 					QuoteString("$."+key.Field),
-				)
+				))
 
-				if i != len(index.Key)-1 {
-					q += ","
-				}
+				// Within one createIndexes call the same field may appear twice; the
+				// column is added once.
+				allColumns = append(allColumns, columnName)
 			}
 
 			columns[i] = QuoteIdent(columnName)
@@ -969,13 +976,16 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 			}
 		}
 
-		q = fmt.Sprintf(
-			q,
-			QuoteIdent(dbName), QuoteIdent(c.TableName),
-		)
+		if len(adds) > 0 {
+			q = fmt.Sprintf(
+				`ALTER TABLE %s.%s %s`,
+				QuoteIdent(dbName), QuoteIdent(c.TableName),
+				strings.Join(adds, ", "),
+			)
 
-		if _, err = p.ExecContext(ctx, q); err != nil {
-			return lazyerrors.Error(err)
+			if _, err = p.ExecContext(ctx, q); err != nil {
+				return lazyerrors.Error(err)
+			}
 		}
 
 		q = "CREATE "

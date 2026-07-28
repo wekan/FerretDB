@@ -59,7 +59,15 @@ func collectionsStats(ctx context.Context, p *fsql.DB, dbName string, list []*me
 	}
 
 	if refresh {
-		q := fmt.Sprintf(`ANALYZE TABLE %s`, strings.Join(tableNames, ", "))
+		// Qualified and quoted: the pool's connection may not be on this schema, and
+		// a table name is an IDENTIFIER here (it is a bound string in the statistics
+		// query below, where it is compared as a value).
+		quoted := make([]string, 0, len(tableNames))
+		for _, name := range tableNames {
+			quoted = append(quoted, metadata.QuoteIdent(dbName)+"."+metadata.QuoteIdent(name))
+		}
+
+		q := fmt.Sprintf(`ANALYZE TABLE %s`, strings.Join(quoted, ", "))
 		if _, err := p.ExecContext(ctx, q); err != nil {
 			return nil, lazyerrors.Error(err)
 		}
@@ -78,19 +86,33 @@ func collectionsStats(ctx context.Context, p *fsql.DB, dbName string, list []*me
 	//
 	// See also:
 	// Clustered Index: https://dev.mysql.com/doc/refman/8.0/en/innodb-index-types.html
+	// `information_schema.tables` needs the alias the columns are written with, and
+	// the table names are VALUES here, not identifiers: they are compared against
+	// `t.table_name`, so they are bound as strings. Without either, MySQL answered
+	// "Error 1054 (42S22): Unknown column 't.table_rows' in 'field list'" and
+	// collStats / dbStats failed outright.
+	placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(tableNames)), ", ")
+
 	q := fmt.Sprintf(`
 		SELECT
 			COALESCE(SUM(t.table_rows), 0),
 			COALESCE(SUM(t.data_length), 0),
-			COALESCE(SUM(t.data_free)),
+			COALESCE(SUM(t.data_free), 0),
 			COALESCE(SUM(t.index_length), 0),
 			COALESCE(SUM(t.data_length) + SUM(t.index_length), 0)
-		FROM information_schema.tables
-		WHERE s.schema_name = ? AND t.table_name IN (%s)`,
-		strings.Join(tableNames, ", "),
+		FROM information_schema.tables AS t
+		WHERE t.table_schema = ? AND t.table_name IN (%s)`,
+		placeholders,
 	)
 
-	row := p.QueryRowContext(ctx, q, dbName)
+	args := make([]any, 0, len(tableNames)+1)
+	args = append(args, dbName)
+
+	for _, name := range tableNames {
+		args = append(args, name)
+	}
+
+	row := p.QueryRowContext(ctx, q, args...)
 	if err := row.Scan(&s.countDocuments, &s.sizeTables, &s.sizeFreeStorage, &s.sizeIndexes, &s.totalSize); err != nil {
 		return nil, lazyerrors.Error(err)
 	}
