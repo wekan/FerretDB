@@ -61,16 +61,22 @@ func collectionsStats(ctx context.Context, db *fsql.DB, list []*metadata.Collect
 	var err error
 
 	if refresh {
-		queries := make([]string, len(list))
-		for i, c := range list {
-			queries[i] = fmt.Sprintf("ANALYZE %q;", c.TableName)
-		}
-
-		// SQLite ANALYZE does not allow multiple tables as arguments, hence
-		// build multiple queries such as `ANALYZE 'table1'; ANALYZE 'table2';`.
-		q := strings.Join(queries, "")
-		if _, err = db.ExecContext(ctx, q); err != nil {
-			return nil, lazyerrors.Error(err)
+		// SQLite's ANALYZE takes one table at a time. This used to join them into
+		// a single `ANALYZE "t1"; ANALYZE "t2";` string and execute that in one
+		// call - the only place in any backend that sent more than one statement
+		// at once, and the reason the SQL guard refused it: a `;` outside a
+		// literal is what an injected second statement looks like, and a guard
+		// cannot tell this apart from that.
+		//
+		// One statement per Exec keeps that invariant absolute, which is what
+		// makes the guard worth having. It costs one round trip per table on a
+		// stats refresh, against a local file, and SQLite gains nothing from
+		// batching them.
+		for _, c := range list {
+			q := fmt.Sprintf("ANALYZE %q", c.TableName)
+			if _, err = db.ExecContext(ctx, q); err != nil {
+				return nil, lazyerrors.Error(err)
+			}
 		}
 	}
 

@@ -28,6 +28,10 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
+// The comment is the one piece of client text written into SQL rather than bound,
+// so it is neutralised by sqlguard.SafeComment: `*/` cannot end the block early,
+// `/*` cannot open a nested one, and `--` cannot start a line comment if the block
+// ever does end early. Hence "* /" and "- -" below.
 func TestPrepareSelectClause(t *testing.T) {
 	t.Parallel()
 	schema := "schema"
@@ -45,7 +49,7 @@ func TestPrepareSelectClause(t *testing.T) {
 			onlyRecordIDs: true,
 			expectQuery: fmt.Sprintf(
 				`SELECT %s %s FROM "%s"."%s"`,
-				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
+				"/* * / 1; DROP SCHEMA "+schema+" CASCADE - -  */",
 				metadata.RecordIDColumn,
 				schema,
 				table,
@@ -55,7 +59,7 @@ func TestPrepareSelectClause(t *testing.T) {
 			capped: true,
 			expectQuery: fmt.Sprintf(
 				`SELECT %s %s, %s FROM "%s"."%s"`,
-				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
+				"/* * / 1; DROP SCHEMA "+schema+" CASCADE - -  */",
 				metadata.RecordIDColumn,
 				metadata.DefaultColumn,
 				schema,
@@ -65,7 +69,7 @@ func TestPrepareSelectClause(t *testing.T) {
 		"FullRecord": {
 			expectQuery: fmt.Sprintf(
 				`SELECT %s %s FROM "%s"."%s"`,
-				"/* * / 1; DROP SCHEMA "+schema+" CASCADE --  */",
+				"/* * / 1; DROP SCHEMA "+schema+" CASCADE - -  */",
 				metadata.DefaultColumn,
 				schema,
 				table,
