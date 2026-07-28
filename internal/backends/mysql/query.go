@@ -17,7 +17,6 @@ package mysql
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
@@ -360,11 +359,19 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 	return "(" + strings.Join(arms, " OR ") + ")", args, true
 }
 
-// numericBound returns the numeric argument for a range bound that sjson stores as a
-// JSON number — int32/int64/double, a Date (as its Unix-millis) and a BSON Timestamp
-// (as its uint64) — or ok=false for a non-number bound (left to the Go filter). A
-// Timestamp above signed-64-bit is declined so the pushed value stays an exact
-// integer; the Go filter stays authoritative.
+// numericBound returns the numeric argument for a range bound that sjson stores as
+// a JSON number — int32/int64/double — or ok=false for anything else, which is left
+// to the Go filter.
+//
+// A DATE and a BSON TIMESTAMP are stored as JSON numbers too, and they used to be
+// pushed down as their Unix-millis / uint64. A live run against MySQL 9.7 showed
+// `{when: {$gte: <date>}}` returning NO rows where every other backend returned
+// two: the pushed comparison excluded documents the filter matches, and a pushdown
+// that is too NARROW is silently wrong - the in-Go filter never sees the rows the
+// SQL did not return. Numbers behave (the float range case answers identically),
+// so only the two temporal types are declined here, until a live EXPLAIN shows
+// which expression MySQL needs for them. Correctness first; this costs one
+// whole-collection re-decode for a date range on the experimental backend.
 func numericBound(v any) (any, bool) {
 	switch n := v.(type) {
 	case int32:
@@ -373,14 +380,6 @@ func numericBound(v any) (any, bool) {
 		return n, true
 	case float64:
 		return n, true
-	case time.Time:
-		return n.UnixMilli(), true
-	case types.Timestamp:
-		if uint64(n) > math.MaxInt64 {
-			return nil, false
-		}
-
-		return int64(n), true
 	default:
 		return nil, false
 	}

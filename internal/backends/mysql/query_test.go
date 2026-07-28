@@ -137,13 +137,19 @@ func TestPrepareWhereClause(t *testing.T) {
 
 		// Numeric / date / Timestamp range pushdown, guarded by JSON_TYPE so a
 		// non-number value can never mis-compare.
-		"RangeTimestampGt": {
-			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape.
+		"RangeTimestampNotPushed": {
+			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape. NOT pushed down on this
+			// backend: a live MySQL 9.7 answered a date range with no rows at all,
+			// and a pushdown that is too narrow is silently wrong, so the two
+			// temporal types are left to the Go filter until the expression MySQL
+			// needs for them is confirmed against a live server.
 			filter: must.NotFail(types.NewDocument("ts",
 				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
-			expected: ` WHERE JSON_TYPE(JSON_EXTRACT(_ferretdb_sjson, ?)) IN ('INTEGER', 'DOUBLE', 'DECIMAL') ` +
-				`AND JSON_EXTRACT(_ferretdb_sjson, ?) > ?`,
-			args: []any{`$."ts"`, `$."ts"`, int64(7300000000000000000)},
+		},
+		"RangeDateNotPushed": {
+			filter: must.NotFail(types.NewDocument("when",
+				must.NotFail(types.NewDocument("$gte",
+					time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC))))),
 		},
 		"RangeNumberLte": {
 			filter: must.NotFail(types.NewDocument("count",
