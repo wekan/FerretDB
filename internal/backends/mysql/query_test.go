@@ -315,9 +315,11 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", math.MaxFloat64)),
 			)),
-			// $ne binds four values now: the field path, the value, the path of the
-			// stored TYPE, and the type name that used to be formatted into the SQL.
-			args:     []any{`$."v"`, math.MaxFloat64, `$."$s"."p"."v"."t"`, "double"},
+			// $ne binds four values: the field path, the value AS ITS sjson TEXT (the
+			// candidate is CAST(? AS JSON), so it must be what the document holds -
+			// a Go bool would otherwise be sent as 1 and never match `true`), the
+			// path of the stored TYPE, and the type name.
+			args: []any{`$."v"`, "1.7976931348623157e+308", `$."$s"."p"."v"."t"`, "double"},
 			expected: whereNotEq,
 		},
 		"NeBool": {
@@ -339,6 +341,23 @@ func TestPrepareWhereClause(t *testing.T) {
 				"v", must.NotFail(types.NewDocument("$ne", objectID)),
 			)),
 			expected: whereNotEq,
+		},
+
+		// MySQL has no boolean: a Go `true` bound directly is 1, and CAST(1 AS JSON)
+		// does not match the stored JSON `true` - a {archived: false} query would
+		// have pushed a filter that matches nothing. The candidate is the value's
+		// own sjson text.
+		"EqBoolIsJSONTrue": {
+			filter: must.NotFail(types.NewDocument(
+				"v", must.NotFail(types.NewDocument("$eq", true)),
+			)),
+			args:     []any{`$."v"`, "true"},
+			expected: whereContain,
+		},
+		"ImplicitBoolFalseIsJSONFalse": {
+			filter:   must.NotFail(types.NewDocument("archived", false)),
+			args:     []any{`$."archived"`, "false"},
+			expected: whereContain,
 		},
 
 		"Comment": {

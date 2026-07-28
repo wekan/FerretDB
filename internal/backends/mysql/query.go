@@ -114,6 +114,18 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 // wrapped in CAST(? AS JSON), which parses the value we bind (sjson's own JSON
 // text for a string/ObjectID/date, and the number or boolean itself otherwise).
 
+// jsonValue returns the value as the JSON TEXT sjson stores for it, to be bound
+// and parsed back with CAST(? AS JSON).
+//
+// Every scalar goes through it, not only strings: MySQL has no boolean, so a Go
+// `true` is sent as 1 and `CAST(1 AS JSON)` is the JSON number 1, which does NOT
+// match the stored JSON `true` - a `{archived: false}` query would have pushed a
+// filter that matches nothing and silently returned no rows. Marshalling first
+// means the candidate is byte-for-byte what the document holds.
+func jsonValue(v any) string {
+	return string(must.NotFail(sjson.MarshalSingleValue(v)))
+}
+
 // jsonPath returns the MySQL JSON path of a top-level field, as a value to BIND.
 //
 // `col->$.?` is not MySQL: the `->` operator wants a literal path string, and a
@@ -231,17 +243,10 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 						types.NullType, types.Regex, types.Timestamp:
 					// type not supported for pushdown
 
-					case float64, bool, int32, int64:
+					case float64, bool, int32, int64, string, types.ObjectID, time.Time:
 						filters = append(filters, fmt.Sprintf(sql, metadata.DefaultColumn))
 
-						args = append(args, jsonPath(rootKey), v,
-							schemaTypePath(rootKey), sjson.GetTypeOfValue(v))
-
-					case string, types.ObjectID, time.Time:
-						filters = append(filters, fmt.Sprintf(sql, metadata.DefaultColumn))
-
-						args = append(args, jsonPath(rootKey),
-							string(must.NotFail(sjson.MarshalSingleValue(v))),
+						args = append(args, jsonPath(rootKey), jsonValue(v),
 							schemaTypePath(rootKey), sjson.GetTypeOfValue(v))
 
 					default:
@@ -326,13 +331,9 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 		case types.NullType:
 			hasNull = true
 
-		case string, types.ObjectID, time.Time:
+		case string, types.ObjectID, time.Time, float64, bool, int32, int64:
 			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`, metadata.DefaultColumn))
-			args = append(args, jsonPath(k), string(must.NotFail(sjson.MarshalSingleValue(e))))
-
-		case float64, bool, int32, int64:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`, metadata.DefaultColumn))
-			args = append(args, jsonPath(k), e)
+			args = append(args, jsonPath(k), jsonValue(e))
 
 		default:
 			return "", nil, false
@@ -396,27 +397,26 @@ func filterEqual(k string, v any) (filter string, args []any) {
 		switch {
 		case v > types.MaxSafeDouble:
 			sql = `JSON_EXTRACT(%s, ?) > ?`
-			v = types.MaxSafeDouble
+			filter = fmt.Sprintf(sql, metadata.DefaultColumn)
+			args = append(args, jsonPath(k), types.MaxSafeDouble)
+
+			return
 
 		case v < -types.MaxSafeDouble:
 			sql = `JSON_EXTRACT(%s, ?) < ?`
-			v = -types.MaxSafeDouble
-		default:
-			// don't change the default eq query
+			filter = fmt.Sprintf(sql, metadata.DefaultColumn)
+			args = append(args, jsonPath(k), -types.MaxSafeDouble)
+
+			return
 		}
 
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, jsonPath(k), v)
+		args = append(args, jsonPath(k), jsonValue(v))
 
-	case string, types.ObjectID, time.Time:
+	case string, types.ObjectID, time.Time, bool, int32:
 		// don't change the default eq query
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, jsonPath(k), string(must.NotFail(sjson.MarshalSingleValue(v))))
-
-	case bool, int32:
-		// don't change the default eq query
-		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, jsonPath(k), v)
+		args = append(args, jsonPath(k), jsonValue(v))
 
 	case int64:
 		maxSafeDouble := int64(types.MaxSafeDouble)
@@ -425,17 +425,21 @@ func filterEqual(k string, v any) (filter string, args []any) {
 		switch {
 		case v > maxSafeDouble:
 			sql = `JSON_EXTRACT(%s, ?) > ?`
-			v = maxSafeDouble
+			filter = fmt.Sprintf(sql, metadata.DefaultColumn)
+			args = append(args, jsonPath(k), maxSafeDouble)
+
+			return
 
 		case v < -maxSafeDouble:
 			sql = `JSON_EXTRACT(%s, ?) < ?`
-			v = -maxSafeDouble
-		default:
-			// don't change the default eq query
+			filter = fmt.Sprintf(sql, metadata.DefaultColumn)
+			args = append(args, jsonPath(k), -maxSafeDouble)
+
+			return
 		}
 
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, jsonPath(k), v)
+		args = append(args, jsonPath(k), jsonValue(v))
 
 	default:
 		panic(fmt.Sprintf("Unexpected type of value: %v", v))
