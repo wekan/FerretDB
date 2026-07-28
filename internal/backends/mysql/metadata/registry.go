@@ -1080,7 +1080,15 @@ func (r *Registry) indexesDrop(ctx context.Context, p *fsql.DB, dbName, collecti
 			continue
 		}
 
-		q := fmt.Sprintf("DROP INDEX %s.%s", dbName, c.Indexes[i].Index)
+		// MySQL drops an index FROM A TABLE: `DROP INDEX <index> ON <db>.<table>`.
+		// This was PostgreSQL's `DROP INDEX <schema>.<index>`, unquoted, so dropping
+		// an index always failed - which is why the conformance run's index/drop
+		// answered a different list of indexes here than everywhere else.
+		q := fmt.Sprintf(
+			"DROP INDEX %s ON %s.%s",
+			QuoteIdent(c.Indexes[i].Index),
+			QuoteIdent(dbName), QuoteIdent(c.TableName),
+		)
 		if _, err := p.ExecContext(ctx, q); err != nil {
 			return lazyerrors.Error(err)
 		}
@@ -1095,14 +1103,18 @@ func (r *Registry) indexesDrop(ctx context.Context, p *fsql.DB, dbName, collecti
 
 	arg, err := sjson.MarshalSingleValue(collectionName)
 	if err != nil {
-		return lazyerrors.Error(nil)
+		// `lazyerrors.Error(nil)` reported success as a failure and lost the reason.
+		return lazyerrors.Error(err)
 	}
 
+	// The generated VARCHAR column, like the other two metadata updates: it holds
+	// the same sjson text that is bound here, and comparing it needs no JSON cast.
+	// Identifiers are quoted, because a database name reaches here from the client.
 	q := fmt.Sprintf(
 		`UPDATE %s.%s SET %s = ? WHERE %s = ?`,
-		dbName, metadataTableName,
+		QuoteIdent(dbName), QuoteIdent(metadataTableName),
 		DefaultColumn,
-		IDColumn,
+		IDIndexColumn,
 	)
 
 	if _, err := p.ExecContext(ctx, q, string(b), arg); err != nil {
