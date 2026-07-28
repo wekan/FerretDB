@@ -98,9 +98,13 @@ func TestPrepareWhereClause(t *testing.T) {
 	objectID := types.ObjectID{0x62, 0x56, 0xc5, 0xba, 0x0b, 0xad, 0xc0, 0xff, 0xee, 0xff, 0xff, 0xff}
 
 	// WHERE clauses occurring frequently in tests
-	whereContain := " WHERE JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$')"
-	whereGt := " WHERE _ferretdb_sjson->$.? > ?"
-	whereNotEq := ` WHERE NOT ( JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$') AND _ferretdb_sjson->'$.$s.p.?.t' = `
+	// The path is BOUND, through JSON_EXTRACT: `col->$.?` is a MySQL syntax error
+	// (the `->` operator wants a literal path), which is what made every filtered
+	// query answer "Error 1064 (42000)".
+	whereContain := " WHERE JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$')"
+	whereGt := " WHERE JSON_EXTRACT(_ferretdb_sjson, ?) > ?"
+	whereNotEq := ` WHERE NOT ( JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') AND ` +
+		`JSON_UNQUOTE(JSON_EXTRACT(_ferretdb_sjson, ?)) = ? )`
 
 	for name, tc := range map[string]struct {
 		filter   *types.Document
@@ -137,14 +141,16 @@ func TestPrepareWhereClause(t *testing.T) {
 			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape.
 			filter: must.NotFail(types.NewDocument("ts",
 				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
-			expected: ` WHERE JSON_TYPE(_ferretdb_sjson->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND _ferretdb_sjson->$.? > ?`,
-			args:     []any{"ts", "ts", int64(7300000000000000000)},
+			expected: ` WHERE JSON_TYPE(JSON_EXTRACT(_ferretdb_sjson, ?)) IN ('INTEGER', 'DOUBLE', 'DECIMAL') ` +
+				`AND JSON_EXTRACT(_ferretdb_sjson, ?) > ?`,
+			args: []any{`$."ts"`, `$."ts"`, int64(7300000000000000000)},
 		},
 		"RangeNumberLte": {
 			filter: must.NotFail(types.NewDocument("count",
 				must.NotFail(types.NewDocument("$lte", int64(100))))),
-			expected: ` WHERE JSON_TYPE(_ferretdb_sjson->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND _ferretdb_sjson->$.? <= ?`,
-			args:     []any{"count", "count", int64(100)},
+			expected: ` WHERE JSON_TYPE(JSON_EXTRACT(_ferretdb_sjson, ?)) IN ('INTEGER', 'DOUBLE', 'DECIMAL') ` +
+				`AND JSON_EXTRACT(_ferretdb_sjson, ?) <= ?`,
+			args: []any{`$."count"`, `$."count"`, int64(100)},
 		},
 		"RangeStringBoundNotPushed": {
 			// a non-number bound stays in the Go filter (no WHERE).
@@ -156,14 +162,17 @@ func TestPrepareWhereClause(t *testing.T) {
 		"InPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
-			expected: ` WHERE (JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$') OR JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$'))`,
-			args:     []any{"labelIds", `"a"`, "labelIds", `"b"`},
+			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') ` +
+				`OR JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$'))`,
+			args: []any{`$."labelIds"`, `"a"`, `$."labelIds"`, `"b"`},
 		},
 		"InWithNullPushed": {
 			filter: must.NotFail(types.NewDocument("boardId",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
-			expected: ` WHERE (JSON_CONTAINS(_ferretdb_sjson->$.?, ?, '$') OR (_ferretdb_sjson->$.? IS NULL OR JSON_TYPE(_ferretdb_sjson->$.?) = 'NULL'))`,
-			args:     []any{"boardId", `"B"`, "boardId", "boardId"},
+			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), ?, '$') ` +
+				`OR (JSON_EXTRACT(_ferretdb_sjson, ?) IS NULL ` +
+				`OR JSON_TYPE(JSON_EXTRACT(_ferretdb_sjson, ?)) = 'NULL'))`,
+			args: []any{`$."boardId"`, `"B"`, `$."boardId"`, `$."boardId"`},
 		},
 
 		"ImplicitString": {
@@ -209,7 +218,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", "foo")),
 			)),
-			args:     []any{`v`, `"foo"`},
+			args:     []any{`$."v"`, `"foo"`},
 			expected: whereContain,
 		},
 		"EqEmptyString": {
@@ -240,7 +249,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", math.MaxFloat64)),
 			)),
-			args:     []any{`v`, types.MaxSafeDouble},
+			args:     []any{`$."v"`, types.MaxSafeDouble},
 			expected: whereGt,
 		},
 		"EqDoubleBigInt64": {
@@ -248,7 +257,7 @@ func TestPrepareWhereClause(t *testing.T) {
 				// TODO https://github.com/FerretDB/FerretDB/issues/3626
 				"v", must.NotFail(types.NewDocument("$eq", float64(2<<61))),
 			)),
-			args:     []any{`v`, types.MaxSafeDouble},
+			args:     []any{`$."v"`, types.MaxSafeDouble},
 			expected: whereGt,
 		},
 		"EqBool": {
@@ -276,44 +285,46 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", "foo")),
 			)),
-			expected: whereNotEq + `'"string"' )`,
+			expected: whereNotEq,
 		},
 		"NeEmptyString": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", "")),
 			)),
-			expected: whereNotEq + `'"string"' )`,
+			expected: whereNotEq,
 		},
 		"NeInt32": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", int32(42))),
 			)),
-			expected: whereNotEq + `'"int"' )`,
+			expected: whereNotEq,
 		},
 		"NeInt64": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", int64(42))),
 			)),
-			expected: whereNotEq + `'"long"' )`,
+			expected: whereNotEq,
 		},
 		"NeFloat64": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", float64(42.13))),
 			)),
-			expected: whereNotEq + `'"double"' )`,
+			expected: whereNotEq,
 		},
 		"NeMaxFloat64": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", math.MaxFloat64)),
 			)),
-			args:     []any{`v`, math.MaxFloat64},
-			expected: whereNotEq + `'"double"' )`,
+			// $ne binds four values now: the field path, the value, the path of the
+			// stored TYPE, and the type name that used to be formatted into the SQL.
+			args:     []any{`$."v"`, math.MaxFloat64, `$."$s"."p"."v"."t"`, "double"},
+			expected: whereNotEq,
 		},
 		"NeBool": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", true)),
 			)),
-			expected: whereNotEq + `'"bool"' )`,
+			expected: whereNotEq,
 		},
 		"NeDatetime": {
 			filter: must.NotFail(types.NewDocument(
@@ -321,13 +332,13 @@ func TestPrepareWhereClause(t *testing.T) {
 					"$ne", time.Date(2021, 11, 1, 10, 18, 42, 123000000, time.UTC),
 				)),
 			)),
-			expected: whereNotEq + `'"date"' )`,
+			expected: whereNotEq,
 		},
 		"NeObjectID": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$ne", objectID)),
 			)),
-			expected: whereNotEq + `'"objectId"' )`,
+			expected: whereNotEq,
 		},
 
 		"Comment": {

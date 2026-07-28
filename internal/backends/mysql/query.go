@@ -107,6 +107,28 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 	return fmt.Sprintf(" ORDER BY %s%s", metadata.RecordIDColumn, order), nil
 }
 
+// jsonPath returns the MySQL JSON path of a top-level field, as a value to BIND.
+//
+// `col->$.?` is not MySQL: the `->` operator wants a literal path string, and a
+// placeholder there is a syntax error - every pushed-down filter came back as
+// "Error 1064 (42000): You have an error in your SQL syntax", so the whole
+// backend answered nothing but errors as soon as a query had a filter. The path
+// goes through JSON_EXTRACT(col, ?) instead, which takes it as an argument.
+//
+// The member is quoted, so a field name containing a dot, a space or a quote is
+// one member and not a path expression: `$."a.b"` reads the field literally
+// named `a.b`, which is what a MongoDB top-level key is. A quote or a backslash
+// inside the name is escaped, so a name can never end the quoted member early.
+func jsonPath(field string) string {
+	return `$."` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(field) + `"`
+}
+
+// schemaTypePath returns the path of the sjson SCHEMA entry for a field - the
+// `t` of `$s.p.<field>` - which is how a pushed filter checks the stored type.
+func schemaTypePath(field string) string {
+	return `$."$s"."p"."` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(field) + `"."t"`
+}
+
 // prepareWhereClause adds WHERE clause with given filters to the query and returns the query and arguments.
 func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 	var filters []string
@@ -189,11 +211,13 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					}
 
 				case "$ne":
+					// Every path and every value is BOUND: the type name is the last
+					// piece of this that used to be formatted into the statement.
 					sql := `NOT ( ` +
 						// check if the value under the key is equal to filter value
-						`JSON_CONTAINS(%[1]s->$.?, ?, '$') AND ` +
+						`JSON_CONTAINS(JSON_EXTRACT(%[1]s, ?), ?, '$') AND ` +
 						// check if value type is equal to filter's
-						`%[1]s->'$.$s.p.?.t' = '"%[2]s"' )`
+						`JSON_UNQUOTE(JSON_EXTRACT(%[1]s, ?)) = ? )`
 
 					switch v := v.(type) {
 					case *types.Document, *types.Array, types.Binary,
@@ -201,22 +225,17 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					// type not supported for pushdown
 
 					case float64, bool, int32, int64:
-						filters = append(filters, fmt.Sprintf(
-							sql,
-							metadata.DefaultColumn,
-							sjson.GetTypeOfValue(v),
-						))
+						filters = append(filters, fmt.Sprintf(sql, metadata.DefaultColumn))
 
-						args = append(args, rootKey, v)
+						args = append(args, jsonPath(rootKey), v,
+							schemaTypePath(rootKey), sjson.GetTypeOfValue(v))
 
 					case string, types.ObjectID, time.Time:
-						filters = append(filters, fmt.Sprintf(
-							sql,
-							metadata.DefaultColumn,
-							sjson.GetTypeOfValue(v),
-						))
+						filters = append(filters, fmt.Sprintf(sql, metadata.DefaultColumn))
 
-						args = append(args, rootKey, string(must.NotFail(sjson.MarshalSingleValue(v))))
+						args = append(args, jsonPath(rootKey),
+							string(must.NotFail(sjson.MarshalSingleValue(v))),
+							schemaTypePath(rootKey), sjson.GetTypeOfValue(v))
 
 					default:
 						panic(fmt.Sprintf("Unexpected type of value: %v", v))
@@ -250,10 +269,11 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					}
 
 					filters = append(filters, fmt.Sprintf(
-						`JSON_TYPE(%[1]s->$.?) IN ('INTEGER', 'DOUBLE', 'DECIMAL') AND %[1]s->$.? %[2]s ?`,
+						`JSON_TYPE(JSON_EXTRACT(%[1]s, ?)) IN ('INTEGER', 'DOUBLE', 'DECIMAL') `+
+							`AND JSON_EXTRACT(%[1]s, ?) %[2]s ?`,
 						metadata.DefaultColumn, sqlOp,
 					))
-					args = append(args, rootKey, rootKey, num)
+					args = append(args, jsonPath(rootKey), jsonPath(rootKey), num)
 
 				default:
 					// other operators ($regex, $exists, …) stay in the Go filter.
@@ -300,12 +320,12 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 			hasNull = true
 
 		case string, types.ObjectID, time.Time:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(%s->$.?, ?, '$')`, metadata.DefaultColumn))
-			args = append(args, k, string(must.NotFail(sjson.MarshalSingleValue(e))))
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`, metadata.DefaultColumn))
+			args = append(args, jsonPath(k), string(must.NotFail(sjson.MarshalSingleValue(e))))
 
 		case float64, bool, int32, int64:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(%s->$.?, ?, '$')`, metadata.DefaultColumn))
-			args = append(args, k, e)
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`, metadata.DefaultColumn))
+			args = append(args, jsonPath(k), e)
 
 		default:
 			return "", nil, false
@@ -314,8 +334,9 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 
 	if hasNull {
 		arms = append(arms, fmt.Sprintf(
-			`(%[1]s->$.? IS NULL OR JSON_TYPE(%[1]s->$.?) = 'NULL')`, metadata.DefaultColumn))
-		args = append(args, k, k)
+			`(JSON_EXTRACT(%[1]s, ?) IS NULL OR JSON_TYPE(JSON_EXTRACT(%[1]s, ?)) = 'NULL')`,
+			metadata.DefaultColumn))
+		args = append(args, jsonPath(k), jsonPath(k))
 	}
 
 	if len(arms) == 0 {
@@ -355,7 +376,7 @@ func numericBound(v any) (any, bool) {
 // where the value under k is equal to v.
 func filterEqual(k string, v any) (filter string, args []any) {
 	// Select if value under the key is equal to provided value.
-	sql := `JSON_CONTAINS(%s->$.?, ?, '$')`
+	sql := `JSON_CONTAINS(JSON_EXTRACT(%s, ?), ?, '$')`
 
 	switch v := v.(type) {
 	case *types.Document, *types.Array, types.Binary,
@@ -367,28 +388,28 @@ func filterEqual(k string, v any) (filter string, args []any) {
 		// TODO https://github.com/FerretDB/FerretDB/issues/3626
 		switch {
 		case v > types.MaxSafeDouble:
-			sql = `%s->$.? > ?`
+			sql = `JSON_EXTRACT(%s, ?) > ?`
 			v = types.MaxSafeDouble
 
 		case v < -types.MaxSafeDouble:
-			sql = `%s->$.? < ?`
+			sql = `JSON_EXTRACT(%s, ?) < ?`
 			v = -types.MaxSafeDouble
 		default:
 			// don't change the default eq query
 		}
 
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, k, v)
+		args = append(args, jsonPath(k), v)
 
 	case string, types.ObjectID, time.Time:
 		// don't change the default eq query
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, k, string(must.NotFail(sjson.MarshalSingleValue(v))))
+		args = append(args, jsonPath(k), string(must.NotFail(sjson.MarshalSingleValue(v))))
 
 	case bool, int32:
 		// don't change the default eq query
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, k, v)
+		args = append(args, jsonPath(k), v)
 
 	case int64:
 		maxSafeDouble := int64(types.MaxSafeDouble)
@@ -396,18 +417,18 @@ func filterEqual(k string, v any) (filter string, args []any) {
 		// If value cannot be safe double, fetch all numbers out of the safe range.
 		switch {
 		case v > maxSafeDouble:
-			sql = `%s->$.? > ?`
+			sql = `JSON_EXTRACT(%s, ?) > ?`
 			v = maxSafeDouble
 
 		case v < -maxSafeDouble:
-			sql = `%s->$.? < ?`
+			sql = `JSON_EXTRACT(%s, ?) < ?`
 			v = -maxSafeDouble
 		default:
 			// don't change the default eq query
 		}
 
 		filter = fmt.Sprintf(sql, metadata.DefaultColumn)
-		args = append(args, k, v)
+		args = append(args, jsonPath(k), v)
 
 	default:
 		panic(fmt.Sprintf("Unexpected type of value: %v", v))

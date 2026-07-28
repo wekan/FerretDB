@@ -316,6 +316,36 @@ func (r *Registry) databaseGetOrCreate(ctx context.Context, p *fsql.DB, dbName s
 		return nil, lazyerrors.Error(err)
 	}
 
+	// The schema may already carry OUR metadata table while this registry has no
+	// entry for it: the registry's view is built once, at startup, from the
+	// schemata that had the table then, so a database created by an earlier
+	// process - or one whose detection at startup did not see it - reaches here
+	// with everything already in place. Creating it again answered
+	// "Error 1050 (42S01): Table '_ferretdb_database_metadata' already exists",
+	// and every insert into that database failed for as long as the process ran.
+	// Adopt what is there instead: read the collections out of it.
+	var exists bool
+
+	q = strings.TrimSpace(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.columns
+			WHERE table_schema = ? AND table_name = ?
+		)
+	`)
+
+	if err = p.QueryRowContext(ctx, q, dbName, metadataTableName).Scan(&exists); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if exists {
+		if err = r.initCollections(ctx, dbName, p); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
+		return p, nil
+	}
+
 	q = fmt.Sprintf(
 		`CREATE TABLE %s.%s (%s json)`,
 		dbName, metadataTableName,
