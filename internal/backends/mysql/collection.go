@@ -189,7 +189,7 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 	}
 
 	q := fmt.Sprintf(
-		`UPDATE %s.%s SET %s = ? WHERE %s = CAST(? AS JSON)`,
+		`UPDATE %s.%s SET %s = ? WHERE %s = JSON_EXTRACT(?, '$')`,
 		metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
 		metadata.DefaultColumn,
 		metadata.IDColumn,
@@ -272,9 +272,10 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 
 		for i, id := range params.IDs {
 			placeholders[i] = "?"
-			// The stored value is JSON, and the comparison is against JSON_EXTRACT,
-			// so the argument is the id's own sjson text parsed back with CAST -
-			// the same discipline as every other value comparison in this backend.
+			// The stored value is JSON, and the comparison is against JSON_EXTRACT, so
+			// the argument is the id's own sjson text parsed back the same way every
+			// value comparison in this backend does it (JSON_EXTRACT(?, '$'), not
+			// CAST(? AS JSON), because MariaDB has no JSON type to cast to).
 			args[i] = string(must.NotFail(sjson.MarshalSingleValue(id)))
 		}
 
@@ -295,7 +296,7 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 	if column == metadata.IDColumn {
 		castPlaceholders = make([]string, len(placeholders))
 		for i := range placeholders {
-			castPlaceholders[i] = "CAST(? AS JSON)"
+			castPlaceholders[i] = "JSON_EXTRACT(?, '$')"
 		}
 	}
 
@@ -428,25 +429,46 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 		indexMap[index.Index] = index.Name
 	}
 
-	q := `
-		SELECT
-		    s.index_name,
-			t.index_length,
-		FROM information_schema.tables t
-		JOIN information_schema.statistics s
-		ON t.table_schema = s.table_schema AND t.table_name = s.table_name
-		WHERE t.table_schema = ? AND t.table_name IN ?
-	`
+	// Per-index sizes.
+	//
+	// The statement here was not valid SQL at all - a trailing comma before FROM,
+	// and `t.table_name IN ?` - so collStats answered "Error 1064" on MySQL and on
+	// MariaDB alike. It also read `t.index_length`, which is the TABLE's total
+	// index size, and reported it as the size of every individual index.
+	//
+	// InnoDB does keep per-index sizes, in pages, in mysql.innodb_index_stats. That
+	// table is not readable by every user, so a failure there is not fatal: the
+	// index NAMES still come from information_schema.statistics (which every user
+	// can read for their own tables) and the sizes are left at zero, because an
+	// unknown size is better reported as unknown than as another index's size.
+	//
+	// information_schema.statistics has one row per index COLUMN, hence DISTINCT.
+	indexSizes := make([]backends.IndexSize, 0, len(indexMap))
 
-	rows, err := p.QueryContext(ctx, q, c.dbName, coll.TableName)
+	sizeQ := `
+		SELECT s.index_name, COALESCE(MAX(st.stat_value) * @@innodb_page_size, 0)
+		FROM information_schema.statistics s
+		LEFT JOIN mysql.innodb_index_stats st
+			ON st.database_name = s.table_schema
+			AND st.table_name = s.table_name
+			AND st.index_name = s.index_name
+			AND st.stat_name = 'size'
+		WHERE s.table_schema = ? AND s.table_name = ?
+		GROUP BY s.index_name`
+
+	rows, err := p.QueryContext(ctx, sizeQ, c.dbName, coll.TableName)
 	if err != nil {
-		return nil, lazyerrors.Error(err)
+		sizeQ = `
+			SELECT DISTINCT s.index_name, 0
+			FROM information_schema.statistics s
+			WHERE s.table_schema = ? AND s.table_name = ?`
+
+		if rows, err = p.QueryContext(ctx, sizeQ, c.dbName, coll.TableName); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
 	}
 
 	defer rows.Close()
-
-	indexSizes := make([]backends.IndexSize, len(indexMap))
-	var i int
 
 	for rows.Next() {
 		var name string
@@ -462,11 +484,10 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 			continue
 		}
 
-		indexSizes[i] = backends.IndexSize{
+		indexSizes = append(indexSizes, backends.IndexSize{
 			Name: indexName,
 			Size: size,
-		}
-		i++
+		})
 	}
 
 	if rows.Err() != nil {

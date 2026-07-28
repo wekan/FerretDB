@@ -111,11 +111,17 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 // parameter arrives as a string or a number, not as JSON - MySQL answered
 // "Error 3146 (22032): Invalid data type for JSON data in argument 2 to function
 // json_contains" for every equality, $ne and $in. So the candidate is always
-// wrapped in CAST(? AS JSON), which parses the value we bind (sjson's own JSON
-// text for a string/ObjectID/date, and the number or boolean itself otherwise).
+// wrapped in JSON_EXTRACT(?, '$'), which parses the value we bind (sjson's own
+// JSON text for every scalar).
+//
+// JSON_EXTRACT of the whole document rather than CAST(? AS JSON): **MariaDB has
+// no JSON type** - JSON is an alias for LONGTEXT there - so a cast to it is a
+// syntax error, and MariaDB answered "Error 1064" for every filtered query.
+// JSON_EXTRACT(?, '$') parses the string on MySQL and returns it unchanged on
+// MariaDB, so ONE statement serves both engines.
 
 // jsonValue returns the value as the JSON TEXT sjson stores for it, to be bound
-// and parsed back with CAST(? AS JSON).
+// and parsed back with JSON_EXTRACT(?, '$').
 //
 // Every scalar goes through it, not only strings: MySQL has no boolean, so a Go
 // `true` is sent as 1 and `CAST(1 AS JSON)` is the JSON number 1, which does NOT
@@ -234,7 +240,7 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					// piece of this that used to be formatted into the statement.
 					sql := `NOT ( ` +
 						// check if the value under the key is equal to filter value
-						`JSON_CONTAINS(JSON_EXTRACT(%[1]s, ?), CAST(? AS JSON), '$') AND ` +
+						`JSON_CONTAINS(JSON_EXTRACT(%[1]s, ?), JSON_EXTRACT(?, '$'), '$') AND ` +
 						// check if value type is equal to filter's
 						`JSON_UNQUOTE(JSON_EXTRACT(%[1]s, ?)) = ? )`
 
@@ -332,7 +338,7 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 			hasNull = true
 
 		case string, types.ObjectID, time.Time, float64, bool, int32, int64:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`, metadata.DefaultColumn))
+			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'), '$')`, metadata.DefaultColumn))
 			args = append(args, jsonPath(k), jsonValue(e))
 
 		default:
@@ -384,7 +390,7 @@ func numericBound(v any) (any, bool) {
 // where the value under k is equal to v.
 func filterEqual(k string, v any) (filter string, args []any) {
 	// Select if value under the key is equal to provided value.
-	sql := `JSON_CONTAINS(JSON_EXTRACT(%s, ?), CAST(? AS JSON), '$')`
+	sql := `JSON_CONTAINS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'), '$')`
 
 	switch v := v.(type) {
 	case *types.Document, *types.Array, types.Binary,
