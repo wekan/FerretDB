@@ -189,7 +189,7 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 	}
 
 	q := fmt.Sprintf(
-		`UPDATE %s.%s SET %s = ? WHERE %s = ?`,
+		`UPDATE %s.%s SET %s = ? WHERE %s = CAST(? AS JSON)`,
 		metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
 		metadata.DefaultColumn,
 		metadata.IDColumn,
@@ -259,8 +259,28 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 	var placeholders []string
 	var args []any
 
+	// Delete BY _id when that is what was asked for, and by record id otherwise -
+	// the sqlite and postgresql backends both do exactly this. Here the branch was
+	// inverted and crossed: on `RecordIDs == nil` (the ordinary delete-by-_id) it
+	// sized the placeholders by params.IDs, filled the arguments from the nil
+	// params.RecordIDs - so there were none - and pointed the WHERE at the record
+	// id column; and with record ids present it produced `WHERE  IN ()`. Neither
+	// could ever delete a document.
 	if params.RecordIDs == nil {
 		placeholders = make([]string, len(params.IDs))
+		args = make([]any, len(params.IDs))
+
+		for i, id := range params.IDs {
+			placeholders[i] = "?"
+			// The stored value is JSON, and the comparison is against JSON_EXTRACT,
+			// so the argument is the id's own sjson text parsed back with CAST -
+			// the same discipline as every other value comparison in this backend.
+			args[i] = string(must.NotFail(sjson.MarshalSingleValue(id)))
+		}
+
+		column = metadata.IDColumn
+	} else {
+		placeholders = make([]string, len(params.RecordIDs))
 		args = make([]any, len(params.RecordIDs))
 
 		for i, id := range params.RecordIDs {
@@ -271,11 +291,19 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 		column = metadata.RecordIDColumn
 	}
 
+	castPlaceholders := placeholders
+	if column == metadata.IDColumn {
+		castPlaceholders = make([]string, len(placeholders))
+		for i := range placeholders {
+			castPlaceholders[i] = "CAST(? AS JSON)"
+		}
+	}
+
 	q := fmt.Sprintf(
 		`DELETE FROM %s.%s WHERE %s IN (%s)`,
 		metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
 		column,
-		strings.Join(placeholders, ", "),
+		strings.Join(castPlaceholders, ", "),
 	)
 
 	res, err := p.ExecContext(ctx, q, args...)
