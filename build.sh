@@ -406,9 +406,30 @@ act_test_all() {
 
 act_lint() {
   go_env
-  info "go vet ./... ..."
-  go vet ./... || true
-  ( cd integration && go vet ./... || true )
+  # -composites=false, or this stage reports nothing usable.
+  #
+  # The `composites` analyzer flags a composite literal of an IMPORTED struct
+  # type that sets its fields positionally. `bson.E{"key", value}` is exactly
+  # that, and it is also the documented way to write a BSON element - the driver
+  # named the fields Key and Value precisely so the positional form reads as an
+  # ordered pair. FerretDB's tests are made of them, so the analyzer produced
+  # 8449 identical lines in the last run, out of 8457 lines of output.
+  #
+  # That is not a lint result, it is a wall. A real finding - the one line about
+  # a package outside the main module, say - is invisible in it, and a stage
+  # nobody can read is a stage nobody reads. Every other vet analyzer stays on.
+  # ./... walks tmp/ as well, which is this script's own scratch: GOTMPDIR is
+  # tmp/go, and a Go module cache has ended up under tmp/gopath. vet then
+  # reports on the Go toolchain's own sources and on a dependency's copy in the
+  # module cache - "use of internal package internal/runtime/sys not allowed",
+  # "directory tmp/gopath/... outside main module" - neither of which is about
+  # FerretDB. tmp/ is gitignored scratch, so it is filtered out of the package
+  # list rather than vetted.
+  info "go vet -composites=false ./... ..."
+  vet_pkgs() { go list ./... 2>/dev/null | grep -v "/tmp/" || true; }
+  # shellcheck disable=SC2046
+  go vet -composites=false $(vet_pkgs) || true
+  ( cd integration && go vet -composites=false $(vet_pkgs) || true )
   info "vet done (install golangci-lint separately for full linting)."
 }
 

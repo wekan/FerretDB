@@ -6,6 +6,19 @@
 
 ### Other Changes 🤖
 
+- **`go vet` reports something readable again.** The stage produced 8472 lines
+  and 8449 of them were the same finding: the `composites` analyzer flagging
+  `bson.E{"key", value}`, which is a composite literal of an imported struct
+  set positionally — and is also the documented way to write a BSON element,
+  which is why the tests are made of them. A real finding was invisible in
+  that, and a stage nobody can read is a stage nobody reads. `-composites=false`
+  turns off that one analyzer and leaves every other one on; the same run then
+  reports 15 lines. Two of those were real and are also fixed: `./...` was
+  walking `tmp/`, this script's own scratch — `GOTMPDIR` is `tmp/go` and a
+  module cache had ended up under `tmp/gopath` — so vet was reporting on the Go
+  toolchain's own sources and on a dependency's copy in the module cache.
+  `tmp/` is filtered out of the package list now by @xet7. Thanks to xet7.
+
 - **A `.sha256sum` beside every released binary.** The release attached one
   `ferretdb-<arch>[.exe]` per platform and nothing to check a download against,
   so a consumer could not tell a truncated or tampered file from a good one —
