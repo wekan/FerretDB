@@ -72,6 +72,33 @@ jobs:
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
         run: ./build.sh dist-seq
 
+      # A checksum beside every binary, in the "<sum>  <file>" format
+      # sha256sum -c reads, so a consumer can tell a truncated or tampered
+      # download from a good one. WeKan's release build downloads these
+      # binaries and had nothing to check them against - it verified its
+      # Node.js and could not verify its database.
+      #
+      # One file per binary, not one for the release: a consumer fetches only
+      # the platform it needs and should not have to pull a list covering
+      # fifteen others to check it.
+      - name: Checksum every binary
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s nullglob
+          n=0
+          for f in ferretdb-*; do
+            case "$f" in *.sha256sum) continue ;; esac
+            sha256sum "$f" > "${f}.sha256sum"
+            n=$((n + 1))
+          done
+          if [ "$n" -eq 0 ]; then
+            echo "::error::build.sh produced no ferretdb-* binary to checksum."
+            exit 1
+          fi
+          echo "Checksummed $n binaries:"
+          cat ./*.sha256sum
+
       - name: Compose release notes (header + platforms + CHANGELOG section)
         id: notes
         run: |
@@ -80,7 +107,10 @@ jobs:
 
           # 1. Every arch built into ./dist/ (a "ferretdb-<arch>[.exe]" file),
           #    listed in build.sh's canonical order with any extras appended.
-          present="$(ls dist | sed -n 's#^ferretdb-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
+          # grep -v the checksum files: dist/ now holds ferretdb-amd64 AND
+          # ferretdb-amd64.sha256sum, and only the first is a platform.
+          present="$(ls dist | grep -v '\.sha256sum$' \
+            | sed -n 's#^ferretdb-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
           order="amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-arm64"
           plats=""
           for a in $order; do
@@ -107,6 +137,14 @@ jobs:
             echo "FerretDB v1 (SQLite) multi-platform binaries — one ferretdb-<arch>[.exe] asset per platform (no ferretdb.zip). Built by release-all.yml from the wekan/FerretDB fork."
             echo ""
             echo "Platforms: $plats"
+            echo ""
+            echo "Every binary has a \`<name>.sha256sum\` beside it. To check a download:"
+            echo ""
+            echo '```'
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-amd64"
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-amd64.sha256sum"
+            echo "sha256sum -c ferretdb-amd64.sha256sum"
+            echo '```'
             echo ""
             cat changelog-section.md
           } > release-notes.md

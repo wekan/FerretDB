@@ -2,6 +2,21 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **A `.sha256sum` beside every released binary.** The release attached one
+  `ferretdb-<arch>[.exe]` per platform and nothing to check a download against,
+  so a consumer could not tell a truncated or tampered file from a good one —
+  and WeKan's release build, which downloads these binaries into its bundles,
+  verified its Node.js against a published checksum and had nothing to verify
+  its database against. Every binary now gets a `ferretdb-<arch>.sha256sum` in
+  the `<sum>  <file>` format `sha256sum -c` reads, one file per binary rather
+  than one list for the release, because a consumer fetches only the platform it
+  needs and should not have to pull a list covering fifteen others to check it.
+  The release notes say so and show the three commands by @xet7. Thanks to xet7.
+
 ## [v1.43.0](https://github.com/wekan/FerretDB/releases/tag/v1.43.0) (2026-07-28)
 
 ### New Features 🎉
