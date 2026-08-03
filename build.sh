@@ -200,6 +200,22 @@ build_ferretdb_target() {
   local name="$1" goos="$2" goarch="$3" goarm="$4" out="$5" rep="$6"
   local ext=""; [ "$goos" = windows ] && ext=".exe"
   mkdir -p "$out"
+  # FERRETDB_DIST_SKIP_LIST names a file of asset names already on the release
+  # (one per line). A target listed there is not rebuilt, which is how
+  # release-all-missing.yml builds only the gap instead of all sixteen
+  # platforms. Absent or empty => build everything, which is what an ordinary
+  # release does.
+  #
+  # BOTH the binary and its .sha256sum have to be there. A binary whose checksum
+  # upload failed is exactly the half-published state that workflow exists to
+  # repair, and treating the binary alone as present would leave it that way.
+  if [ -n "${FERRETDB_DIST_SKIP_LIST:-}" ] && [ -s "${FERRETDB_DIST_SKIP_LIST}" ] \
+     && grep -qxF "ferretdb-$name$ext" "$FERRETDB_DIST_SKIP_LIST" \
+     && grep -qxF "ferretdb-$name$ext.sha256sum" "$FERRETDB_DIST_SKIP_LIST"; then
+    printf '%s\n' "$name" >> "$rep/have.list"
+    info "  have    $name (already on the release)"
+    return 0
+  fi
   # -tags ferretdb_hana: the "hana" handler is behind that build tag, so without it
   # the released binaries answer `--handler=hana` with "unknown handler" - which is
   # what a client compose file for SAP HANA would hit. go-hdb is pure Go, so it
@@ -234,7 +250,7 @@ act_dist() {
   local out="$ROOT/dist"
   local rep="$ROOT/tmp/ferretdb-dist"
   rm -rf "$out" "$rep"; mkdir -p "$out" "$rep"
-  : > "$rep/built.list"; : > "$rep/failed.list"
+  : > "$rep/built.list"; : > "$rep/failed.list"; : > "$rep/have.list"
 
   # Prime the module + build cache once (resolve deps, compile shared std/deps)
   # so the parallel builds below don't all race downloading/compiling at once.
@@ -297,6 +313,9 @@ act_dist() {
 
   info "Created per-arch binaries under $out/"
   info "Built:   $(tr '\n' ' ' < "$rep/built.list")"
+  if [ -s "$rep/have.list" ]; then
+    info "Have:    $(tr '\n' ' ' < "$rep/have.list") (already on the release, not rebuilt)"
+  fi
   if [ -s "$rep/failed.list" ]; then
     warn "Skipped: $(tr '\n' ' ' < "$rep/failed.list")"
   fi

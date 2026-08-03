@@ -1,0 +1,143 @@
+name: Release All Missing (FerretDB v1)
+
+# Build only the FerretDB binaries a release does not already carry.
+#
+# WHY: release-all.yml cross-compiles sixteen platforms sequentially - they are
+# built one at a time on purpose, because sixteen concurrent Go builds risk
+# running the runner out of memory - and then uploads every one with --clobber.
+# When a single platform is missing, or an upload failed, or a run was
+# cancelled, that whole sequence had to run again to produce the one binary that
+# was absent, replacing fifteen others' bytes with identical bytes on the way.
+#
+# HOW: ask the release what it already has, and hand that list to the SAME
+# build.sh release-all.yml runs, as FERRETDB_DIST_SKIP_LIST. build.sh skips
+# those targets and reports them as "have". There is no second copy of the
+# target list here - it stays in build.sh's FERRETDB_DIST_TARGETS, where the
+# ordinary release build reads it too.
+#
+# A platform counts as present only when BOTH ferretdb-<arch>[.exe] and its
+# .sha256sum are on the release. A binary whose checksum upload failed is the
+# half-published state this is meant to repair, so calling it present would
+# leave it that way.
+#
+# Not every platform compiles (an arch modernc.org/sqlite has no port for is
+# skipped), so "missing" means "missing and buildable": a platform that is
+# absent AND does not compile is reported and does not fail the run.
+#
+# Usage:
+#   gh workflow run release-all-missing.yml
+#   gh workflow run release-all-missing.yml -f version=v1.24.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release tag to complete (empty = git describe)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.25.11'
+
+jobs:
+  build-missing:
+    name: build what the release is missing
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # tags, so `git describe` can resolve a version
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Resolve release version
+        id: ver
+        run: |
+          V="${{ inputs.version }}"
+          [ -n "$V" ] || V="$(git describe --tags --always)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "Completing release: $V"
+
+      - name: What the release already has
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$V" >/dev/null 2>&1; then
+            gh release view "$V" --json assets --jq '.assets[].name' | sort > existing.txt
+          else
+            echo "No release $V yet - every platform is missing."
+            : > existing.txt
+          fi
+          n="$(wc -l < existing.txt | tr -d ' ')"
+          echo "$V already carries $n asset(s)."
+          echo "### $V: $n asset(s) already published" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Build only the missing platforms
+        # The same ./build.sh dist-seq the full release runs; the skip list is
+        # the only difference, and build.sh does the comparing.
+        env:
+          FERRETDB_DIST_SKIP_LIST: ${{ github.workspace }}/existing.txt
+        run: ./build.sh dist-seq
+
+      - name: Checksum the binaries this run produced
+        id: sums
+        run: |
+          set -euo pipefail
+          cd dist
+          shopt -s nullglob
+          n=0
+          for f in ferretdb-*; do
+            case "$f" in *.sha256sum) continue ;; esac
+            sha256sum "$f" > "${f}.sha256sum"
+            n=$((n + 1))
+          done
+          echo "built=$n" >> "$GITHUB_OUTPUT"
+          echo "Checksummed $n new binaries."
+          # Zero is a legitimate outcome here, unlike in release-all.yml where it
+          # means the build produced nothing: it means the release was already
+          # complete. build.sh writes a README.md into dist/ either way, which is
+          # why this counts ferretdb-* rather than everything in the directory.
+
+      - name: Upload what was missing, and say what was filled in
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          # Only the binaries and their checksums - NOT build.sh's README.md,
+          # which the full release attaches and which is not missing.
+          assets=( dist/ferretdb-* )
+
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::notice::$V is already complete - nothing to build."
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Nothing was missing. The release is complete." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # No --clobber: everything here was absent from the release, so an
+          # upload that would overwrite something means the release changed
+          # under this run, which is worth failing on rather than quietly
+          # replacing a neighbour's bytes.
+          if gh release view "$V" >/dev/null 2>&1; then
+            gh release upload "$V" "${assets[@]}"
+          else
+            gh release create "$V" "${assets[@]}" --title "$V" \
+              --notes "FerretDB v1 (SQLite) per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Added ${#assets[@]} file(s):" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "${assets[@]#dist/}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "Added ${#assets[@]} file(s) to $V."

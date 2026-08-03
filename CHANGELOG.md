@@ -2,6 +2,30 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **A release can be completed without rebuilding it.** `release-all.yml`
+  cross-compiles sixteen platforms one at a time — sequentially on purpose,
+  because sixteen concurrent Go builds risk running the runner out of memory —
+  and then uploads every binary with `--clobber`. When one platform was missing,
+  an upload had failed, or a run was cancelled, the only way to get that one
+  binary was to run the whole sequence again, replacing fifteen other platforms'
+  bytes with identical bytes on the way. `release-all-missing.yml` beside it asks
+  the release what it already carries and builds only the gap. It does not carry
+  a second copy of the target list: it passes that list to the same
+  `./build.sh dist-seq` the full release runs, as `FERRETDB_DIST_SKIP_LIST`, and
+  `build.sh` skips those targets and reports them as `have`. A platform counts as
+  present only when BOTH `ferretdb-<arch>[.exe]` and its `.sha256sum` are there,
+  so a binary whose checksum upload failed is rebuilt rather than left half
+  published; and because not every platform compiles, "missing" means "missing
+  and buildable" — one that is absent and has no port is reported, not fatal.
+  Nothing to build is a notice, not a failure. Verified against a seeded release
+  with a stub compiler: of sixteen targets, two complete ones were kept, the one
+  whose checksum was absent was rebuilt, the one that does not compile was
+  reported, and the other thirteen were built by @xet7. Thanks to xet7.
+
 ## [v1.44.0](https://github.com/wekan/FerretDB/releases/tag/v1.44.0) (2026-08-03)
 
 ### Other Changes 🤖
