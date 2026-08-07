@@ -1,0 +1,32 @@
+# Keep Git LFS out of this repository.
+#
+# LFS in a fork network is billed to the ROOT repository's owner - here
+# FerretDB/FerretDB, not wekan - and that budget is exhausted, so a single LFS
+# pointer is enough to break `git clone` for everyone while leaving CI green:
+# actions/checkout does not smudge LFS unless asked to, which is exactly why the
+# releases kept building while clones failed. This job is the check that fails
+# in the commit that causes it instead.
+#
+# It relies on that same default: NO `lfs: true` below. An LFS-smudging checkout
+# would replace pointers with their contents and the guard would find nothing.
+
+name: No Git LFS
+
+on:
+  push:
+    branches: [main-v1]
+  pull_request:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  no-lfs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (without smudging LFS - see above)
+        uses: actions/checkout@v4
+
+      - name: No LFS pointers, no lfs filter, no .lfsconfig
+        run: ./.github/scripts/no-lfs.sh

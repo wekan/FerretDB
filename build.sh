@@ -6,6 +6,7 @@
 #   ./build.sh              # interactive menu
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
 #   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
+#   ./build.sh no-lfs                  # fail if anything is stored in Git LFS (also part of lint)
 #   ./build.sh dist                    # build all per-arch binaries, sequential (default)
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
@@ -423,7 +424,15 @@ act_test_all() {
   info "All FerretDB tests passed (unit, vet, integration). Logs: $logdir/"
 }
 
+act_no_lfs() {
+  # Repository hygiene, not Go: this fork stores nothing in Git LFS, because an
+  # LFS budget in a fork network is upstream's and one pointer breaks every
+  # clone. The script explains the rest.
+  "$ROOT/.github/scripts/no-lfs.sh"
+}
+
 act_lint() {
+  act_no_lfs || return 1
   go_env
   # -composites=false, or this stage reports nothing usable.
   #
@@ -743,6 +752,7 @@ case "${1:-}" in
   test-one)   shift; act_test_one "${1:-}" "${2:-par}" ;;
   unit)       act_unit ;;
   lint)       act_lint ;;
+  no-lfs)     act_no_lfs ;;
   docker)     act_docker ;;
   clean)      act_clean ;;
   goenv)      act_goenv ;;

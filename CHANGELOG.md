@@ -22,6 +22,32 @@
   pointer named, so the bytes are the same bytes. A clone now checks out with no
   LFS involvement at all by @xet7. Thanks to xet7.
 
+### Other Changes 🤖
+
+- **Git LFS cannot come back unnoticed.** The fix above is one `.gitattributes`
+  line away from being undone, and the ways it comes back are all quiet: a merge
+  from upstream, a `git lfs track`, an editor that runs `git lfs install` before
+  pasting in an image. The commit that does it looks fine to its author and to
+  CI — `actions/checkout` does not smudge LFS unless asked to, which is exactly
+  why the release workflows kept building green while `git clone` was failing
+  for everyone else — and the breakage surfaces in a stranger's clone days
+  later. `.github/workflows/no-lfs.yml` runs `.github/scripts/no-lfs.sh` on
+  every push and pull request, and it fails on three things: a tracked file that
+  is an LFS pointer, a `.gitattributes` that routes a pattern through the lfs
+  filter, and a committed `.lfsconfig`. The pointer check reads each tracked
+  file's first line rather than running `git grep -I`, because a path whose
+  `diff` attribute is unset counts as binary to grep and `-I` skips it — so the
+  day someone writes the usual `*.png binary` macro, a grep-based guard stops
+  looking at precisely the paths a pointer appears on. That is verified, not
+  assumed: with `*.png binary` in place, `git grep -I` misses a pointer this
+  check still finds. Only files of 1 KiB or less are opened, so the script and
+  the workflow, which both quote the pointer's magic string, are not false
+  positives by size rather than by an exception someone has to maintain. A
+  commented-out `filter=lfs` line is inert and allowed; an untracked scratch
+  file is not the repository's problem and is ignored. It runs locally too, as
+  `./build.sh no-lfs` and as part of `./build.sh lint` and menu entry 8, by
+  @xet7. Thanks to xet7.
+
 ## [v1.45.0](https://github.com/wekan/FerretDB/releases/tag/v1.45.0) (2026-08-04)
 
 ### Other Changes 🤖
