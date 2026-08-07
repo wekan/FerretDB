@@ -396,8 +396,35 @@ act_test_all() {
   # set when WeKan's build.sh is driving this, so one run shares one directory.
   local logdir="${WEKAN_LOGDIR:-}"
   if [ -z "$logdir" ]; then
-    # $ROOT is wekan/FerretDB, so ../../log is the ../log/ WeKan writes to.
-    logdir="$ROOT/../../log/$(date '+%Y-%m-%d_%H-%M-%S')"
+    # Find the WeKan checkout that holds this clone, rather than counting ../.
+    # This repo used to sit at wekan/FerretDB, so "$ROOT/../../log" was WeKan's
+    # ../log/; it lives in wekan/.tools/FerretDB now, where the same string means
+    # wekan/log instead - a standalone run would have quietly written its logs
+    # somewhere no other test run looks. Walking up until a WeKan checkout is
+    # recognised (a .meteor directory beside a build.sh) keeps working wherever
+    # the companion repos are kept next.
+    local wekan_dir="" d="$ROOT"
+    local _i
+    for _i in 1 2 3 4 5; do
+      d="$(cd "$d/.." 2>/dev/null && pwd)" || break
+      [ -n "$d" ] || break
+      if [ -d "$d/.meteor" ] && [ -f "$d/build.sh" ]; then wekan_dir="$d"; break; fi
+    done
+    local stamp
+    stamp="$(date '+%Y-%m-%d_%H-%M-%S')"
+    if [ -n "$wekan_dir" ]; then
+      # The same rule WeKan's own build.sh uses: ../log next to the checkout when
+      # that is writable, otherwise log/ inside it (a Flatpak sandbox shares only
+      # the repository). Both are places "check the newest test logs" looks.
+      if mkdir -p "$wekan_dir/../log" 2>/dev/null && [ -w "$wekan_dir/../log" ]; then
+        logdir="$wekan_dir/../log/$stamp"
+      else
+        logdir="$wekan_dir/log/$stamp"
+      fi
+    else
+      # Not inside a WeKan checkout at all: keep the logs with this repo.
+      logdir="$ROOT/tmp/log/$stamp"
+    fi
   fi
   mkdir -p "$logdir" 2>/dev/null || logdir="$ROOT/tmp"
   logdir="$(cd "$logdir" && pwd)"
