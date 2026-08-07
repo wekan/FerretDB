@@ -2,6 +2,26 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Cloning the repository works again without a Git LFS budget.** A plain
+  `git clone git@github.com:wekan/FerretDB` transferred all 37315 objects and
+  then failed its checkout — `Smudge error: ... This repository exceeded its LFS
+  budget` — leaving a clone with no working tree unless the caller knew to set
+  `GIT_LFS_SKIP_SMUDGE=1`. The whole of that was ONE file: `.gitattributes` sent
+  every `*.jpg`, `*.jpeg`, `*.png`, `*.webp` and `*.gif` through LFS, and the
+  only image this fork carries is `docs/img/docs/aggregation-stages.jpg`, 150 KB
+  of documentation picture that no build, test or WeKan use of the fork reads.
+  Paying an LFS bill, and making every clone depend on that bill still being
+  paid, to store 150 KB is the wrong trade for a fork that ships no docs site.
+  The five patterns keep `-text`, so the images stay binary to Git and get no
+  end-of-line conversion, but they no longer name a filter; the image itself is
+  committed as an ordinary blob whose sha256 is the `0380eb1f...` oid the LFS
+  pointer named, so the bytes are the same bytes. A clone now checks out with no
+  LFS involvement at all by @xet7. Thanks to xet7.
+
 ## [v1.45.0](https://github.com/wekan/FerretDB/releases/tag/v1.45.0) (2026-08-04)
 
 ### Other Changes 🤖
