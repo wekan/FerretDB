@@ -24,6 +24,23 @@
 
 ### Other Changes 🤖
 
+- **Its test logs go where WeKan's do, wherever this clone is kept.** This repo
+  is cloned inside a WeKan checkout so that "check the newest test logs" is one
+  directory for everything, and `build.sh` got there with `$ROOT/../../log` -
+  correct while the clone sat at `wekan/FerretDB`. WeKan keeps its companion
+  repos in `wekan/.tools/` now, and from `wekan/.tools/FerretDB` that same
+  string means `wekan/log`: one level short of the `../log/` every other test
+  run writes to, so a standalone `./build.sh test-all` would have scattered its
+  logs somewhere nothing looks. It walks up until it recognises a WeKan checkout
+  - a `.meteor` directory beside a `build.sh` - and then applies WeKan's own
+  rule: `../log` next to the checkout when that is writable, otherwise `log/`
+  inside it, which is what a Flatpak sandbox sharing only the repository gets.
+  Outside a checkout the logs stay with this repo, in `tmp/log`, and
+  `WEKAN_LOGDIR` still wins over all of it so a run driven by WeKan shares that
+  run's directory. Verified against five layouts with the resolution logic
+  extracted: the new `.tools` path, the old one, a non-writable parent, a clone
+  outside any checkout, and `WEKAN_LOGDIR` set by @xet7. Thanks to xet7.
+
 - **Git LFS cannot come back unnoticed.** The fix above is one `.gitattributes`
   line away from being undone, and the ways it comes back are all quiet: a merge
   from upstream, a `git lfs track`, an editor that runs `git lfs install` before
