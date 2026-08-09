@@ -204,8 +204,9 @@ var (
 // refusing rather than executing.
 //
 // The refusal is LOGGED at error level with a "SECURITY:" prefix and the
-// statement, because that line is the only evidence such a thing happened. WeKan
-// surfaces it in Admin Panel / Problems.
+// statement, because that line is the only evidence such a thing happened. The
+// error also carries a canary marker, so the client can surface the attempt to
+// its operator (internal/util/canary).
 func (db *DB) guard(ctx context.Context, query string) error {
 	err := sqlguard.Check(db.dialect, query)
 	if err == nil {

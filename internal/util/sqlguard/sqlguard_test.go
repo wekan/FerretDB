@@ -73,7 +73,7 @@ func TestCheckRefusesInjection(t *testing.T) {
 		"MissingParen":    {PostgreSQL, `SELECT * FROM "t" WHERE (a = 1`},
 		// The exact shapes the mysql index path used to allow.
 		"IndexKeyBreakout": {MySQL, "ALTER TABLE `db`.`t` ADD COLUMN a VARCHAR(255) GENERATED ALWAYS AS ((_ferretdb_sjson->'$.a')); DROP TABLE users; --')) STORED"},
-		"IdentBreakout":    {MySQL, "INSERT INTO `db`.`t`; DROP DATABASE wekan; --` (_ferretdb_sjson) VALUES (?)"},
+		"IdentBreakout":    {MySQL, "INSERT INTO `db`.`t`; DROP DATABASE app; --` (_ferretdb_sjson) VALUES (?)"},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {

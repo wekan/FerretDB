@@ -31,7 +31,7 @@ var hostile = []string{
 	`a'); DROP TABLE users; --`,
 	"a`); DROP TABLE users; --",
 	`a')) STORED, ADD COLUMN pwned VARCHAR(1) GENERATED ALWAYS AS (('x`,
-	`"; DROP DATABASE wekan; --`,
+	`"; DROP DATABASE app; --`,
 	`x' OR '1'='1`,
 	`x\'; DROP TABLE t; --`,
 	`../../etc/passwd`,

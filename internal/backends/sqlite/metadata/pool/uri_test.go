@@ -218,7 +218,7 @@ func TestSetDefaultValues(t *testing.T) {
 		// A write transaction takes the write lock at BEGIN, so a contended
 		// writer waits on the busy handler instead of failing outright with
 		// SQLITE_BUSY - which busy_timeout cannot help with for a DEFERRED
-		// transaction whose snapshot went stale (wekan/wekan#6533).
+		// transaction whose snapshot went stale (#6533).
 		assert.Equal(t, "immediate", v.Get("_txlock"))
 	})
 

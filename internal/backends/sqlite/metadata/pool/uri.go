@@ -93,9 +93,9 @@ func setDefaultValues(values url.Values) {
 	// transaction's read snapshot, SQLite fails it with SQLITE_BUSY IMMEDIATELY -
 	// the busy handler is not called for that case, because waiting could not
 	// help a snapshot that is already stale. So `busy_timeout(30000)` did nothing
-	// for it, and a concurrent WeKan reported "database is locked (5)
+	// for it, and a concurrent client reported "database is locked (5)
 	// (SQLITE_BUSY)" out of UpdateAll under load however long the timeout was
-	// (wekan/wekan#6533).
+	// (#6533).
 	//
 	// With `immediate`, BEGIN itself asks for the write lock, which IS covered by
 	// the busy handler: a contended writer waits its turn instead of failing.

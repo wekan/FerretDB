@@ -23,7 +23,8 @@
 // It is deliberately NOT a SQL parser. It answers one question: does this
 // statement contain something that could only have come from data escaping its
 // quotes? A statement that trips it is REFUSED, not repaired, and the reason is
-// logged so it is visible - in WeKan, in Admin Panel / Problems / Security.
+// marked so it is visible: the client reads the marker off the error and shows
+// the attempt to its operator (internal/util/canary).
 //
 // False positives matter here, so the checks are narrow: they look at what is
 // OUTSIDE quoted literals and quoted identifiers, where nothing user-provided
@@ -39,7 +40,17 @@ import (
 // ErrSuspicious is returned for a statement that looks like it carries injected
 // SQL. It is a bug in FerretDB (or an attack that reached one), never something a
 // client should be able to cause.
-var ErrSuspicious = errors.New("statement rejected by the SQL guard")
+//
+// The message carries the canary marker (internal/util/canary), so the refusal
+// does not stop at this process's log: the client reads the marker off the error
+// and records the attempt, with the account and the address, where an operator
+// will see it. Refusing without telling anybody is how an attack that reached
+// here goes unnoticed for a month.
+//
+// The marker is written out rather than composed from canary.Marker so this
+// package keeps its "no dependencies but the standard library" shape; the test
+// asserts the two agree.
+var ErrSuspicious = errors.New("statement rejected by the SQL guard (canary:db.sql-injection)")
 
 // Dialect selects the quoting rules to read the statement with.
 type Dialect int

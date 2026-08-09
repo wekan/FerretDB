@@ -244,7 +244,7 @@ func TestInWithNullUsesIndex(t *testing.T) {
 	_, err = r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
 	require.NoError(t, err)
 
-	// The Mongo-level index WeKan declares on boardId (built as an expression index
+	// The Mongo-level index the client declares on boardId (built as an expression index
 	// on _ferretdb_sjson->"boardId", the same expression the WHERE references).
 	require.NoError(t, r.indexesCreate(ctx, dbName, collectionName, []IndexInfo{{
 		Name: "boardId",
@@ -305,7 +305,7 @@ func TestDottedPathEqualityUsesIndex(t *testing.T) {
 	_, err = r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
 	require.NoError(t, err)
 
-	// The nested index WeKan declares on the denormalized attachment key.
+	// The nested index the client declares on the denormalized attachment key.
 	require.NoError(t, r.indexesCreate(ctx, dbName, collectionName, []IndexInfo{{
 		Name: "meta_cardId",
 		Key:  []IndexKeyPair{{Field: "meta.cardId"}},
