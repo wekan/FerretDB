@@ -111,7 +111,7 @@ jobs:
           # ferretdb-amd64.sha256sum, and only the first is a platform.
           present="$(ls dist | grep -v '\.sha256sum$' \
             | sed -n 's#^ferretdb-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
-          order="amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-arm64"
+          order="amd64 arm64 armhf armv6 armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-arm64"
           plats=""
           for a in $order; do
             printf '%s\n' "$present" | grep -qx "$a" && plats="${plats:+$plats, }$a"

@@ -6,7 +6,7 @@ name: Docker (from release binaries)
 # binaries are already built, buildx just repackages the right one per target
 # into a FROM scratch image, with NO QEMU. Only the Linux ferretdb-<arch> assets
 # are downloaded, so the platform list covers every Linux platform in the release
-# (amd64, arm64, armhf, armel, i386, ppc64le, s390x, riscv64, loong64).
+# (amd64, arm64, armhf, armv6, armel, i386, ppc64le, s390x, riscv64, loong64).
 #
 # Registry credentials are the SAME base64("username:token") secrets as wekan/wekan:
 #   DOCKERHUB_AUTH   Docker Hub
@@ -59,7 +59,7 @@ jobs:
           # name, so ferretdb-amd64 does not match ferretdb-mac-amd64). Missing
           # arches are tolerated: whatever is present defines the platform list.
           mkdir -p dist
-          for a in amd64 arm64 armhf armel i386 ppc64le s390x riscv64 loong64; do
+          for a in amd64 arm64 armhf armv6 armel i386 ppc64le s390x riscv64 loong64; do
             gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
               -p "ferretdb-$a" -D dist --clobber 2>/dev/null || true
           done
@@ -72,6 +72,7 @@ jobs:
             amd64)   echo linux/amd64 ;;
             arm64)   echo linux/arm64 ;;
             armhf)   echo linux/arm/v7 ;;
+            armv6)   echo linux/arm/v6 ;;
             armel)   echo linux/arm/v5 ;;
             i386)    echo linux/386 ;;
             ppc64le) echo linux/ppc64le ;;

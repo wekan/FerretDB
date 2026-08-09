@@ -178,6 +178,10 @@ FERRETDB_DIST_TARGETS=(
   "amd64 linux amd64 "
   "arm64 linux arm64 "
   "armhf linux arm 7"
+  # ARMv6, hard-float: Raspberry Pi 1 and Zero. GOARM=6 uses the VFPv2 the
+  # hardware has; armel below is GOARM=5 and would RUN on these boards but in
+  # software floating point, so it is not a substitute.
+  "armv6 linux arm 6"
   "armel linux arm 5"
   "i386 linux 386 "
   "ppc64le linux ppc64le "
