@@ -76,6 +76,7 @@ func pushdownSafeString(s string) bool {
 //   - no regex metacharacters (so the literal means itself, not a pattern), and
 //   - no LIKE wildcards `%`/`_` (so we need no ESCAPE clause), and
 //   - pushdownSafeString (so the -> JSON serialization is byte-identical).
+//
 // The Go filter still re-applies the real regex, so this only ever prunes rows
 // SQLite can prove cannot match \u2014 never the authority on what does.
 func pushdownSafeLiteralSubstring(s string) bool {
@@ -124,8 +125,24 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	var args []any
 
 	for _, k := range filter.Keys() {
-		// $-operator top-level keys (e.g. $or) stay in the Go filter.
-		if k == "" || strings.HasPrefix(k, "$") {
+		if k == "" {
+			continue
+		}
+
+		// A top-level $-operator is not a field. Most stay in the Go filter, but
+		// $or is worth pushing down when it can be: a selector whose only
+		// SELECTIVE terms sit inside one - a membership test ORed over several
+		// ways of belonging, say, beside a non-selective `archived = false` -
+		// otherwise produces a WHERE that narrows nothing, and every row is
+		// decoded and filtered in Go to return a handful.
+		if strings.HasPrefix(k, "$") {
+			if k == "$or" {
+				if cond, condArgs, ok := pushdownOrCondition(must.NotFail(filter.Get(k))); ok {
+					conds = append(conds, cond)
+					args = append(args, condArgs...)
+				}
+			}
+
 			continue
 		}
 
@@ -157,6 +174,74 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	}
 
 	return ` WHERE ` + strings.Join(conds, ` AND `), args
+}
+
+// pushdownOrCondition pushes down a top-level $or, but ONLY when every branch
+// can be pushed down.
+//
+// This is the one place the "superset" contract needs care. Every other pushdown
+// narrows: a condition that cannot be expressed is dropped, the WHERE returns
+// more rows than match, and the Go filter removes the rest. An OR is the
+// opposite - dropping one branch REMOVES rows that match it, and the Go filter
+// never sees them. So it is all or nothing: if a single branch is not
+// pushdown-able, the whole $or stays in Go, exactly as before.
+//
+// Each branch is a document of field conditions, ANDed together, and the
+// branches are ORed. A branch that is empty matches everything, which makes the
+// whole $or match everything - there is nothing to gain and it is refused.
+func pushdownOrCondition(v any) (string, []any, bool) {
+	branches, ok := v.(*types.Array)
+	if !ok || branches.Len() == 0 {
+		return "", nil, false
+	}
+
+	var ors []string
+	var args []any
+
+	for i := 0; i < branches.Len(); i++ {
+		branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+		if !ok || branch.Len() == 0 {
+			return "", nil, false
+		}
+
+		var ands []string
+
+		for _, k := range branch.Keys() {
+			// A nested operator inside a branch ($and, another $or, …) is not a
+			// field condition; refuse the whole $or rather than lose the branch.
+			if k == "" || strings.HasPrefix(k, "$") {
+				return "", nil, false
+			}
+
+			bv := must.NotFail(branch.Get(k))
+			expr := jsonPathExpr(k)
+
+			var cond string
+			var condArgs []any
+			var condOK bool
+
+			if strings.ContainsRune(k, '.') {
+				cond, condArgs, condOK = pushdownDottedFieldCondition(expr, bv)
+			} else {
+				cond, condArgs, condOK = pushdownFieldCondition(expr, k, bv)
+			}
+
+			if !condOK {
+				return "", nil, false
+			}
+
+			ands = append(ands, cond)
+			args = append(args, condArgs...)
+		}
+
+		if len(ands) == 0 {
+			return "", nil, false
+		}
+
+		ors = append(ors, `(`+strings.Join(ands, ` AND `)+`)`)
+	}
+
+	return `(` + strings.Join(ors, ` OR `) + `)`, args, true
 }
 
 // pushdownFieldCondition returns a WHERE condition (and its args) selecting a

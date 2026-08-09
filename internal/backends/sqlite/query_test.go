@@ -133,6 +133,66 @@ func TestPrepareWhereClause(t *testing.T) {
 		"EmptyFilter": {
 			filter: must.NotFail(types.NewDocument()),
 		},
+		// ── $or ─────────────────────────────────────────────────────────────
+		//
+		// A selector whose only SELECTIVE terms sit inside an $or - membership
+		// ORed over several ways of belonging, beside a non-selective
+		// `archived = false` - used to produce a WHERE that narrowed nothing,
+		// so every row was decoded and filtered in Go to return a handful.
+		"OrPushedDownWhenEveryBranchCan": {
+			filter: must.NotFail(types.NewDocument(
+				"archived", false,
+				"$or", must.NotFail(types.NewArray(
+					must.NotFail(types.NewDocument("permission", "public")),
+					must.NotFail(types.NewDocument("members.userId", "u1")),
+				)),
+			)),
+			expectWhere: ` WHERE (` +
+				`(` + arrayArm("permission") + `)` +
+				` OR ` +
+				`(` + fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`,
+				metadata.DefaultColumn+`->"members"->"userId"`) + `)` +
+				`)`,
+			expectArgs: []any{`"public"`, `"u1"`},
+		},
+
+		// ALL OR NOTHING. Every other pushdown narrows: a condition that cannot
+		// be expressed is dropped and the Go filter removes the extra rows. An
+		// OR is the opposite - dropping a branch REMOVES rows that match it, and
+		// the Go filter never sees them. So one unpushable branch means the whole
+		// $or stays in Go.
+		"OrNotPushedDownWhenOneBranchCannotBe": {
+			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("permission", "public")),
+				// $ne has no pushdown: "not this value" over a JSON column is not
+				// a condition this builder can express as a superset.
+				must.NotFail(types.NewDocument("title", must.NotFail(types.NewDocument("$ne", "x")))),
+			)))),
+		},
+		"OrNotPushedDownWithNestedOperatorBranch": {
+			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("permission", "public")),
+				must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray()))),
+			)))),
+		},
+		"OrNotPushedDownWhenABranchIsEmpty": {
+			// An empty branch matches everything, so the $or matches everything:
+			// there is nothing to gain and a WHERE would be wrong to narrow.
+			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("permission", "public")),
+				must.NotFail(types.NewDocument()),
+			)))),
+		},
+		"EmptyOrIsNotPushedDown": {
+			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray()))),
+		},
+		"OtherTopLevelOperatorsStillStayInGo": {
+			// $and, $nor and the rest are unchanged: only $or learned this.
+			filter: must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("permission", "public")),
+			)))),
+		},
+
 		"IDString": {
 			// _id can never be an array, so plain equality — matching the
 			// unique _id expression index.

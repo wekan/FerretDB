@@ -87,6 +87,78 @@ func TestCappedCollectionInsertAllQueryExplain(t *testing.T) {
 	})
 }
 
+// TestQueryOrPushdown verifies end-to-end that a top-level $or is pushed down
+// CORRECTLY, which for an OR means one thing above all: NOTHING THAT MATCHES IS
+// LOST. Every other pushdown narrows, and the Go filter removes whatever extra
+// the SQL let through; an OR that drops a branch removes rows the Go filter
+// never sees. Query applies ONLY the pushdown WHERE, so what comes back here is
+// exactly what the clause selected.
+func TestQueryOrPushdown(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := NewBackend(&NewBackendParams{URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+
+	cName := testutil.CollectionName(t)
+	coll, err := db.Collection(cName)
+	require.NoError(t, err)
+
+	// Three documents, each matching a different branch, and one matching none.
+	docs := []*types.Document{
+		must.NotFail(types.NewDocument("_id", "public-board", "permission", "public", "owner", "ann")),
+		must.NotFail(types.NewDocument("_id", "anns-board", "permission", "private", "owner", "ann")),
+		must.NotFail(types.NewDocument("_id", "bobs-board", "permission", "private", "owner", "bob")),
+	}
+
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: docs})
+	require.NoError(t, err)
+
+	// The shape this exists for: the selective terms are inside the $or.
+	filter := must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+		must.NotFail(types.NewDocument("permission", "public")),
+		must.NotFail(types.NewDocument("owner", "ann")),
+	))))
+
+	res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+	require.NoError(t, err)
+
+	got := map[string]struct{}{}
+
+	for {
+		_, doc, err := res.Iter.Next()
+		if err != nil {
+			break
+		}
+
+		id, _ := must.NotFail(doc.Get("_id")).(string)
+		got[id] = struct{}{}
+	}
+
+	res.Iter.Close()
+
+	// BOTH branches' matches come back. If either were dropped, one of these is
+	// missing and the query silently returns fewer boards than the user has.
+	assert.Contains(t, got, "public-board", "the permission branch must not be lost")
+	assert.Contains(t, got, "anns-board", "the owner branch must not be lost")
+
+	// And the clause really narrowed: a document matching NEITHER branch is not
+	// returned, which is what makes this worth pushing down at all.
+	assert.NotContains(t, got, "bobs-board", "the clause must exclude non-matches")
+
+	explainRes, err := coll.Explain(ctx, &backends.ExplainParams{Filter: filter})
+	require.NoError(t, err)
+	assert.True(t, explainRes.FilterPushdown, "the $or must be reported as pushed down")
+}
+
 // TestQueryRangePushdownDates verifies end-to-end that a date range filter is
 // pushed down to SQLite CORRECTLY: the collection's Query applies ONLY the
 // pushdown WHERE (the Go filter runs later in the handler), so its result set is
