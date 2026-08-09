@@ -2,6 +2,33 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **A top-level `$or` is pushed down to SQL when every branch can be.** Every
+  top-level `$`-key was skipped when building the WHERE clause, so a selector
+  whose only SELECTIVE terms sit inside an `$or` produced a clause that narrowed
+  nothing: SQLite returned the rows and every one was decoded and filtered in Go
+  to return a handful. That is the shape of the client's "which boards may this
+  user see" query, and the worst possible one for it — `archived = false` and
+  `type = 'board'` push down and match nearly everything, while the membership
+  clauses that actually select stayed in Go. On an instance with ten thousand
+  boards where a user belongs to five, that decoded ten thousand documents to
+  return five, on every board-list load. It is **all or nothing**, and that is
+  the whole subtlety: every other pushdown NARROWS, so a condition that cannot
+  be expressed is dropped and the Go filter removes the extra rows — but an OR
+  that drops a branch REMOVES rows that match it, and the Go filter never sees
+  them, so the query silently returns fewer documents than match. One unpushable
+  branch therefore refuses the whole `$or`, as does a branch carrying a nested
+  operator (`$and`, another `$or`) and an empty branch, which would match
+  everything anyway. When every branch pushes down, ORing them is still a
+  superset, because each branch's SQL is a superset of that branch's matches.
+  Tested both ways: a table test pins the clause and the four cases that must
+  NOT push down, and `TestQueryOrPushdown` proves end-to-end that both branches'
+  matches come back — if either were dropped it fails — and that a document
+  matching neither is excluded by @xet7. Thanks to xet7.
+
 ## [v1.47.0](https://github.com/wekan/FerretDB/releases/tag/v1.47.0) (2026-08-09)
 
 ### New Features 🎉
