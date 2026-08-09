@@ -2,6 +2,34 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **An armv6 binary is built, with `GOARM=6`, for Raspberry Pi 1 and Zero.**
+  `armel` is `GOARM=5` and WOULD run on an ARMv6 board, which is exactly why it
+  looks like a substitute and is not one: `GOARM=5` does floating point in
+  software, while these boards have VFPv2 and `GOARM=6` uses it. `armel` stays
+  where it belongs, on genuine ARMv5. The release asset order lists `armv6`
+  beside `armhf`, and `docker.yml` maps it to the `linux/arm/v6` platform — the
+  OCI variant that matches, next to `armhf`'s `linux/arm/v7` and `armel`'s
+  `linux/arm/v5`. This is the FerretDB half of an ARMv6 bundle for the client;
+  the part that was actually missing there is Node.js, which nobody publishes
+  for ARMv6 any more, so the client's own Node.js patch repository gained an
+  armv6 target in the same pass by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **The roadmap says what the build actually targets.** It claimed
+  "cross-compile 9+ Linux arches without QEMU", which was true when it was
+  written and is now
+  both stale and vague. It lists the **seventeen** targets: ten Linux (`amd64`,
+  `arm64`, `armhf` at `GOARM=7`, `armv6` at `GOARM=6`, `armel` at `GOARM=5`,
+  `i386`, `ppc64le`, `s390x`, `riscv64`, `loong64`), three Windows, two macOS
+  and two FreeBSD — and notes that the ten Linux ones are also the platforms of
+  the `FROM scratch` multi-arch image, which is why that image reaches CPUs an
+  image built on a Debian base cannot by @xet7. Thanks to xet7.
+
 ## [v1.48.0](https://github.com/wekan/FerretDB/releases/tag/v1.48.0) (2026-08-09)
 
 ### Fixed 🐛

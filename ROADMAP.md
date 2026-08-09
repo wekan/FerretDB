@@ -323,8 +323,12 @@ reporter loop never started (no phone-home); default log level lowered to `error
 modernc SQLite bumped (embedded SQLite 3.46.0 → 3.53.2); interactive `build.sh`
 menu (build/run/test/vet/docker/release); `release-all.yml` + split `docker.yml`
 multi-arch publishing (Docker Hub/Quay/GHCR); per-arch `ferretdb-<arch>` binary
-assets; cross-compile 9+ Linux arches without QEMU; a `docker-compose.yml` running
-WeKan on FerretDB SQLite.
+assets; **seventeen** cross-compiled targets without QEMU — ten Linux (`amd64`,
+`arm64`, `armhf` GOARM=7, `armv6` GOARM=6 for Raspberry Pi 1 and Zero, `armel`
+GOARM=5, `i386`, `ppc64le`, `s390x`, `riscv64`, `loong64`), three Windows
+(`win64`, `win-arm64`, `win32`), two macOS and two FreeBSD — of which the ten
+Linux ones also become platforms of the `FROM scratch` multi-arch image; a
+`docker-compose.yml` running WeKan on FerretDB SQLite.
 
 ---
 
