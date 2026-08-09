@@ -2,6 +2,57 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **Operations the client never issues are marked, so the operator sees them
+  tried.** This database is reached over a local socket by one application,
+  whose driver is a Meteor 3 one. That makes a class of operations interesting
+  by their mere presence: server-side JavaScript evaluation (`eval`, `$where`,
+  `$function`, `$accumulator`, `mapReduce`), an aggregation writing its result
+  into a collection (`$out`, `$merge`), dropping a database, and the commands
+  that manage the server rather than the data (`shutdown`, `setParameter`,
+  `logRotate`). The driver does not send any of them, so a request that does is
+  either a bug or somebody who has reached the socket and is looking around, and
+  both are worth telling the operator about. The new `internal/util/canary`
+  refuses them with the ordinary *"operation not supported by this build"* — the
+  same answer an unimplemented command gets — and appends `canary:<id>`, which
+  the client reads off the error and records with the account and the address
+  that sent it. Nothing in the message says anything was detected, so a probe
+  cannot tell a watched operation from an unimplemented one and route around the
+  watched ones; a test asserts the refusal contains none of *detect*, *record*,
+  *log* or *alert*. The package **writes nothing** — no file, no table, no
+  counter — so a caller hammering it in a loop costs one string comparison per
+  request and this package no memory at all, which is what "FerretDB does not
+  write to any database or file" means for canaries. Seven tests cover it,
+  including that the ordinary vocabulary (`find`, `insert`, `aggregate`,
+  `$match`, `$group`, `$lookup`) does NOT trip: a canary that fires on normal
+  traffic is worse than no canary, because it buries the real ones by @xet7.
+  Thanks to xet7.
+
+- **The SQL guard's refusals reach the operator instead of a log file.** It
+  already refused a statement carrying what only injection produces, and logged
+  it at error level with a `SECURITY:` prefix — but a line in this process's log
+  is not somewhere anybody looks, so an attack that reached a statement builder
+  could go unnoticed for a month. Its error now carries the same
+  `canary:db.sql-injection` marker, so the attempt is recorded where an operator
+  will see it. A test pins that the marker the guard writes and the one the
+  canary package parses are the same string; they are deliberately not shared in
+  code, so that package keeps its standard-library-only shape by @xet7. Thanks
+  to xet7.
+
+### Other Changes 🤖
+
+- **No source file names the application any more.** Five `.go` files carried
+  it: the SQL guard's and `fsql`'s comments about where a refusal is surfaced,
+  the SQLite pool's comment about a concurrent client, and two registry test
+  comments about which indexes are declared. They say "the client" now. The two
+  `wekan/wekan#6533` references became a bare `#6533`, and two test payloads
+  that dropped a database by that name now drop `app`. This fork is a general
+  MongoDB-compatible database; a reader of any file in it should not have to
+  know which application prompted the change by @xet7. Thanks to xet7.
+
 ## [v1.46.0](https://github.com/wekan/FerretDB/releases/tag/v1.46.0) (2026-08-08)
 
 ### Fixed 🐛
