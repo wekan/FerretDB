@@ -2,6 +2,24 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **A collection name that is not a string stays an error, and a BSON symbol
+  still does not decode.** MongoDB's
+  [CVE-2026-18690](https://hellorecon.com/blog/cve-2026-18690-mongodb-symbol-type-authz-bypass)
+  is an authorization bypass built out of one line: `parseNsFromCommand` returned
+  the DATABASE namespace when the first element of a command was not a `String`,
+  so a name sent as a BSON **symbol** (tag `0x0E`, a string in everything but its
+  tag) was authorized against the database while execution read the symbol
+  anyway and opened the real collection. FerretDB is not affected, for three
+  independent reasons - the wire decoder refuses tag `0x0E` outright
+  (`unsupported tag Symbol`), `GetRequiredParam[string]` returns an error rather
+  than falling back to a narrower namespace, and there is no per-namespace
+  authorization phase here to disagree with execution. The first two are code,
+  and code changes, so a test now pins them by @xet7. Thanks to xet7.
+
 ## [v1.50.0](https://github.com/wekan/FerretDB/releases/tag/v1.50.0) (2026-08-12)
 
 ### Fixed 🐛

@@ -21,6 +21,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/FerretDB/FerretDB/internal/handler/handlerparams"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
 func TestMultiplyLongSafely(t *testing.T) {
@@ -90,4 +92,63 @@ func TestMultiplyLongSafely(t *testing.T) {
 			assert.Equal(t, tc.expected, actualRes)
 		})
 	}
+}
+
+// TestGetRequiredParamRejectsNonString is about a whole class of bug rather than
+// one input: a collection name that is NOT a string must be an ERROR, never a
+// quietly narrower namespace.
+//
+// MongoDB's CVE-2026-18690 is what that costs. Its CommandHelpers::parseNsFromCommand
+// read the first element of a command and, when it was not a String, returned
+// the DATABASE namespace instead of the collection one:
+//
+//	if (first.type() != mongo::String)
+//	    return NamespaceString(dbName);
+//
+// A BSON symbol (tag 0x0E, deprecated, and a string in everything but its tag)
+// therefore authorized against the database - which ordinary users may hold -
+// while execution called valueStringData(), which reads symbols and strings
+// alike, and operated on the real collection. Protected system collections
+// became reachable.
+//
+// Neither half of that exists here, and this pins both:
+//
+//   - a non-string parameter is an error, so there is no narrower namespace to
+//     fall back to and nothing that authorizes against one;
+//   - the wire decoder (wirebson) refuses tag 0x0E outright ("unsupported tag"),
+//     so a symbol never reaches a command handler at all.
+//
+// FerretDB also has no per-namespace authorization phase to disagree with
+// execution - `authorizedCollections` is an ignored parameter - so there are
+// three independent reasons this cannot happen. The first two are code, and
+// code changes; hence the test.
+func TestGetRequiredParamRejectsNonString(t *testing.T) {
+	t.Parallel()
+
+	for name, value := range map[string]any{
+		"int32":    int32(42),
+		"int64":    int64(42),
+		"float64":  42.0,
+		"bool":     true,
+		"null":     types.Null,
+		"document": must.NotFail(types.NewDocument("collection", "system.users")),
+		"array":    must.NotFail(types.NewArray("system.users")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			doc := must.NotFail(types.NewDocument("find", value))
+
+			res, err := GetRequiredParam[string](doc, "find")
+			assert.Empty(t, res, "a rejected parameter must not yield a usable name")
+			assert.Error(t, err, "a non-string collection name is an error, not a database-wide fallback")
+			assert.Contains(t, err.Error(), `required parameter "find" has type`)
+		})
+	}
+
+	// The one that is accepted, so the test above is not passing vacuously.
+	doc := must.NotFail(types.NewDocument("find", "system.users"))
+	res, err := GetRequiredParam[string](doc, "find")
+	assert.NoError(t, err)
+	assert.Equal(t, "system.users", res)
 }
