@@ -2,6 +2,32 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **A leftover OpLog is no longer written to when no replica set is configured.**
+  Whether a mutation gets copied into capped `local.oplog.rs`, and whether that
+  collection may be created, were decided by two different questions, and after a
+  reconfiguration they disagreed. The OpLog decorator asks only whether the
+  collection EXISTS; `ensureOplog()` asks whether a replica-set name is set, and
+  returns early without one — and `replSetInitiate` calls that same function, so
+  a server started with no replica-set name can never create the collection
+  itself. Start once WITH `--repl-set-name`, then take it away and restart, and
+  every insert, update and delete went on being copied into the collection left
+  behind, for as long as the deployment lived. Nothing could read those copies:
+  with no replica-set name `hello` advertises no replica set, so a client's OpLog
+  tailing cannot connect and falls back to poll-and-diff. It also cost a
+  `ListCollections` on `local` per mutation, on top of the write. Reported on the
+  SQLite backend: 3277 documents and 9 MiB of OpLog inside a 22 MiB `local.sqlite`,
+  still growing by about ten documents a minute, with nothing tailing it. The two
+  gates are now the same one — with no replica-set name the decorator is not
+  installed at all, which also removes the per-mutation `ListCollections`.
+  Stopping the writes is this server's decision to make; deleting somebody's
+  collection is not, so an existing one is left on disk untouched and starts
+  being used again as soon as a replica-set name is configured by @xet7.
+  Thanks to xet7.
+
 ## [v1.49.0](https://github.com/wekan/FerretDB/releases/tag/v1.49.0) (2026-08-10)
 
 ### New Features 🎉

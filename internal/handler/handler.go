@@ -133,7 +133,36 @@ func New(opts *NewOpts) (*Handler, error) {
 		opts.TTLCleanupInterval = 60 * time.Second
 	}
 
-	b := oplog.NewBackend(opts.Backend, logging.WithName(opts.L, "oplog"))
+	// The OpLog decorator records every mutation into capped `local.oplog.rs`, and
+	// it decides whether to do so by asking ONLY whether that collection exists -
+	// see the decorator's oplogCollection(). Creating it, on the other hand, is
+	// gated on a replica-set name being configured: ensureOplog() returns early
+	// without one, and the `replSetInitiate` command calls the same function, so
+	// with no replica-set name this server can never create the collection itself.
+	//
+	// Those two gates disagreeing is a bug that only shows up after a
+	// reconfiguration. Start once with a replica-set name and the collection is
+	// created; remove the name and restart, and the collection is still there, so
+	// every insert, update and delete goes on being copied into it - forever, and
+	// with nothing able to consume it, because without a replica-set name `hello`
+	// advertises no replica set and a driver's OpLog tailing cannot even connect.
+	// It also costs a ListCollections on the `local` database per mutation, on top
+	// of the write itself.
+	//
+	// Reported on the SQLite backend: an instance running without the flag had a
+	// 3277-document, 9 MiB oplog inside a 22 MiB local database, still growing by
+	// about ten documents a minute, with no reader anywhere.
+	//
+	// So gate the two the same way. With no replica-set name there is nothing to
+	// record for and nothing that could read it, and the decorator is not
+	// installed at all - which also removes the per-mutation ListCollections. A
+	// pre-existing collection is left untouched on disk; it simply stops being
+	// written to, and starts being used again as soon as a replica-set name is
+	// configured.
+	b := opts.Backend
+	if opts.ReplSetName != "" {
+		b = oplog.NewBackend(b, logging.WithName(opts.L, "oplog"))
+	}
 
 	h := &Handler{
 		b:        b,
