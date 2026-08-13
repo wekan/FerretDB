@@ -11,7 +11,7 @@
 # is architecture-agnostic.
 
 # build stage — native on $BUILDPLATFORM, cross-compiles for $TARGETPLATFORM
-FROM --platform=$BUILDPLATFORM golang:1.25.11 AS build
+FROM --platform=$BUILDPLATFORM golang:1.25.12 AS build
 
 # Provided automatically by buildx for the target platform.
 ARG TARGETOS

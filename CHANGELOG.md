@@ -6,6 +6,26 @@
 
 ### Other Changes 🤖
 
+- **The Go toolchain and gRPC are raised past their advisories.** A container
+  scan of the published image reads what a Go binary was built with, and
+  `ghcr.io/wekan/ferretdb:latest` reported three fixable findings: the Go
+  1.25.11 standard library ([CVE-2026-39822](https://pkg.go.dev/vuln/GO-2026-5876),
+  [CVE-2026-42505](https://pkg.go.dev/vuln/GO-2026-5877)), both fixed in 1.25.12,
+  and `google.golang.org/grpc` 1.82.0
+  ([GHSA-hrxh-6v49-42gf](https://github.com/advisories/GHSA-hrxh-6v49-42gf)),
+  fixed in 1.82.1. The toolchain is pinned in six places that have to agree -
+  `go.mod`, `integration/go.mod`, the `Dockerfile`, `build.sh` and `GO_VERSION`
+  in both release workflows - and all six move together, or the image and a
+  local build stop being the same build. `golang.org/x/crypto` goes
+  to 0.55.0 with them; its fourth finding,
+  [GO-2026-5932](https://pkg.go.dev/vuln/GO-2026-5932), has no fixed version and
+  needs none here - it is `x/crypto/openpgp` being unmaintained, and nothing in
+  this tree imports it (`pbkdf2` and the `x509roots/fallback` registration are
+  what it uses). Builds and vets clean, and the unit suites pass - all but
+  `internal/backends/postgresql/metadata`, which wants a PostgreSQL on
+  127.0.0.1:5432 and was not run rather than being run and failing by @xet7.
+  Thanks to xet7.
+
 - **A collection name that is not a string stays an error, and a BSON symbol
   still does not decode.** MongoDB's
   [CVE-2026-18690](https://hellorecon.com/blog/cve-2026-18690-mongodb-symbol-type-authz-bypass)
