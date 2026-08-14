@@ -2,6 +2,26 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **The integration module's own requirements follow the toolchain that was
+  raised in v1.51.0.** That release moved the Go toolchain to 1.25.12 and
+  `google.golang.org/grpc` to 1.82.1 in the module that ships, and raised the
+  `go` line in `integration/go.mod` with it - but that module's own requirements
+  were left where they were, so the test module still resolved `grpc` 1.82.0
+  ([GHSA-hrxh-6v49-42gf](https://github.com/advisories/GHSA-hrxh-6v49-42gf)) and
+  `golang.org/x/crypto` 0.53.0: the versions that release says it moved off,
+  fetched again by every build of the tests. They are 1.82.1 and 0.55.0 now,
+  with `x/net`, `x/sync`, `x/sys` and `x/text` following, and both `go.sum`
+  files carry what that resolves to - so a clean checkout builds what this tree
+  builds instead of resolving it again and leaving the lock files modified in
+  every working copy. Nothing that ships changes: this module is the integration
+  tests. `go mod verify` passes in both modules, `go build ./...` is clean in the
+  integration one, and the SQLite integration suite passes by @xet7. Thanks to
+  xet7.
+
 ## [v1.51.0](https://github.com/wekan/FerretDB/releases/tag/v1.51.0) (2026-08-14)
 
 ### Other Changes 🤖
