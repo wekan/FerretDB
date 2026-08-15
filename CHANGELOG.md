@@ -2,6 +2,31 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **`$slice` and `$elemMatch` work in a projection, the same way on every
+  backend.** A database-conformance run that asks each backend the same 100
+  questions had two it could not answer anywhere: `find({}, {tags: {$slice: 1}})`
+  and `find({}, {items: {$elemMatch: {k: "a"}}})` both came back with
+  *projection expression ... is not supported*. It was the same answer from
+  SQLite, PostgreSQL, MySQL and MariaDB because it was never a backend
+  question - the find handler rejected EVERY document-valued projection before
+  a backend was reached. They are implemented once, above the backends, so all
+  four gained them together. `$slice` takes `n` for the first n elements, `-n`
+  for the last n, or `[skip, n]` where a negative skip counts from the end; a
+  field that is not an array comes back as it is. `$elemMatch` returns the FIRST
+  element matching its condition and leaves the field out entirely when nothing
+  matches. The distinction that decides whether the rest of a document survives
+  is that `$slice` is neither an inclusion nor an exclusion - `{tags: {$slice: 1}}`
+  alone returns the WHOLE document with that one array limited, while
+  `$elemMatch` names a field to keep and cannot be mixed with an exclusion. An
+  operator that is still not implemented, `$meta` among them, keeps failing
+  exactly as it did rather than being quietly ignored, and the aggregation
+  `$project` stage is untouched: it has its own projection with its own
+  operators by @xet7. Thanks to xet7.
+
 ## [v1.52.0](https://github.com/wekan/FerretDB/releases/tag/v1.52.0) (2026-08-14)
 
 ### Other Changes 🤖

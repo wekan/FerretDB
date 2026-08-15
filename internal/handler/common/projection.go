@@ -147,10 +147,29 @@ func ValidateProjection(projection *types.Document) (*types.Document, bool, erro
 
 		switch value := value.(type) {
 		case *types.Document:
-			return nil, false, handlererrors.NewCommandErrorMsg(
-				handlererrors.ErrNotImplemented,
-				fmt.Sprintf("projection expression %s is not supported", types.FormatAnyValue(value)),
-			)
+			operator, arg, err := projectionOperator(value)
+			if err != nil {
+				return nil, false, err
+			}
+
+			if err = validateProjectionOperator(operator, arg); err != nil {
+				return nil, false, err
+			}
+
+			validated.Set(key, value)
+
+			if operator == projectionSlice {
+				// `$slice` says nothing about inclusion or exclusion: it limits
+				// one array and leaves every other field to whatever the rest of
+				// the projection decides. `{v: {$slice: 1}}` on its own therefore
+				// returns the WHOLE document with `v` sliced, so it must neither
+				// set `inclusion` nor be compared against it.
+				continue
+			}
+
+			// `$elemMatch` names a field to keep, which is an inclusion.
+			inclusionField = true
+
 		case *types.Array, string, types.Binary, types.ObjectID,
 			time.Time, types.NullType, types.Regex, types.Timestamp: // all these types are treated as new fields value
 			inclusionField = true
@@ -218,6 +237,13 @@ func ValidateProjection(projection *types.Document) (*types.Document, bool, erro
 		}
 	}
 
+	if inclusion == nil {
+		// Every field was a `$slice`, which decides nothing: the result keeps
+		// the whole document with those arrays limited, and that is an exclusion
+		// projection that excludes nothing.
+		return validated, false, nil
+	}
+
 	return validated, *inclusion, nil
 }
 
@@ -244,13 +270,27 @@ func ProjectDocument(doc, projection, filter *types.Document, inclusion bool) (*
 		var set bool
 
 		switch idValue := idValue.(type) {
-		case *types.Document: // field: { $elemMatch: { field2: value }}
-			return nil, handlererrors.NewCommandErrorMsg(
-				handlererrors.ErrCommandNotFound,
-				fmt.Sprintf("projection %s is not supported",
-					types.FormatAnyValue(idValue),
-				),
-			)
+		case *types.Document: // field: { $slice: 2 } or { $elemMatch: { field2: value }}
+			// Validation has already accepted one of the two operators, so this
+			// must apply it rather than refuse it - otherwise a projection that
+			// parsed would fail on the first document it reached. `_id` cannot
+			// hold an array, so in practice `$slice` leaves it as it is and
+			// `$elemMatch` takes it away, which is what applying them says.
+			operator, arg, err := projectionOperator(idValue)
+			if err != nil {
+				return nil, err
+			}
+
+			idPath, err := types.NewPathFromString("_id")
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			if err = applyProjectionOperator(operator, arg, idPath, doc, projected, true); err != nil {
+				return nil, err
+			}
+
+			set = projected.Has("_id")
 
 		case *types.Array, string, types.Binary, types.ObjectID,
 			time.Time, types.NullType, types.Regex, types.Timestamp: // all this types are treated as new fields value
@@ -315,13 +355,15 @@ func projectDocumentWithoutID(doc *types.Document, projection, filter *types.Doc
 		}
 
 		switch value := value.(type) { // found in the projection
-		case *types.Document: // field: { $elemMatch: { field2: value }}
-			return nil, handlererrors.NewCommandErrorMsg(
-				handlererrors.ErrCommandNotFound,
-				fmt.Sprintf("projection %s is not supported",
-					types.FormatAnyValue(value),
-				),
-			)
+		case *types.Document: // field: { $slice: 2 } or { $elemMatch: { field2: value }}
+			operator, arg, err := projectionOperator(value)
+			if err != nil {
+				return nil, err
+			}
+
+			if err = applyProjectionOperator(operator, arg, path, docWithoutID, projected, inclusion); err != nil {
+				return nil, err
+			}
 
 		case *types.Array, string, types.Binary, types.ObjectID,
 			time.Time, types.NullType, types.Regex, types.Timestamp: // all these types are treated as new fields value
