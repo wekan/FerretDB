@@ -158,12 +158,14 @@ func ValidateProjection(projection *types.Document) (*types.Document, bool, erro
 
 			validated.Set(key, value)
 
-			if operator == projectionSlice {
-				// `$slice` says nothing about inclusion or exclusion: it limits
-				// one array and leaves every other field to whatever the rest of
-				// the projection decides. `{v: {$slice: 1}}` on its own therefore
-				// returns the WHOLE document with `v` sliced, so it must neither
-				// set `inclusion` nor be compared against it.
+			if operator == projectionSlice || operator == projectionMeta {
+				// Neither says anything about inclusion or exclusion. `$slice`
+				// limits one array and `$meta` adds a field of its own, and both
+				// leave every other field to whatever the rest of the projection
+				// decides - `{v: {$slice: 1}}` on its own returns the WHOLE
+				// document with `v` sliced, and `{score: {$meta: "textScore"}}`
+				// returns the whole document with a score beside it. So neither
+				// may set `inclusion`, nor be compared against it.
 				continue
 			}
 
@@ -238,9 +240,9 @@ func ValidateProjection(projection *types.Document) (*types.Document, bool, erro
 	}
 
 	if inclusion == nil {
-		// Every field was a `$slice`, which decides nothing: the result keeps
-		// the whole document with those arrays limited, and that is an exclusion
-		// projection that excludes nothing.
+		// Every field was a `$slice` or a `$meta`, which decide nothing: the
+		// result keeps the whole document with those arrays limited and those
+		// values added, and that is an exclusion projection excluding nothing.
 		return validated, false, nil
 	}
 
@@ -286,7 +288,7 @@ func ProjectDocument(doc, projection, filter *types.Document, inclusion bool) (*
 				return nil, lazyerrors.Error(err)
 			}
 
-			if err = applyProjectionOperator(operator, arg, idPath, doc, projected, true); err != nil {
+			if err = applyProjectionOperator(operator, arg, idPath, doc, projected, filter, true); err != nil {
 				return nil, err
 			}
 
@@ -361,7 +363,7 @@ func projectDocumentWithoutID(doc *types.Document, projection, filter *types.Doc
 				return nil, err
 			}
 
-			if err = applyProjectionOperator(operator, arg, path, docWithoutID, projected, inclusion); err != nil {
+			if err = applyProjectionOperator(operator, arg, path, docWithoutID, projected, filter, inclusion); err != nil {
 				return nil, err
 			}
 

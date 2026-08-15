@@ -263,7 +263,27 @@ v1.24.2 BSON API.
 **Query operators**
 - `$elemMatch` document/field form (fixed WeKan board-access returning no boards).
 - `$where` (embedded pure-Go goja JS engine); `$text` (partial self-contained
-  semantics: term/OR/phrase/negation, no stemming/scoring).
+  semantics: term/OR/phrase/negation, no stemming, no text index).
+
+**Projection operators** — found by the conformance harness, which had two of its
+100 cases that no backend could answer
+- `$slice` (`n`, `-n`, `[skip, n]`) and `$elemMatch` (the first matching element,
+  and the field absent when none match). Neither was a backend gap: the find
+  handler refused EVERY document-valued projection before a backend was reached,
+  which is why all four agreed about a limitation none of them had. Implemented
+  once, above the backends, so all four gained them together.
+- `$meta`, with `recordId` (the storage identity every backend already carries on
+  a returned document) and `textScore` (counted from this fork's own `$text`
+  matching, so the order agrees with MongoDB's and the values do not; refused, as
+  MongoDB refuses it, when the query carries no `$text`). `indexKey`, `sortKey`
+  and the three Atlas Search keywords say which they are and why, rather than
+  failing as a typo would.
+- `$slice` and `$meta` are neither an inclusion nor an exclusion, so on their own
+  they return the whole document with the array limited or the value beside it;
+  `$elemMatch` is an inclusion. An operator that is still not implemented keeps
+  its old error rather than being silently ignored, and the aggregation
+  `$project` stage is untouched — it has its own projection with its own
+  operators.
 
 **Aggregation build-out** (v1.25.0)
 - Stages: `$setWindowFields` (rank/position + window accumulators), `$lookup`
@@ -525,8 +545,13 @@ Since 2026-07 there is one more source of evidence, from the other side: WeKan r
 aggregation operator this fork implements — against every backend that has a Docker
 image for the machine it runs on, and compares the answers
 ([`./build.sh` → Tests → All databases](https://github.com/wekan/wekan/blob/main/docs/Databases/FerretDB/1/Conformance.md)).
-On a live SQLite and a live PostgreSQL, **98 of 100 answered identically**; the two
-that did not are `$slice` and `$elemMatch` projections, which neither implements.
+On a live SQLite, PostgreSQL, MySQL and MariaDB, **98 of 100 answered identically**;
+the two that did not were the `$slice` and `$elemMatch` projections, which none of
+them implemented — and which is exactly the point, because it was never a backend
+question: the find handler refused every document-valued projection before a
+backend was reached, so all four agreed about a limitation none of them had. Both
+are implemented now, in that same shared place, together with `$meta`, so the next
+run should read 100.
 That is not the integration suite and does not replace it — it does not look at
 `EXPLAIN` at all — but it is a real client against a real engine, and it is what found
 the missing `$group` accumulators and both MySQL/MariaDB blockers.
@@ -563,8 +588,17 @@ the missing `$group` accumulators and both MySQL/MariaDB blockers.
 | `$and` `$or` `$nor` `$not` | ✅ (`$or`/`$not`) | ✅ | ✅ᴰ |
 | `$expr` | — | ✅ `filterExprOperator` | ✅ᴰ |
 | `$where` (server-side JavaScript) | — | ✅ via embedded goja engine; `this` bound to doc, expression or function form (`filterWhereOperator`) · `query_where_test.go` | ❌ no JS engine in DocumentDB; zero refs in v2 |
-| `$text` | — | ⚠️ partial (`filterTextOperator`): matches `$search` terms against the doc's string fields (recurses into sub-docs/arrays); multi-term OR, case-insensitive whole-word, `$caseSensitive`, quoted phrases, leading `-` negation. No stemming, no scoring, no `$meta:"textScore"`, does not consult the text index · `query_text_test.go` | ✅ᴰ (full-text-search guides) |
+| `$text` | — | ⚠️ partial (`filterTextOperator`): matches `$search` terms against the doc's string fields (recurses into sub-docs/arrays); multi-term OR, case-insensitive whole-word, `$caseSensitive`, quoted phrases, leading `-` negation. No stemming and it does not consult the text index; `$meta:"textScore"` IS produced now, counted from this same matching · `query_text_test.go` | ✅ᴰ (full-text-search guides) |
 | geospatial (`$near` / `$geoWithin` / `2dsphere` query) | — | ❌ | ✅ᴰ (DocumentDB; not sourced in FerretDB/main) |
+| **— Projection operators (`find`) —** | | | |
+| fields, dot notation, `_id` inclusion/exclusion | ✅ | ✅ `common/projection.go` | ✅ᴰ |
+| `$` (positional) | — | ✅ `includeProjection` / `getPositionalProjection` | ✅ᴰ |
+| `$slice` (`n`, `-n`, `[skip, n]`) | — | ✅ `projection_operators.go` — neither an inclusion nor an exclusion, so on its own it returns the whole document with that array limited · `projection_operators_test.go` | ✅ᴰ |
+| `$elemMatch` | — | ✅ the FIRST matching element, and the field absent when none match; an inclusion, so it cannot be mixed with an exclusion · `projection_operators_test.go` | ✅ᴰ |
+| `$meta: "recordId"` | — | ✅ the storage-level identity every backend carries on a returned document | ✅ᴰ |
+| `$meta: "textScore"` | — | ⚠️ counted from this fork's own `$text` matching (term/phrase occurrences), so the ORDER agrees with MongoDB's but the VALUES do not; refused, as MongoDB refuses it, when the query has no `$text` | ✅ᴰ |
+| `$meta: "indexKey"` / `"sortKey"` | — | ❌ the index a query used and its sort keys are not available to the projection | ⚠️ |
+| `$meta: "searchScore"` / `"searchHighlights"` / `"vectorSearchScore"` | — | ❌ Atlas Search and Atlas Vector Search | ❌ |
 | **— Aggregation stages —** | | | |
 | `$match` `$group` `$project` `$sort` `$limit` `$skip` `$unwind` `$addFields` `$set` `$unset` `$count` `$collStats` | ⚙️ [`models/server/metrics.js`](https://github.com/wekan/wekan/blob/main/models/server/metrics.js) | ✅ `stages/…` (map + `init()`-injected) | ✅ᴰ |
 | `$lookup` | ⚙️ (Prometheus "top boards") | ⚠️ basic equality-join only; `pipeline`/`let` sub-form `ErrNotImplemented` · `aggregate_lookup_test.go` | ✅ᴰ (form coverage DocumentDB-determined) |

@@ -27,6 +27,34 @@
   `$project` stage is untouched: it has its own projection with its own
   operators by @xet7. Thanks to xet7.
 
+- **`$meta` answers `recordId` and `textScore`, and says why it cannot answer the
+  rest.** With `$slice` and `$elemMatch` implemented, `$meta` was the last
+  projection operator MongoDB has, and the last one that failed as *not
+  supported*. `recordId` returns the storage-level identity every backend already
+  carries on a document it returns. `textScore` is counted from this fork's own
+  `$text` matching - how many times each positive term occurs as a whole word and
+  each phrase as a substring - so a document matching a term more often scores
+  above one matching it less, which is the property clients sort by; the VALUES
+  will not equal MongoDB's, which scores against a real text index with stemming,
+  field weights and length normalisation that nothing here has. Asking for a text
+  score when the query carries no `$text` is refused the way MongoDB refuses it,
+  rather than answered with a zero. `indexKey` and `sortKey` are not available to
+  a projection, and `searchScore`, `searchHighlights` and `vectorSearchScore`
+  belong to Atlas Search - each says which it is and why, so a keyword that is a
+  gap is told apart from a keyword that is a typo. Like `$slice`, `$meta` is
+  neither an inclusion nor an exclusion: it adds a field and leaves every other
+  one alone by @xet7. Thanks to xet7.
+
+- **The roadmap and the reference say what is supported now.**
+  `docs/reference/supported-commands.md` had all three projection operators as
+  ❌ against upstream issue links; they are ✅ / ⚠️ with a table of the `$meta`
+  keywords beside them, and the `find` `projection` argument no longer says
+  "basic projections with fields". `ROADMAP.md` gains a **Projection operators**
+  block in the fork-work section and eight rows in the compatibility matrix, and
+  its conformance paragraph no longer says two of the hundred cases go
+  unanswered everywhere - it says why they did, which is that the refusal was
+  never in a backend by @xet7. Thanks to xet7.
+
 ## [v1.52.0](https://github.com/wekan/FerretDB/releases/tag/v1.52.0) (2026-08-14)
 
 ### Other Changes 🤖

@@ -371,9 +371,10 @@ func filterWhereOperator(doc *types.Document, filterValue any) (bool, error) {
 // Because the query filter only sees one document at a time (and FerretDB does not
 // build a real inverted/full-text index), matching is performed directly against the
 // document's string fields instead of consulting the collection's text index. In
-// particular there is NO stemming/language processing, NO relevance scoring, and the
-// `$meta: "textScore"` projection is not produced. `$language` and `$diacriticSensitive`
-// are accepted and ignored.
+// particular there is NO stemming/language processing. `$language` and
+// `$diacriticSensitive` are accepted and ignored. A relevance score IS produced,
+// by textSearchScore below, counted from this same matching rather than from an
+// index - see the note there on how far it agrees with MongoDB's.
 //
 // Matching semantics: `$search` is tokenized on whitespace into terms; double-quoted
 // runs are treated as phrases (matched as a contiguous, case-insensitive substring);
@@ -484,6 +485,112 @@ func filterTextOperator(doc *types.Document, filterValue any) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// textSearchScore is the relevance `$meta: "textScore"` reports for a document
+// that filterTextOperator matched, counted from the SAME matching: how many
+// times each positive term occurs as a whole word, and each positive phrase as
+// a substring, across every string in the document.
+//
+// It is this implementation's own number, not MongoDB's. MongoDB scores against
+// a real text index with stemming, field weights and a length normalisation that
+// nothing here has, so the VALUES will not agree; what does agree is the useful
+// property, that a document matching a term more often scores above one matching
+// it less. Callers sort by it far more often than they read it.
+//
+// A matched document always scores above zero, so a client can tell "matched" from
+// "did not match" by the score alone. A $search of only negations, which matches
+// every document it does not exclude, has nothing to count and scores 1.
+func textSearchScore(doc *types.Document, textDoc *types.Document) (float64, error) {
+	searchVal, err := textDoc.Get("$search")
+	if err != nil {
+		return 0, nil
+	}
+
+	search, ok := searchVal.(string)
+	if !ok {
+		return 0, nil
+	}
+
+	caseSensitive := false
+	if v, e := textDoc.Get("$caseSensitive"); e == nil {
+		if b, isBool := v.(bool); isBool {
+			caseSensitive = b
+		}
+	}
+
+	posWords, posPhrases, _, _ := parseTextSearch(search)
+
+	if len(posWords) == 0 && len(posPhrases) == 0 {
+		return 1, nil
+	}
+
+	var texts []string
+	collectStrings(doc, &texts)
+
+	var score float64
+
+	for _, w := range posWords {
+		score += float64(countWord(texts, w, caseSensitive))
+	}
+
+	for _, p := range posPhrases {
+		score += float64(countPhrase(texts, p, caseSensitive))
+	}
+
+	return score, nil
+}
+
+// countWord counts how many times term appears as a whole word across texts.
+// It is containsWord that keeps counting instead of returning at the first hit.
+func countWord(texts []string, term string, caseSensitive bool) int {
+	if term == "" {
+		return 0
+	}
+
+	if !caseSensitive {
+		term = strings.ToLower(term)
+	}
+
+	var n int
+
+	for _, text := range texts {
+		if !caseSensitive {
+			text = strings.ToLower(text)
+		}
+
+		for _, word := range strings.FieldsFunc(text, isTextWordSeparator) {
+			if word == term {
+				n++
+			}
+		}
+	}
+
+	return n
+}
+
+// countPhrase counts how many times phrase appears as a substring across texts.
+// Occurrences are counted without overlapping, as strings.Count does.
+func countPhrase(texts []string, phrase string, caseSensitive bool) int {
+	if phrase == "" {
+		return 0
+	}
+
+	if !caseSensitive {
+		phrase = strings.ToLower(phrase)
+	}
+
+	var n int
+
+	for _, text := range texts {
+		if !caseSensitive {
+			text = strings.ToLower(text)
+		}
+
+		n += strings.Count(text, phrase)
+	}
+
+	return n
 }
 
 // parseTextSearch tokenizes a $text $search string into positive/negative words and

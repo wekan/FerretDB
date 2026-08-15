@@ -477,6 +477,186 @@ func TestProjectionOperatorsConformanceCases(t *testing.T) {
 	})
 }
 
+// TestProjectionMeta covers `{field: {$meta: <keyword>}}`, the last of the three
+// projection operators. Unlike the other two it does not project a field that is
+// there - it ADDS one - so, like `$slice`, it decides neither inclusion nor
+// exclusion and a projection made only of it returns the whole document with the
+// value beside it.
+func TestProjectionMeta(t *testing.T) {
+	t.Parallel()
+
+	textFilter := must.NotFail(types.NewDocument(
+		"$text", must.NotFail(types.NewDocument("$search", "alpha")),
+	))
+
+	t.Run("recordId adds the document's storage identity", func(t *testing.T) {
+		t.Parallel()
+
+		doc := projectionOperatorsDoc()
+		doc.SetRecordID(4242)
+
+		projection := must.NotFail(types.NewDocument(
+			"name", true,
+			"rid", must.NotFail(types.NewDocument("$meta", metaRecordID)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+
+		actual, err := ProjectDocument(doc, validated, new(types.Document), inclusion)
+		require.NoError(t, err)
+		testutil.AssertEqual(t, must.NotFail(types.NewDocument(
+			"_id", int32(1), "name", "alpha", "rid", int64(4242),
+		)), actual)
+	})
+
+	t.Run("alone it keeps every other field", func(t *testing.T) {
+		t.Parallel()
+
+		doc := projectionOperatorsDoc()
+		doc.SetRecordID(7)
+
+		projection := must.NotFail(types.NewDocument(
+			"rid", must.NotFail(types.NewDocument("$meta", metaRecordID)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+		assert.False(t, inclusion, "$meta must not turn the projection into an inclusion")
+
+		actual, err := ProjectDocument(doc, validated, new(types.Document), inclusion)
+		require.NoError(t, err)
+		testutil.AssertEqual(t, must.NotFail(types.NewDocument(
+			"_id", int32(1),
+			"name", "alpha",
+			"tags", must.NotFail(types.NewArray("red", "green", "blue")),
+			"items", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("k", "a", "v", int32(1))),
+				must.NotFail(types.NewDocument("k", "b", "v", int32(5))),
+				must.NotFail(types.NewDocument("k", "a", "v", int32(9))),
+			)),
+			"rid", int64(7),
+		)), actual)
+	})
+
+	t.Run("textScore counts what the $text query matched", func(t *testing.T) {
+		t.Parallel()
+
+		projection := must.NotFail(types.NewDocument(
+			"name", true,
+			"score", must.NotFail(types.NewDocument("$meta", metaTextScore)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+
+		actual, err := ProjectDocument(projectionOperatorsDoc(), validated, textFilter, inclusion)
+		require.NoError(t, err)
+		testutil.AssertEqual(t, must.NotFail(types.NewDocument(
+			"_id", int32(1), "name", "alpha", "score", float64(1),
+		)), actual)
+	})
+
+	t.Run("a term matched more often scores higher", func(t *testing.T) {
+		t.Parallel()
+
+		once := must.NotFail(types.NewDocument("_id", int32(1), "a", "alpha", "b", "beta"))
+		twice := must.NotFail(types.NewDocument("_id", int32(2), "a", "alpha", "b", "alpha"))
+
+		projection := must.NotFail(types.NewDocument(
+			"score", must.NotFail(types.NewDocument("$meta", metaTextScore)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+
+		one, err := ProjectDocument(once, validated, textFilter, inclusion)
+		require.NoError(t, err)
+
+		two, err := ProjectDocument(twice, validated, textFilter, inclusion)
+		require.NoError(t, err)
+
+		// The VALUES are this implementation's own; the ORDER is the part a
+		// client relies on, and the part this pins.
+		assert.Equal(t, float64(1), must.NotFail(one.Get("score")))
+		assert.Equal(t, float64(2), must.NotFail(two.Get("score")))
+	})
+
+	t.Run("textScore without a $text query is refused (negative)", func(t *testing.T) {
+		t.Parallel()
+
+		projection := must.NotFail(types.NewDocument(
+			"score", must.NotFail(types.NewDocument("$meta", metaTextScore)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+
+		_, err = ProjectDocument(projectionOperatorsDoc(), validated, new(types.Document), inclusion)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "query requires text score metadata, but it is not available")
+	})
+
+	t.Run("$text inside a top-level $and is found", func(t *testing.T) {
+		t.Parallel()
+
+		filter := must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+			must.NotFail(types.NewDocument("name", "alpha")),
+			textFilter,
+		))))
+
+		projection := must.NotFail(types.NewDocument(
+			"score", must.NotFail(types.NewDocument("$meta", metaTextScore)),
+		))
+
+		validated, inclusion, err := ValidateProjection(projection)
+		require.NoError(t, err)
+
+		actual, err := ProjectDocument(projectionOperatorsDoc(), validated, filter, inclusion)
+		require.NoError(t, err)
+		assert.Equal(t, float64(1), must.NotFail(actual.Get("score")))
+	})
+
+	t.Run("keywords this handler cannot answer say so (negative)", func(t *testing.T) {
+		t.Parallel()
+
+		for keyword, why := range metaNotImplemented {
+			projection := must.NotFail(types.NewDocument(
+				"v", must.NotFail(types.NewDocument("$meta", keyword)),
+			))
+
+			_, _, err := ValidateProjection(projection)
+			require.Error(t, err, keyword)
+			assert.Contains(t, err.Error(), "$meta "+keyword+" is not supported")
+			assert.Contains(t, err.Error(), why, "and says why")
+		}
+	})
+
+	t.Run("a keyword that does not exist is a different error (negative)", func(t *testing.T) {
+		t.Parallel()
+
+		projection := must.NotFail(types.NewDocument(
+			"v", must.NotFail(types.NewDocument("$meta", "textscore")),
+		))
+
+		_, _, err := ValidateProjection(projection)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported $meta keyword: textscore")
+	})
+
+	t.Run("a non-string argument is refused (negative)", func(t *testing.T) {
+		t.Parallel()
+
+		projection := must.NotFail(types.NewDocument(
+			"v", must.NotFail(types.NewDocument("$meta", int32(1))),
+		))
+
+		_, _, err := ValidateProjection(projection)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "$meta expects a string argument")
+	})
+}
+
 // TestProjectionOperatorStillUnsupported is the other half of the change: an
 // operator this handler does NOT implement must keep failing exactly as it did,
 // rather than being quietly ignored because the value happens to be a document.
@@ -484,15 +664,14 @@ func TestProjectionOperatorStillUnsupported(t *testing.T) {
 	t.Parallel()
 
 	for name, projection := range map[string]*types.Document{
-		"an operator that is not implemented": must.NotFail(types.NewDocument(
-			"v", must.NotFail(types.NewDocument("$meta", "textScore")),
+		"an operator that does not exist": must.NotFail(types.NewDocument(
+			"v", must.NotFail(types.NewDocument("$nope", int32(1))),
 		)),
 		"a plain sub-document": must.NotFail(types.NewDocument(
 			"v", must.NotFail(types.NewDocument("foo", int32(1))),
 		)),
 		"two operators in one value": must.NotFail(types.NewDocument(
-			"v", must.NotFail(types.NewDocument("$slice", int32(1), "$elemMatch",
-				must.NotFail(types.NewDocument("k", "a")))),
+			"v", must.NotFail(types.NewDocument("$slice", int32(1), "$meta", "textScore")),
 		)),
 		"an empty document": must.NotFail(types.NewDocument(
 			"v", new(types.Document),

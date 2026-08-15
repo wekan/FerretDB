@@ -30,7 +30,25 @@ import (
 const (
 	projectionSlice     = "$slice"
 	projectionElemMatch = "$elemMatch"
+	projectionMeta      = "$meta"
 )
+
+// The `$meta` keywords this handler can answer.
+const (
+	metaTextScore = "textScore"
+	metaRecordID  = "recordId"
+)
+
+// The `$meta` keywords MongoDB has that this handler cannot answer, and why.
+// They are told apart from a typo on purpose: "not implemented" is a gap that
+// could be filled, and an unknown keyword is a query to correct.
+var metaNotImplemented = map[string]string{
+	"indexKey":          "the index a query used is not available to the projection",
+	"sortKey":           "sort keys are internal to the query plan",
+	"searchScore":       "it belongs to Atlas Search",
+	"searchHighlights":  "it belongs to Atlas Search",
+	"vectorSearchScore": "it belongs to Atlas Vector Search",
+}
 
 // projectionOperator reports which of the supported operators the projection
 // value is, together with its argument.
@@ -51,11 +69,13 @@ func projectionOperator(value *types.Document) (string, any, error) {
 	}
 
 	key := value.Keys()[0]
-	if key != projectionSlice && key != projectionElemMatch {
+
+	switch key {
+	case projectionSlice, projectionElemMatch, projectionMeta:
+		return key, must.NotFail(value.Get(key)), nil
+	default:
 		return "", nil, notSupported
 	}
-
-	return key, must.NotFail(value.Get(key)), nil
 }
 
 // validateProjectionOperator checks the operator's argument, so a bad one is
@@ -80,6 +100,34 @@ func validateProjectionOperator(operator string, arg any) error {
 		}
 
 		return nil
+
+	case projectionMeta:
+		keyword, ok := arg.(string)
+		if !ok {
+			return handlererrors.NewCommandErrorMsgWithArgument(
+				handlererrors.ErrBadValue,
+				"$meta expects a string argument",
+				"projection",
+			)
+		}
+
+		switch keyword {
+		case metaTextScore, metaRecordID:
+			return nil
+		}
+
+		if why, known := metaNotImplemented[keyword]; known {
+			return handlererrors.NewCommandErrorMsg(
+				handlererrors.ErrNotImplemented,
+				fmt.Sprintf("$meta %s is not supported: %s", keyword, why),
+			)
+		}
+
+		return handlererrors.NewCommandErrorMsgWithArgument(
+			handlererrors.ErrBadValue,
+			fmt.Sprintf("unsupported $meta keyword: %s", keyword),
+			"projection",
+		)
 
 	default:
 		panic(fmt.Sprintf("unhandled projection operator %q", operator))
@@ -236,9 +284,20 @@ func elemMatchProjection(arr *types.Array, cond *types.Document) (*types.Array, 
 // exclusion nature already decided, which is what MongoDB does: `$slice` on a
 // field that is not an array returns the field unchanged, and both operators on
 // a field that is not there return nothing.
-func applyProjectionOperator(operator string, arg any, path types.Path, source, projected *types.Document,
+func applyProjectionOperator(operator string, arg any, path types.Path, source, projected, filter *types.Document,
 	inclusion bool,
 ) error {
+	if operator == projectionMeta {
+		// `$meta` does not project a field, it ADDS one - so unlike the other
+		// two it does not care whether the path is on the document.
+		meta, err := metaValue(arg.(string), source, filter)
+		if err != nil {
+			return err
+		}
+
+		return projected.SetByPath(path, meta)
+	}
+
 	value, err := source.GetByPath(path)
 	if err != nil {
 		// The field is not on this document. An exclusion projection has
@@ -294,6 +353,77 @@ func applyProjectionOperator(operator string, arg any, path types.Path, source, 
 	default:
 		panic(fmt.Sprintf("unhandled projection operator %q", operator))
 	}
+}
+
+// metaValue computes the value `$meta: <keyword>` adds to a document.
+//
+// Validation has already refused every keyword that is not one of these two, so
+// reaching this with another one is a bug rather than user input.
+func metaValue(keyword string, doc, filter *types.Document) (any, error) {
+	switch keyword {
+	case metaRecordID:
+		// The storage-level identity of the document, which every backend
+		// carries on the documents it returns.
+		return doc.RecordID(), nil
+
+	case metaTextScore:
+		textDoc := textFilterDoc(filter)
+		if textDoc == nil {
+			// The same refusal MongoDB gives: a score can only come from a text
+			// search, so asking for one without a $text query is a query to fix
+			// rather than a zero to return.
+			return nil, handlererrors.NewCommandErrorMsgWithArgument(
+				handlererrors.ErrBadValue,
+				"query requires text score metadata, but it is not available",
+				"projection",
+			)
+		}
+
+		return textSearchScore(doc, textDoc)
+
+	default:
+		panic(fmt.Sprintf("unhandled $meta keyword %q", keyword))
+	}
+}
+
+// textFilterDoc finds the `$text` clause of a query, or nil when it has none.
+//
+// `$text` may only be at the top level of a query, and inside a top-level `$and`
+// - which is where a driver that combines conditions puts it - so both are
+// looked at and nothing deeper is.
+func textFilterDoc(filter *types.Document) *types.Document {
+	if filter == nil {
+		return nil
+	}
+
+	if v, err := filter.Get("$text"); err == nil {
+		if doc, ok := v.(*types.Document); ok {
+			return doc
+		}
+	}
+
+	v, err := filter.Get("$and")
+	if err != nil {
+		return nil
+	}
+
+	arr, ok := v.(*types.Array)
+	if !ok {
+		return nil
+	}
+
+	for i := range arr.Len() {
+		clause, ok := must.NotFail(arr.Get(i)).(*types.Document)
+		if !ok {
+			continue
+		}
+
+		if doc := textFilterDoc(clause); doc != nil {
+			return doc
+		}
+	}
+
+	return nil
 }
 
 // removeByPath removes the field at path when it is there, and does nothing

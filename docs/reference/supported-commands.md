@@ -43,7 +43,7 @@ replacement, comparable to FerretDB v2 (PostgreSQL).
 | `find`          |                            | ✅     | Basic command is fully supported                          |
 |                 | `filter`                   | ✅     |                                                           |
 |                 | `sort`                     | ✅     |                                                           |
-|                 | `projection`               | ✅     | Basic projections with fields are supported               |
+|                 | `projection`               | ✅     | Fields, dot notation, and the `$`, `$slice`, `$elemMatch` and `$meta` operators |
 |                 | `hint`                     | ⚠️     | Ignored                                                   |
 |                 | `skip`                     | ⚠️     |                                                           |
 |                 | `limit`                    | ✅     |                                                           |
@@ -140,9 +140,29 @@ The following operators are available in the `find` command `projection` argumen
 | Operator     | Status | Comments                                                  |
 | ------------ | ------ | --------------------------------------------------------- |
 | `$`          | ✅️    |                                                           |
-| `$elemMatch` | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1710) |
-| `$meta`      | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1712) |
-| `$slice`     | ❌     | [Issue](https://github.com/FerretDB/FerretDB/issues/1711) |
+| `$elemMatch` | ✅️    | The first matching element; the field is absent when none match |
+| `$meta`      | ⚠️     | `recordId` and `textScore`; see below                     |
+| `$slice`     | ✅️    | `n`, `-n` and `[skip, n]`                                 |
+
+All four are implemented once, in the handler above the backends, so every
+backend answers them the same way.
+
+`$slice` and `$meta` are neither an inclusion nor an exclusion: on their own they
+return the whole document, with the array limited or the value added beside it.
+`$elemMatch` names a field to keep, so it is an inclusion and cannot be mixed
+with an exclusion.
+
+`$meta` answers two keywords:
+
+| Keyword             | Status | Comments                                                        |
+| ------------------- | ------ | --------------------------------------------------------------- |
+| `recordId`          | ✅️    | The storage-level identity of the document                       |
+| `textScore`         | ⚠️     | Counted from this fork's own `$text` matching, so the ORDER matches MongoDB's but the VALUES do not. Refused, as MongoDB refuses it, when the query has no `$text` |
+| `indexKey`          | ❌     | The index a query used is not available to the projection        |
+| `sortKey`           | ❌     | Internal to the query plan                                       |
+| `searchScore`       | ❌     | Atlas Search                                                     |
+| `searchHighlights`  | ❌     | Atlas Search                                                     |
+| `vectorSearchScore` | ❌     | Atlas Vector Search                                              |
 
 ## Query Plan Cache Commands
 
