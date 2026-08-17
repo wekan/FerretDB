@@ -159,6 +159,71 @@ func TestQueryOrPushdown(t *testing.T) {
 	assert.True(t, explainRes.FilterPushdown, "the $or must be reported as pushed down")
 }
 
+// TestQueryElemMatchPushdown verifies that all pushed predicates are applied to
+// one array element. A document with the requested values split across two
+// elements must not pass the SQLite WHERE clause.
+func TestQueryElemMatchPushdown(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	docs := []*types.Document{
+		must.NotFail(types.NewDocument(
+			"_id", "same-element",
+			"members", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("userId", "u1", "isActive", true)),
+			)),
+		)),
+		must.NotFail(types.NewDocument(
+			"_id", "split-elements",
+			"members", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("userId", "u1", "isActive", false)),
+				must.NotFail(types.NewDocument("userId", "u2", "isActive", true)),
+			)),
+		)),
+	}
+
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: docs})
+	require.NoError(t, err)
+
+	filter := must.NotFail(types.NewDocument(
+		"members", must.NotFail(types.NewDocument(
+			"$elemMatch", must.NotFail(types.NewDocument("userId", "u1", "isActive", true)),
+		)),
+	))
+	res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+	require.NoError(t, err)
+	defer res.Iter.Close()
+
+	var ids []string
+	for {
+		_, doc, nextErr := res.Iter.Next()
+		if nextErr != nil {
+			break
+		}
+		ids = append(ids, must.NotFail(doc.Get("_id")).(string))
+	}
+
+	assert.Equal(t, []string{"same-element"}, ids)
+
+	explainRes, err := coll.Explain(ctx, &backends.ExplainParams{Filter: filter})
+	require.NoError(t, err)
+	assert.True(t, explainRes.FilterPushdown)
+}
+
 // TestQueryRangePushdownDates verifies end-to-end that a date range filter is
 // pushed down to SQLite CORRECTLY: the collection's Query applies ONLY the
 // pushdown WHERE (the Go filter runs later in the handler), so its result set is

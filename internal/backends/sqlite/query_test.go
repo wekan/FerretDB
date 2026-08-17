@@ -16,6 +16,7 @@ package sqlite
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,16 @@ func TestPrepareWhereClause(t *testing.T) {
 	}
 	arrayArm := func(field string) string {
 		return fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr(field))
+	}
+	elemMatch := func(field string, conditions ...string) string {
+		fieldExpr := expr(field)
+		return fmt.Sprintf(
+			`(json_type(%[1]s) = 'array' AND EXISTS (`+
+				`SELECT 1 FROM json_each(%[1]s) AS element `+
+				`WHERE json_type(element.value) = 'object' AND %s))`,
+			fieldExpr,
+			strings.Join(conditions, " AND "),
+		)
 	}
 	scalarExpr := func(field string) string {
 		return fmt.Sprintf(`%s->>%q`, metadata.DefaultColumn, field)
@@ -240,6 +251,36 @@ func TestPrepareWhereClause(t *testing.T) {
 			// Go-JSON escapes '<' as \u003c; SQLite's -> renders it raw — a
 			// pushed comparison would wrongly exclude the matching document.
 			filter: must.NotFail(types.NewDocument("title", "a<b")),
+		},
+
+		// --- document-form $elemMatch ---
+		"ElemMatchEqualityPushed": {
+			filter: must.NotFail(types.NewDocument("members", must.NotFail(types.NewDocument(
+				"$elemMatch", must.NotFail(types.NewDocument("userId", "u1", "isActive", true)),
+			)))),
+			expectWhere: ` WHERE ` + elemMatch("members",
+				`(element.value->"userId" = ? OR (element.value->"userId" >= '[' AND element.value->"userId" < '\'))`,
+				`(element.value->"isActive" = ? OR (element.value->"isActive" >= '[' AND element.value->"isActive" < '\'))`,
+			),
+			expectArgs: []any{`"u1"`, `true`},
+		},
+		"ElemMatchInPushed": {
+			filter: must.NotFail(types.NewDocument("teams", must.NotFail(types.NewDocument(
+				"$elemMatch", must.NotFail(types.NewDocument(
+					"teamId", must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("t1", "t2")))),
+					"isActive", true,
+				)),
+			)))),
+			expectWhere: ` WHERE ` + elemMatch("teams",
+				`(element.value->"teamId" IN (?, ?) OR (element.value->"teamId" >= '[' AND element.value->"teamId" < '\'))`,
+				`(element.value->"isActive" = ? OR (element.value->"isActive" >= '[' AND element.value->"isActive" < '\'))`,
+			),
+			expectArgs: []any{`"t1"`, `"t2"`, `true`},
+		},
+		"ElemMatchUnsupportedInnerConditionStaysInGo": {
+			filter: must.NotFail(types.NewDocument("members", must.NotFail(types.NewDocument(
+				"$elemMatch", must.NotFail(types.NewDocument("score", must.NotFail(types.NewDocument("$gt", int32(2))))),
+			)))),
 		},
 
 		// --- $in (a list filter {field: {$in: [...]}}) ---

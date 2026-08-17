@@ -249,7 +249,7 @@ func pushdownOrCondition(v any) (string, []any, bool) {
 // pushed down (the Go filter then stays the sole authority for that field).
 //
 // Handled: scalar string/ObjectID equality, {$in: [...safe...]} (an $in list
-// filter) and {$regex: literal} (a substring filter). Everything else —
+// filter), document-form {$elemMatch: {...}}, and {$regex: literal} (a substring filter). Everything else —
 // ranges ($gt/$lte/…, unsafe on JSON-text ordering), $ne, non-ASCII or
 // non-literal regex, unsafe values — stays in Go.
 func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {
@@ -358,6 +358,14 @@ func regexCondition(expr, pattern, options string) (string, []any, bool) {
 // a SUPERSET of any ONE of them is a valid superset of the whole expression —
 // coexisting operators ($ne, $nin, $options, …) do not make this unsafe.
 func operatorCondition(expr, key string, doc *types.Document) (string, []any, bool) {
+	if elemAny, err := doc.Get("$elemMatch"); err == nil {
+		if elemDoc, ok := elemAny.(*types.Document); ok {
+			if cond, condArgs, ok := elemMatchCondition(expr, elemDoc); ok {
+				return cond, condArgs, true
+			}
+		}
+	}
+
 	if inAny, err := doc.Get("$in"); err == nil {
 		if arr, ok := inAny.(*types.Array); ok {
 			if cond, condArgs, ok := inCondition(expr, key, arr); ok {
@@ -391,6 +399,69 @@ func operatorCondition(expr, key string, doc *types.Document) (string, []any, bo
 	scalarExpr := fmt.Sprintf(`%s->>%s`, metadata.DefaultColumn, quoteJSONLabel(key))
 
 	return rangeConditions(scalarExpr, doc)
+}
+
+// elemMatchCondition pushes the document form of $elemMatch when every inner
+// field can be represented as a safe equality or $in condition. json_each keeps
+// all predicates on the same array element, which is the defining $elemMatch
+// rule. The regular Go filter remains authoritative, so the array-containment
+// arms in equalityCondition may admit extra candidates but can never lose a
+// real match.
+func elemMatchCondition(expr string, doc *types.Document) (string, []any, bool) {
+	if doc.Len() == 0 {
+		return "", nil, false
+	}
+
+	var conditions []string
+	var args []any
+
+	for _, key := range doc.Keys() {
+		if key == "" || strings.HasPrefix(key, "$") || strings.ContainsRune(key, '.') {
+			return "", nil, false
+		}
+
+		value := must.NotFail(doc.Get(key))
+		innerExpr := fmt.Sprintf(`element.value->%s`, quoteJSONLabel(key))
+
+		var condition string
+		var conditionArgs []any
+		var ok bool
+
+		switch typed := value.(type) {
+		case string:
+			if !pushdownSafeString(typed) {
+				return "", nil, false
+			}
+			condition = equalityCondition(innerExpr, "")
+			conditionArgs = []any{marshalPushdownValue(value)}
+			ok = true
+		case types.ObjectID, bool:
+			condition = equalityCondition(innerExpr, "")
+			conditionArgs = []any{marshalPushdownValue(value)}
+			ok = true
+		case *types.Document:
+			if inAny, err := typed.Get("$in"); err == nil {
+				if arr, isArray := inAny.(*types.Array); isArray {
+					condition, conditionArgs, ok = inCondition(innerExpr, "", arr)
+				}
+			}
+		}
+
+		if !ok {
+			return "", nil, false
+		}
+
+		conditions = append(conditions, condition)
+		args = append(args, conditionArgs...)
+	}
+
+	return fmt.Sprintf(
+		`(json_type(%[1]s) = 'array' AND EXISTS (`+
+			`SELECT 1 FROM json_each(%[1]s) AS element `+
+			`WHERE json_type(element.value) = 'object' AND %s))`,
+		expr,
+		strings.Join(conditions, " AND "),
+	), args, true
 }
 
 // rangeConditions pushes numeric/date range operators ($gt/$gte/$lt/$lte) using

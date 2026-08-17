@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **SQLite pushes document-form `$elemMatch` selectors into `json_each`.** Safe
+  equality and `$in` predicates are now evaluated inside one correlated
+  `EXISTS`, preserving the rule that every condition must match the same array
+  element. This lets membership selectors narrow rows in SQLite before the Go
+  filter rechecks them, while unsupported, dotted or unsafe inner conditions
+  remain entirely in Go. Unit tests cover equality, `$in`, booleans and refused
+  operators; an end-to-end backend test proves values split across two elements
+  do not match by @xet7. Thanks to xet7.
+
 ## [v1.53.0](https://github.com/wekan/FerretDB/releases/tag/v1.53.0) (2026-08-15)
 
 ### New Features 🎉
