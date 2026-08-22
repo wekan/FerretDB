@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **The local test runner generates version metadata before unit packages load.**
+  Unit tests imported `build/version` while `version.txt` still described an older
+  checkout, so package initialization panicked before the tests could run even
+  though vet and SQLite integration passed. `act_unit` now runs the same version
+  generator used by local and release builds first. Standalone test logs also go
+  to the parent WeKan checkout under `.tools/log`, matching runs driven by WeKan,
+  instead of the removed sibling or repository `log` paths by . Thanks to
+  xet7.
+
 ## [v1.54.0](https://github.com/wekan/FerretDB/releases/tag/v1.54.0) (2026-08-17)
 
 ### Fixed 🐛

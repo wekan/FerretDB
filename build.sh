@@ -374,6 +374,10 @@ act_test_one() {
 
 act_unit() {
   go_env
+  # Unit packages import build/version during init, so version metadata must
+  # match the current checkout just as it does for local and release builds.
+  info "Generating version info (build/version) ..."
+  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
   # The ferretdb_debug build tag enables the debug-only assertions that some unit
   # tests require (e.g. TestCheckError asserts debugbuild.Enabled); it is the tag
   # FerretDB's own `task test-unit` builds with.
@@ -394,9 +398,8 @@ act_unit() {
 act_test_all() {
   go_env
 
-  # ../log/<datetime>/ - the same place every WeKan test run writes, because
-  # FerretDB is a subdirectory of the wekan repo and an admin looking for "the
-  # newest test logs" should find all of them in one directory. WEKAN_LOGDIR is
+  # .tools/log/<datetime>/ - the same place every WeKan test run writes, so an
+  # admin looking for the newest test logs finds all stages in one directory. WEKAN_LOGDIR is
   # set when WeKan's build.sh is driving this, so one run shares one directory.
   local logdir="${WEKAN_LOGDIR:-}"
   if [ -z "$logdir" ]; then
@@ -417,14 +420,8 @@ act_test_all() {
     local stamp
     stamp="$(date '+%Y-%m-%d_%H-%M-%S')"
     if [ -n "$wekan_dir" ]; then
-      # The same rule WeKan's own build.sh uses: ../log next to the checkout when
-      # that is writable, otherwise log/ inside it (a Flatpak sandbox shares only
-      # the repository). Both are places "check the newest test logs" looks.
-      if mkdir -p "$wekan_dir/../log" 2>/dev/null && [ -w "$wekan_dir/../log" ]; then
-        logdir="$wekan_dir/../log/$stamp"
-      else
-        logdir="$wekan_dir/log/$stamp"
-      fi
+      # Keep standalone FerretDB runs beside every other WeKan test run.
+      logdir="$wekan_dir/.tools/log/$stamp"
     else
       # Not inside a WeKan checkout at all: keep the logs with this repo.
       logdir="$ROOT/tmp/log/$stamp"
