@@ -4,6 +4,19 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- **The tools module no longer resolves a PKCS#12 decoder with an authentication
+  bypass.** `software.sslmate.com/src/go-pkcs12` is updated from 0.7.1 to 0.7.2,
+  fixing
+  [GHSA-mpwr-8vm7-h73f](https://github.com/advisories/GHSA-mpwr-8vm7-h73f)
+  ([GO-2026-5052](https://pkg.go.dev/vuln/GO-2026-5052)). Versions from 0.6.0
+  through 0.7.1 could accept a PKCS#12 file encoded with the wrong password when
+  a PBMAC1 key was excessively short. The dependency is pulled in through
+  nfpm and go-msix. Module checksums verify, the dependency graph resolves only
+  0.7.2, and the patched package tests pass by @xet7. Thanks to Pavol Žáčik,
+  Alex Gaynor and xet7.
+
 ### Other Changes 🤖
 
 - **GitHub Actions move to their current major releases.**
@@ -38,6 +51,42 @@
   [PR #6](https://github.com/wekan/FerretDB/pull/6) updates Citus, Prettier,
   textlint, Wrangler, Jaeger, the legacy Mongo shell, markdownlint, MongoDB,
   MySQL, PostgreSQL and Trivy images by @xet7. Thanks to xet7.
+
+- **The tools module updates jsonparser from 1.1.2 to 1.6.1.**
+  [PR #7](https://github.com/wekan/FerretDB/pull/7) refreshes the indirect JSON
+  parser used by the tools dependency graph by @xet7. Thanks to xet7.
+
+- **The tools module updates CIRCL from 1.6.3 to 1.6.5.**
+  [PR #8](https://github.com/wekan/FerretDB/pull/8) refreshes the indirect
+  Cloudflare cryptographic library used by the tools dependency graph by
+  @xet7. Thanks to xet7.
+
+- **The tools module updates go-billy from 5.9.0 to 5.9.1.**
+  [PR #9](https://github.com/wekan/FerretDB/pull/9) refreshes the filesystem
+  abstraction used by go-git in the tools dependency graph by @xet7. Thanks to
+  xet7.
+
+- **The tools module updates go-git from 5.19.1 to 5.19.2.**
+  [PR #10](https://github.com/wekan/FerretDB/pull/10) refreshes the Git client
+  used by release and maintenance tooling by @xet7. Thanks to xet7.
+
+- **The lint tools update mapstructure from 2.2.1 to 2.4.0.**
+  [PR #11](https://github.com/wekan/FerretDB/pull/11) refreshes the indirect
+  configuration decoder used by golangci-lint by @xet7. Thanks to xet7.
+
+- **The main module updates the MongoDB Go driver from 2.2.2 to 2.4.2.**
+  [PR #12](https://github.com/wekan/FerretDB/pull/12) refreshes the driver used
+  by FerretDB and its resolved indirect dependencies by @xet7. Thanks to xet7.
+
+- **The tools module updates kin-openapi from 0.142.0 to 0.144.0.**
+  [PR #13](https://github.com/wekan/FerretDB/pull/13) refreshes the OpenAPI
+  implementation used by the tools dependency graph by @xet7. Thanks to xet7.
+
+- **Non-interactive build.sh calls without a command fail instead of looping.**
+  [PR #14](https://github.com/wekan/FerretDB/pull/14) detects whether standard
+  input is a terminal before opening the menu. CodeQL autobuild and other
+  unattended callers now receive an explanatory exit status 2 instead of an
+  endless read loop by @xet7. Thanks to xet7.
 
 ## [v1.55.0](https://github.com/wekan/FerretDB/releases/tag/v1.55.0) (2026-08-23)
 
