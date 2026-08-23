@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **FerretDB v1 builds against its compatible wire protocol library again.**
+  The dependency batch in
+  [PR #3](https://github.com/wekan/FerretDB/pull/3) updated
+  `github.com/FerretDB/wire` from 0.0.8 to 0.1.7, but the newer library removed
+  `Document.GetByIndex`, `OpMsg.RawSection0`, section metadata and
+  `wire.CheckNaNs` that the v1 BSON and handler code still uses. Root and
+  integration modules now retain wire 0.0.8 while keeping the compatible
+  dependency updates. Module graphs are tidy, handler tests pass and the
+  FerretDB binary builds by @xet7. Thanks to xet7.
+
 - **The tools module no longer resolves a PKCS#12 decoder with an authentication
   bypass.** `software.sslmate.com/src/go-pkcs12` is updated from 0.7.1 to 0.7.2,
   fixing
@@ -30,9 +40,8 @@
   development and production Dockerfiles from Go 1.24.3 to 1.27.0, and the
   all-in-one runtime from PostgreSQL 16.9 to 18.6 by @xet7. Thanks to xet7.
 
-- **The main FerretDB Go module receives eleven dependency updates.**
-  [PR #3](https://github.com/wekan/FerretDB/pull/3) updates the wire protocol,
-  SAP HANA driver, Kong, Prometheus, Testify, OpenTelemetry and SQLite modules,
+- **The main FerretDB Go module receives ten compatible dependency updates.**
+  [PR #3](https://github.com/wekan/FerretDB/pull/3) updates the SAP HANA driver, Kong, Prometheus, Testify, OpenTelemetry and SQLite modules,
   with their resolved indirect dependencies by @xet7. Thanks to xet7.
 
 - **The tools module receives thirteen direct dependency updates.**
