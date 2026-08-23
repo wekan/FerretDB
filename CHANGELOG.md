@@ -2,6 +2,43 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **GitHub Actions move to their current major releases.**
+  [PR #1](https://github.com/wekan/FerretDB/pull/1) updates checkout, Go setup,
+  Buildx setup, Pages configuration, Pages artifact upload and Pages deployment
+  across the release, Docker, documentation and no-LFS workflows by @xet7.
+  Thanks to xet7.
+
+- **The FerretDB build containers use current Go and PostgreSQL images.**
+  [PR #2](https://github.com/wekan/FerretDB/pull/2) moves the all-in-one,
+  development and production Dockerfiles from Go 1.24.3 to 1.27.0, and the
+  all-in-one runtime from PostgreSQL 16.9 to 18.6 by @xet7. Thanks to xet7.
+
+- **The main FerretDB Go module receives eleven dependency updates.**
+  [PR #3](https://github.com/wekan/FerretDB/pull/3) updates the wire protocol,
+  SAP HANA driver, Kong, Prometheus, Testify, OpenTelemetry and SQLite modules,
+  with their resolved indirect dependencies by @xet7. Thanks to xet7.
+
+- **The tools module receives thirteen direct dependency updates.**
+  [PR #4](https://github.com/wekan/FerretDB/pull/4) updates the GitHub helper,
+  Task, nfpm, dependency graph, OpenAPI generator, consistency checks, internal
+  Go helpers, GitHub Actions helper, Testify, pkgsite, Go tools, vulnerability
+  tooling and gofumpt, with their resolved module graph by @xet7. Thanks to
+  xet7.
+
+- **The integration module receives five direct dependency updates.**
+  [PR #5](https://github.com/wekan/FerretDB/pull/5) updates Prometheus, Testify,
+  MongoDB OpenTelemetry instrumentation and the OpenTelemetry API and SDK, with
+  their resolved indirect dependencies by @xet7. Thanks to xet7.
+
+- **The build dependency images receive eleven updates.**
+  [PR #6](https://github.com/wekan/FerretDB/pull/6) updates Citus, Prettier,
+  textlint, Wrangler, Jaeger, the legacy Mongo shell, markdownlint, MongoDB,
+  MySQL, PostgreSQL and Trivy images by @xet7. Thanks to xet7.
+
 ## [v1.55.0](https://github.com/wekan/FerretDB/releases/tag/v1.55.0) (2026-08-23)
 
 ### Other Changes 🤖
