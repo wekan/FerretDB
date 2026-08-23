@@ -648,5 +648,5 @@ mvdan.cc/sh/v3 v3.13.2-0.20260817215856-d6550df7ed8d h1:LlqUgrIy872/RmROjVtmRg3o
 mvdan.cc/sh/v3 v3.13.2-0.20260817215856-d6550df7ed8d/go.mod h1:3tr4oDy8eX1SeblVXiVLVGk0PbLzqwQqOAEdu9yKWBM=
 rsc.io/markdown v0.0.0-20231214224604-88bb533a6020 h1:GqQcl3Kno/rOntek8/d8axYjau8r/c1zVFojXS6WJFI=
 rsc.io/markdown v0.0.0-20231214224604-88bb533a6020/go.mod h1:8xcPgWmwlZONN1D9bjxtHEjrUtSEa3fakVF8iaewYKQ=
-software.sslmate.com/src/go-pkcs12 v0.7.1 h1:bxkUPRsvTPNRBZa4M/aSX4PyMOEbq3V8I6hbkG4F4Q8=
-software.sslmate.com/src/go-pkcs12 v0.7.1/go.mod h1:Qiz0EyvDRJjjxGyUQa2cCNZn/wMyzrRJ/qcDXOQazLI=
+software.sslmate.com/src/go-pkcs12 v0.7.2 h1:Rh9FoMaI5k7Oo6EOS+2/BnoZ+JFIS+XHjM0VGkSPXLM=
+software.sslmate.com/src/go-pkcs12 v0.7.2/go.mod h1:Qiz0EyvDRJjjxGyUQa2cCNZn/wMyzrRJ/qcDXOQazLI=
