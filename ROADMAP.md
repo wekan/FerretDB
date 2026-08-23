@@ -5,6 +5,39 @@ This roadmap tracks what is needed to run [WeKan](https://github.com/wekan/wekan
 `main-v1` branch), and compares that against **FerretDB v2** (`main`, PostgreSQL +
 DocumentDB).
 
+**Current wire-library compatibility - keep `github.com/FerretDB/wire` at
+0.0.8 for this v1 fork.** Version 0.1.7 is a substantial API redesign for newer
+FerretDB code, not a drop-in dependency update. The current v1 BSON and message
+handlers compile and preserve their protocol behavior with 0.0.8.
+
+| Area | wire 0.0.8 | wire 0.1.7 |
+|---|---|---|
+| Minimum Go | Go 1.22 | Go 1.24 |
+| BSON driver integration | Internal BSON implementation | Adds MongoDB driver v1 and v2 conversion support |
+| Document indexing | `GetByIndex(i)` | Removed; callers use the `All()` iterator |
+| OP_MSG sections | Public `OpMsgSection` with kind, identifier and documents | Internal `opMsgSection`; public per-section metadata is removed |
+| Section access | `RawSection0()` and `Sections() []OpMsgSection` | `Section0Raw()` and a combined `Sections()` result |
+| OP_QUERY | `Query()` returns a document | `Query()` returns a document and an error |
+| NaN validation | Configurable with `wire.CheckNaNs` | The public setting is removed |
+| Decoding | Primarily one decoding path | Separate raw, shallow and deep decoding APIs |
+| BSON utilities | Basic access and iteration | Adds copying, JSON conversion, equality, sorting and richer logging |
+| Message sizing | Primarily marshal-oriented | Adds explicit `Size()` methods |
+| Tests | Original protocol and BSON tests | Expanded BSON, fuzz and FerretDB v1/v2 test support |
+
+FerretDB v1 currently depends on four interfaces removed or changed in 0.1.7:
+`Document.GetByIndex`, `OpMsg.RawSection0`, public OP_MSG section metadata and
+`wire.CheckNaNs`. It also expects the old single-result `OpQuery.Query()`
+signature. Some calls can be migrated mechanically - for example,
+`GetByIndex` to `All()` - but the OP_MSG change is architectural: this fork
+uses each section identifier to attach its document sequence to the command
+document, and 0.1.7 no longer exposes those sections in that form.
+
+A future 0.1.7 upgrade therefore requires a coordinated rewrite of the v1
+message-handling layer, including positive, malformed-message and
+document-sequence regression tests. Until that migration exists, dependency
+updates must retain 0.0.8 in both the root and integration modules. Pinning
+0.0.8 does not roll back the other maintained FerretDB dependencies.
+
 Everything is consolidated into the single **[Compatibility matrix](#compatibility-matrix)**
 below: every capability, by category, with whether WeKan uses it, the status in v1
 and v2, what is missing, and which tests cover it. The v1 and v2 columns were
