@@ -37,6 +37,14 @@
 
 ### Other Changes 🤖
 
+- **Dependency installation records the complete checksum closure.**
+  Running the dependency installer and full test suite populated previously
+  missing transitive checksums in the root, integration and tools modules.
+  Committing those verified sums keeps a fresh dependency download reproducible
+  and prevents a successful test run from leaving all three modules dirty. All
+  FerretDB unit, vet and SQLite integration stages pass by @xet7. Thanks to
+  xet7.
+
 - **GitHub Actions move to their current major releases.**
   [PR #1](https://github.com/wekan/FerretDB/pull/1) updates checkout, Go setup,
   Buildx setup, Pages configuration, Pages artifact upload and Pages deployment
@@ -49,8 +57,8 @@
   all-in-one runtime from PostgreSQL 16.9 to 18.6 by @xet7. Thanks to xet7.
 
 - **The main FerretDB Go module receives ten compatible dependency updates.**
-  [PR #3](https://github.com/wekan/FerretDB/pull/3) updates the SAP HANA driver, Kong, Prometheus, Testify, OpenTelemetry and SQLite modules,
-  with their resolved indirect dependencies by @xet7. Thanks to xet7.
+  [PR #3](https://github.com/wekan/FerretDB/pull/3) updates the SAP HANA
+  driver, Kong, Prometheus, Testify, OpenTelemetry and SQLite modules, with their resolved indirect dependencies by @xet7. Thanks to xet7.
 
 - **The tools module receives thirteen direct dependency updates.**
   [PR #4](https://github.com/wekan/FerretDB/pull/4) updates the GitHub helper,
