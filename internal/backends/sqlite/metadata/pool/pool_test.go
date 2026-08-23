@@ -260,18 +260,18 @@ func TestDefaults(t *testing.T) {
 	require.NotContains(t, options, "OMIT_VACUUM")
 
 	for q, expected := range map[string]string{
-		"SELECT sqlite_version()":   "3.53.2",
-		"SELECT sqlite_source_id()": "2026-06-03 19:12:13 d6e03d8c777cfa2d35e3b60d8ec3e0187f3e9f99d8e2ee9cac695fd6fcdf1a24",
+		"SELECT sqlite_version()":   "3.53.3",
+		"SELECT sqlite_source_id()": "2026-06-26 20:14:12 d4c0e51e4aeb96955b99185ab9cde75c339e2c29c3f3f12428d364a10d782c62",
 		"PRAGMA auto_vacuum":        "0",
 		"PRAGMA busy_timeout":       "30000",
 		"PRAGMA encoding":           "UTF-8",
 		"PRAGMA journal_mode":       "wal",
 		"PRAGMA locking_mode":       "normal",
 		// Performance remediation defaults (see setDefaultValues in uri.go).
-		"PRAGMA synchronous": "1",          // NORMAL (crash-safe under WAL, fewer fsyncs)
-		"PRAGMA cache_size":  "-65536",     // 64 MiB page cache per connection
-		"PRAGMA mmap_size":   "268435456",  // 256 MiB memory-mapped I/O
-		"PRAGMA temp_store":  "2",          // MEMORY
+		"PRAGMA synchronous": "1",         // NORMAL (crash-safe under WAL, fewer fsyncs)
+		"PRAGMA cache_size":  "-65536",    // 64 MiB page cache per connection
+		"PRAGMA mmap_size":   "268435456", // 256 MiB memory-mapped I/O
+		"PRAGMA temp_store":  "2",         // MEMORY
 	} {
 		q, expected := q, expected
 		t.Run(q, func(t *testing.T) {

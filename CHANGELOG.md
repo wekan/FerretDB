@@ -6,6 +6,14 @@
 
 ### Fixed 🐛
 
+- **SQLite unit expectations follow the embedded 3.53.3 engine.**
+  The `modernc.org/sqlite` 1.57.0 update in
+  [PR #3](https://github.com/wekan/FerretDB/pull/3) moved the embedded SQLite
+  engine from 3.53.2 to 3.53.3, but backend-state, pool-version and source-ID
+  assertions still expected the old engine. All four expectations now describe
+  the binary actually built, and the complete `build.sh unit` stage passes by
+  @xet7. Thanks to xet7.
+
 - **FerretDB v1 builds against its compatible wire protocol library again.**
   The dependency batch in
   [PR #3](https://github.com/wekan/FerretDB/pull/3) updated
