@@ -763,7 +763,14 @@ EOF
 
 # ---- dispatch ------------------------------------------------------------
 case "${1:-}" in
-  "")         menu ;;
+  "")
+              if [ -t 0 ]; then
+                menu
+              else
+                err "No command given and stdin is not a terminal."
+                err "Run '$0 --help' for usage."
+                exit 2
+              fi ;;
   deps)       act_deps ;;
   build)      act_build ;;
   run)        act_run ;;
