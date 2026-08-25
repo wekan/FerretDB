@@ -28,7 +28,7 @@ import (
 	"time"
 
 	"github.com/FerretDB/gh"
-	"github.com/google/go-github/v57/github"
+	"github.com/google/go-github/v70/github"
 	"github.com/rogpeppe/go-internal/lockedfile"
 )
 
@@ -110,7 +110,7 @@ func CacheFilePath() (string, error) {
 var (
 	// Correctly formatted FerretDB issue.
 	// It returns repository name and the issue number as it's submatches.
-	urlRE = regexp.MustCompile(`^\Qhttps://github.com/FerretDB/\E([-\w]+)/issues/(\d+)$`)
+	urlRE = regexp.MustCompile(`^https://github[.]com/FerretDB/([-\w]+)/issues/(\d+)$`)
 
 	// ErrIncorrectURL indicates that FerretDB issue URL is formatted incorrectly.
 	ErrIncorrectURL = errors.New("invalid TODO: incorrect format")

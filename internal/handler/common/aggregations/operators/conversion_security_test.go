@@ -56,6 +56,52 @@ func TestConversionBounds(t *testing.T) {
 		assert.Equal(t, int32(-1), actual)
 	})
 
+	t.Run("ArrayElementLargeIndex", func(t *testing.T) {
+		arr, err := types.NewArray(int32(1), int32(2))
+		require.NoError(t, err)
+		op, err := newArrayElemAt(arr, int64(math.MaxInt64))
+		require.NoError(t, err)
+
+		actual, err := op.Process(doc)
+		require.NoError(t, err)
+		assert.Equal(t, types.Null, actual)
+	})
+
+	t.Run("ArraySliceLargeCount", func(t *testing.T) {
+		arr, err := types.NewArray(int32(1), int32(2))
+		require.NoError(t, err)
+		op, err := newSlice(arr, int64(math.MaxInt64))
+		require.NoError(t, err)
+
+		actual, err := op.Process(doc)
+		require.NoError(t, err)
+		assert.Equal(t, 2, actual.(*types.Array).Len())
+	})
+
+	t.Run("RangeRejectsLargeArgument", func(t *testing.T) {
+		op, err := newRange(int64(math.MaxInt64), int64(math.MaxInt64))
+		require.NoError(t, err)
+
+		_, err = op.Process(doc)
+		require.Error(t, err)
+	})
+
+	t.Run("ArrayIndexLargeBounds", func(t *testing.T) {
+		arr, err := types.NewArray(int32(1), int32(2))
+		require.NoError(t, err)
+		op, err := newIndexOfArray(arr, int32(1), int64(math.MaxInt64), int64(math.MaxInt64))
+		require.NoError(t, err)
+
+		actual, err := op.Process(doc)
+		require.NoError(t, err)
+		assert.Equal(t, int32(-1), actual)
+	})
+
+	t.Run("ConvertRejectsNonIntegralTypeCode", func(t *testing.T) {
+		_, err := parseConvertTo(2.5)
+		require.Error(t, err)
+	})
+
 	t.Run("FilterLargeLimit", func(t *testing.T) {
 		arr, err := types.NewArray(int32(1), int32(2))
 		require.NoError(t, err)

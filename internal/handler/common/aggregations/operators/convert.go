@@ -438,7 +438,12 @@ func parseConvertTo(v any) (handlerparams.TypeCode, error) {
 	case int64:
 		return convertToCodeFromNumber(v)
 	case float64:
-		return convertToCodeFromNumber(int64(v))
+		code, err := handlerparams.GetWholeNumberParam(v)
+		if err != nil {
+			return 0, convertError(fmt.Sprintf("In $convert, numeric 'to' argument is not a whole type code: %v", v))
+		}
+
+		return convertToCodeFromNumber(code)
 	default:
 		return 0, convertError(fmt.Sprintf("$convert's 'to' argument must be a string or number, but is %s", handlerparams.AliasFromType(v)))
 	}

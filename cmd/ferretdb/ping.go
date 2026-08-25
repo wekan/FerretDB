@@ -89,7 +89,9 @@ func (ready *ReadyZ) Probe(ctx context.Context) bool {
 	}
 
 	for _, u := range urls {
-		l.DebugContext(ctx, fmt.Sprintf("Pinging %s", u))
+		redactedURI := redactMongoURI(u)
+
+		l.DebugContext(ctx, fmt.Sprintf("Pinging %s", redactedURI))
 
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, cli.Setup.Timeout)
@@ -115,13 +117,18 @@ func (ready *ReadyZ) Probe(ctx context.Context) bool {
 			return false
 		}
 
-		var uri *url.URL
-		if uri, err = url.Parse(u); err == nil {
-			u = uri.Redacted()
-		}
-
-		l.InfoContext(ctx, fmt.Sprintf("Ping to %s successful", u))
+		l.InfoContext(ctx, fmt.Sprintf("Ping to %s successful", redactedURI))
 	}
 
 	return true
+}
+
+// redactMongoURI removes credentials before a connection URI reaches a log.
+func redactMongoURI(raw string) string {
+	uri, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid MongoDB URI>"
+	}
+
+	return uri.Redacted()
 }

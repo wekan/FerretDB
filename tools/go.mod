@@ -6,7 +6,7 @@ require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/FerretDB/gh v0.2.0
 	github.com/go-task/task/v3 v3.53.1
-	github.com/google/go-github/v57 v57.0.0
+	github.com/google/go-github/v70 v70.0.1-0.20250402125210-3a3f51bc7c5d
 	github.com/goreleaser/nfpm/v2 v2.47.0
 	github.com/kisielk/godepgraph v1.0.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0
@@ -117,7 +117,6 @@ require (
 	github.com/go-toolsmith/typep v1.0.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
-	github.com/google/go-github/v70 v70.0.1-0.20250402125210-3a3f51bc7c5d // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/licensecheck v0.3.1 // indirect
 	github.com/google/rpmpack v0.7.1 // indirect

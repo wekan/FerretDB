@@ -17,6 +17,8 @@ package operators
 import (
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 
 	"github.com/FerretDB/FerretDB/internal/handler/handlerparams"
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -126,14 +128,23 @@ func (o *arrayElemAt) Process(doc *types.Document) (any, error) {
 		)
 	}
 
-	i := int(idx)
-	if i < 0 {
-		i += arr.Len()
+	length := int64(arr.Len())
+	if idx < 0 {
+		if idx < -length {
+			return types.Null, nil
+		}
+
+		idx += length
 	}
 
-	if i < 0 || i >= arr.Len() {
+	if idx < 0 || idx >= length {
 		// out of range resolves to a missing value.
 		return types.Null, nil
+	}
+
+	i, err := strconv.Atoi(strconv.FormatInt(idx, 10))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
 	}
 
 	return must.NotFail(arr.Get(i)), nil
@@ -371,9 +382,9 @@ func (o *sliceArray) Process(doc *types.Document) (any, error) {
 		)
 	}
 
-	l := arr.Len()
+	l := int64(arr.Len())
 
-	var start, count int
+	var start, count int64
 
 	if len(o.args) == 2 {
 		n, err := o.wholeArg(o.args[1], doc)
@@ -386,11 +397,12 @@ func (o *sliceArray) Process(doc *types.Document) (any, error) {
 			count = n
 		} else {
 			// negative n returns the last |n| elements.
-			count = -n
-			start = l + n
-			if start < 0 {
+			if n <= -l {
 				start = 0
 				count = l
+			} else {
+				start = l + n
+				count = -n
 			}
 		}
 	} else {
@@ -424,22 +436,37 @@ func (o *sliceArray) Process(doc *types.Document) (any, error) {
 		count = n
 	}
 
+	if start >= l || count == 0 {
+		return types.MakeArray(0), nil
+	}
+
+	end := l
+	if count < l-start {
+		end = start + count
+	}
+
+	startInt, err := strconv.Atoi(strconv.FormatInt(start, 10))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	endInt, err := strconv.Atoi(strconv.FormatInt(end, 10))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
 	res := types.MakeArray(0)
 
-	for i := start; i < start+count && i < l; i++ {
-		if i < 0 {
-			continue
-		}
-
+	for i := startInt; i < endInt; i++ {
 		res.Append(must.NotFail(arr.Get(i)))
 	}
 
 	return res, nil
 }
 
-// wholeArg evaluates arg and converts it to an int, erroring when it is not a
+// wholeArg evaluates arg and converts it to an int64, erroring when it is not a
 // whole number.
-func (o *sliceArray) wholeArg(arg any, doc *types.Document) (int, error) {
+func (o *sliceArray) wholeArg(arg any, doc *types.Document) (int64, error) {
 	v, err := evaluateExpression(arg, doc)
 	if err != nil {
 		return 0, err
@@ -454,7 +481,7 @@ func (o *sliceArray) wholeArg(arg any, doc *types.Document) (int, error) {
 		)
 	}
 
-	return int(n), nil
+	return n, nil
 }
 
 // rangeOp represents `$range` operator.
@@ -490,7 +517,7 @@ func (o *rangeOp) Process(doc *types.Document) (any, error) {
 		return nil, err
 	}
 
-	step := 1
+	step := int64(1)
 
 	if len(o.args) == 3 {
 		step, err = o.intArg(o.args[2], doc)
@@ -505,6 +532,12 @@ func (o *rangeOp) Process(doc *types.Document) (any, error) {
 			"$range",
 			"$range requires a non-zero step value",
 		)
+	}
+
+	for _, v := range []int64{start, end, step} {
+		if v > math.MaxInt32 || v < math.MinInt32 {
+			return nil, newOperatorError(ErrArgsInvalidLen, "$range", "$range arguments must fit in a 32-bit integer")
+		}
 	}
 
 	res := types.MakeArray(0)
@@ -522,9 +555,9 @@ func (o *rangeOp) Process(doc *types.Document) (any, error) {
 	return res, nil
 }
 
-// intArg evaluates arg and converts it to an int, erroring when it is not a
+// intArg evaluates arg and converts it to an int64, erroring when it is not a
 // whole number.
-func (o *rangeOp) intArg(arg any, doc *types.Document) (int, error) {
+func (o *rangeOp) intArg(arg any, doc *types.Document) (int64, error) {
 	v, err := evaluateExpression(arg, doc)
 	if err != nil {
 		return 0, err
@@ -539,7 +572,7 @@ func (o *rangeOp) intArg(arg any, doc *types.Document) (int, error) {
 		)
 	}
 
-	return int(n), nil
+	return n, nil
 }
 
 // indexOfArray represents `$indexOfArray` operator.
@@ -593,7 +626,7 @@ func (o *indexOfArray) Process(doc *types.Document) (any, error) {
 
 	l := arr.Len()
 
-	start := 0
+	start := int64(0)
 	if len(o.args) >= 3 {
 		start, err = o.intArg(o.args[2], doc)
 		if err != nil {
@@ -605,19 +638,33 @@ func (o *indexOfArray) Process(doc *types.Document) (any, error) {
 		}
 	}
 
-	end := l
+	end := int64(l)
 	if len(o.args) == 4 {
 		end, err = o.intArg(o.args[3], doc)
 		if err != nil {
 			return nil, err
 		}
 
-		if end > l {
-			end = l
+		if end > int64(l) {
+			end = int64(l)
 		}
 	}
 
-	for i := start; i < end; i++ {
+	if start > int64(l) || end <= start {
+		return int32(-1), nil
+	}
+
+	startInt, err := strconv.Atoi(strconv.FormatInt(start, 10))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	endInt, err := strconv.Atoi(strconv.FormatInt(end, 10))
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	for i := startInt; i < endInt; i++ {
 		if types.Compare(must.NotFail(arr.Get(i)), search) == types.Equal {
 			return int32(i), nil
 		}
@@ -626,9 +673,9 @@ func (o *indexOfArray) Process(doc *types.Document) (any, error) {
 	return int32(-1), nil
 }
 
-// intArg evaluates arg and converts it to an int, erroring when it is not a
+// intArg evaluates arg and converts it to an int64, erroring when it is not a
 // whole number.
-func (o *indexOfArray) intArg(arg any, doc *types.Document) (int, error) {
+func (o *indexOfArray) intArg(arg any, doc *types.Document) (int64, error) {
 	v, err := evaluateExpression(arg, doc)
 	if err != nil {
 		return 0, err
@@ -643,7 +690,7 @@ func (o *indexOfArray) intArg(arg any, doc *types.Document) (int, error) {
 		)
 	}
 
-	return int(n), nil
+	return n, nil
 }
 
 // arrayToObject represents `$arrayToObject` operator.

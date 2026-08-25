@@ -16,6 +16,7 @@ package operators
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -379,9 +380,17 @@ func substrBytes(s string, start, length int64) string {
 	}
 
 	end := len(s)
-	startInt := int(start)
+	startInt, err := strconv.Atoi(strconv.FormatInt(start, 10))
+	if err != nil {
+		return ""
+	}
 	if length >= 0 && length < int64(end-startInt) {
-		end = startInt + int(length)
+		lengthInt, convErr := strconv.Atoi(strconv.FormatInt(length, 10))
+		if convErr != nil {
+			return s[startInt:]
+		}
+
+		end = startInt + lengthInt
 	}
 
 	return s[startInt:end]
@@ -397,9 +406,17 @@ func substrRunes(s string, start, length int64) string {
 	}
 
 	end := len(runes)
-	startInt := int(start)
+	startInt, err := strconv.Atoi(strconv.FormatInt(start, 10))
+	if err != nil {
+		return ""
+	}
 	if length >= 0 && length < int64(end-startInt) {
-		end = startInt + int(length)
+		lengthInt, convErr := strconv.Atoi(strconv.FormatInt(length, 10))
+		if convErr != nil {
+			return string(runes[startInt:])
+		}
+
+		end = startInt + lengthInt
 	}
 
 	return string(runes[startInt:end])
@@ -701,7 +718,10 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 			case n > int64(length):
 				start = length
 			default:
-				start = int(n)
+				start, convErr = strconv.Atoi(strconv.FormatInt(n, 10))
+				if convErr != nil {
+					return 0, 0, convErr
+				}
 			}
 		}
 	}
@@ -728,7 +748,10 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 			case n > int64(length):
 				end = length
 			default:
-				end = int(n)
+				end, convErr = strconv.Atoi(strconv.FormatInt(n, 10))
+				if convErr != nil {
+					return 0, 0, convErr
+				}
 			}
 		}
 	}

@@ -104,11 +104,12 @@ func asInt(name, field string, v any) (int64, error) {
 // native int width. time.Date uses native ints even though BSON numbers are
 // fixed-width values.
 func nativeInt(name, field string, v int64) (int, error) {
-	if strconv.IntSize == 32 && (v > math.MaxInt32 || v < math.MinInt32) {
+	n, err := strconv.Atoi(strconv.FormatInt(v, 10))
+	if err != nil {
 		return 0, dateError(name, fmt.Sprintf("%s value for %s is out of range", name, field))
 	}
 
-	return int(v), nil
+	return n, nil
 }
 
 // evalTimezone evaluates an optional timezone expression on a spec document,

@@ -2,6 +2,41 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Readiness probes never write MongoDB passwords to logs.** Connection URIs
+  are now redacted before both the initial debug message and the successful
+  result, with invalid URIs replaced by a fixed diagnostic. Regression coverage
+  proves that the password cannot appear in either representation, addressing
+  CodeQL alerts 1 and 2 by @xet7. Thanks to GitHub CodeQL and xet7.
+
+- **Aggregation operands remain fixed-width until bounds are validated.** Array
+  element, slice, range and index operators now normalize attacker-controlled
+  BSON integers before converting them to native indexes. Substring and date
+  conversions use checked decimal parsing, and fractional `$convert` type codes
+  are rejected instead of truncated. Extreme-value tests and 32-bit
+  cross-compilation cover CodeQL alerts 7 through 11 and 31 through 37 by
+  @xet7. Thanks to GitHub CodeQL and xet7.
+
+- **GitHub tooling matches the complete hostname literally.** TODO, changelog
+  and issue-client URL expressions now spell the dot in `github.com` as an
+  explicit literal character, closing CodeQL alerts 3 through 5 without
+  widening the accepted repository or issue syntax. The tools module also uses
+  one `go-github` major version throughout, allowing its regression suites to
+  compile and run again by @xet7. Thanks to GitHub CodeQL and xet7.
+
+### Other Changes 🤖
+
+- **The legacy SCRAM-SHA-1 compatibility derivation documents its required
+  cryptographic exception.** MongoDB mandates an MD5 password-preparation step
+  before salted PBKDF2-SHA-1 for this mechanism, so replacing it would invalidate
+  existing credentials. CodeQL alert 6 is narrowly suppressed at that mandated
+  operation, while the stronger supported SCRAM-SHA-256 mechanism remains the
+  recommendation for new deployments by @xet7. Thanks to GitHub CodeQL and
+  xet7.
+
 ## [v1.58.0](https://github.com/wekan/FerretDB/releases/tag/v1.58.0) (2026-08-25)
 
 ### Fixed 🐛

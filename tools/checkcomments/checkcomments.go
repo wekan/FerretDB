@@ -31,7 +31,7 @@ import (
 )
 
 // todoRE represents correct "// TODO" comment format.
-var todoRE = regexp.MustCompile(`^// TODO (\Qhttps://github.com/FerretDB/\E[-\w]+/issues/\d+)$`)
+var todoRE = regexp.MustCompile(`^// TODO (https://github[.]com/FerretDB/[-\w]+/issues/\d+)$`)
 
 // analyzer represents the checkcomments analyzer.
 var analyzer = &analysis.Analyzer{

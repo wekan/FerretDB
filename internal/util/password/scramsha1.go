@@ -59,6 +59,12 @@ func scramSHA1VariationHashParams(username string, password Password, salt []byt
 		return nil, lazyerrors.Errorf("unexpected salt length: %d", len(salt))
 	}
 
+	// MongoDB's legacy SCRAM-SHA-1 mechanism mandates MD5(username + ":mongo:"
+	// + password) as its password-preparation step before the salted PBKDF2-SHA-1
+	// derivation below. Changing it would make existing SCRAM-SHA-1 credentials
+	// unusable; new deployments should use the supported SCRAM-SHA-256 mechanism.
+	//
+	// codeql[go/weak-sensitive-data-hashing]
 	md5sum := md5.New()
 	if _, err := md5sum.Write([]byte(username + ":mongo:" + password.Password())); err != nil {
 		return nil, lazyerrors.Error(err)
