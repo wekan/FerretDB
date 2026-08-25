@@ -102,6 +102,36 @@ func TestConversionBounds(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("ConvertRejectsOutOfRangeTypeCode", func(t *testing.T) {
+		_, err := convertToCodeFromNumber(math.MaxInt64)
+		require.Error(t, err)
+	})
+
+	t.Run("CheckedInt32Boundaries", func(t *testing.T) {
+		min, err := checkedInt32(math.MinInt32)
+		require.NoError(t, err)
+		assert.Equal(t, int32(math.MinInt32), min)
+
+		max, err := checkedInt32(math.MaxInt32)
+		require.NoError(t, err)
+		assert.Equal(t, int32(math.MaxInt32), max)
+
+		_, err = checkedInt32(int64(math.MaxInt32) + 1)
+		require.Error(t, err)
+		_, err = checkedInt32(int64(math.MinInt32) - 1)
+		require.Error(t, err)
+	})
+
+	t.Run("AggregationIndexDoesNotNarrow", func(t *testing.T) {
+		assert.Equal(t, int32(math.MaxInt32), aggregationIndex(math.MaxInt32))
+		if strconv.IntSize == 64 {
+			large64 := int64(math.MaxInt32)
+			large64++
+			large := int(large64)
+			assert.Equal(t, int64(math.MaxInt32)+1, aggregationIndex(large))
+		}
+	})
+
 	t.Run("FilterLargeLimit", func(t *testing.T) {
 		arr, err := types.NewArray(int32(1), int32(2))
 		require.NoError(t, err)

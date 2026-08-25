@@ -452,20 +452,20 @@ func parseConvertTo(v any) (handlerparams.TypeCode, error) {
 // convertToCodeFromNumber resolves a numeric BSON type code into a supported
 // TypeCode for `$convert`.
 func convertToCodeFromNumber(code int64) (handlerparams.TypeCode, error) {
-	switch handlerparams.TypeCode(code) {
-	case handlerparams.TypeCodeString:
+	switch code {
+	case int64(handlerparams.TypeCodeString):
 		return handlerparams.TypeCodeString, nil
-	case handlerparams.TypeCodeInt:
+	case int64(handlerparams.TypeCodeInt):
 		return handlerparams.TypeCodeInt, nil
-	case handlerparams.TypeCodeLong:
+	case int64(handlerparams.TypeCodeLong):
 		return handlerparams.TypeCodeLong, nil
-	case handlerparams.TypeCodeDouble:
+	case int64(handlerparams.TypeCodeDouble):
 		return handlerparams.TypeCodeDouble, nil
-	case handlerparams.TypeCodeBool:
+	case int64(handlerparams.TypeCodeBool):
 		return handlerparams.TypeCodeBool, nil
-	case handlerparams.TypeCodeObjectID:
+	case int64(handlerparams.TypeCodeObjectID):
 		return handlerparams.TypeCodeObjectID, nil
-	case handlerparams.TypeCodeDate:
+	case int64(handlerparams.TypeCodeDate):
 		return handlerparams.TypeCodeDate, nil
 	default:
 		return 0, convertError(fmt.Sprintf("In $convert, numeric 'to' argument is not a supported type: %d", code))

@@ -544,15 +544,34 @@ func (o *rangeOp) Process(doc *types.Document) (any, error) {
 
 	if step > 0 {
 		for i := start; i < end; i += step {
-			res.Append(int32(i))
+			v, err := checkedInt32(i)
+			if err != nil {
+				return nil, err
+			}
+			res.Append(v)
 		}
 	} else {
 		for i := start; i > end; i += step {
-			res.Append(int32(i))
+			v, err := checkedInt32(i)
+			if err != nil {
+				return nil, err
+			}
+			res.Append(v)
 		}
 	}
 
 	return res, nil
+}
+
+// checkedInt32 narrows a query-provided integer only after checking the exact
+// BSON int32 range. Keeping the check beside the conversion also makes the
+// trust boundary explicit to static analysis.
+func checkedInt32(v int64) (int32, error) {
+	if v < math.MinInt32 || v > math.MaxInt32 {
+		return 0, newOperatorError(ErrArgsInvalidLen, "$range", "$range result is outside the 32-bit integer range")
+	}
+
+	return int32(v), nil
 }
 
 // intArg evaluates arg and converts it to an int64, erroring when it is not a
@@ -666,7 +685,7 @@ func (o *indexOfArray) Process(doc *types.Document) (any, error) {
 
 	for i := startInt; i < endInt; i++ {
 		if types.Compare(must.NotFail(arr.Get(i)), search) == types.Equal {
-			return int32(i), nil
+			return aggregationIndex(i), nil
 		}
 	}
 

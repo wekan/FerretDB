@@ -2,6 +2,26 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Aggregation indexes and range values no longer narrow without a local
+  bounds check.** Numeric `$convert` type codes are compared at their original
+  int64 width, `$range` checks every result at the conversion boundary, and
+  array and code-point indexes return int64 when a native index exceeds BSON's
+  int32 range. Boundary regressions and 32-bit cross-compilation cover CodeQL
+  alerts 11 and 38 through 42 by @xet7. Thanks to GitHub CodeQL and xet7.
+
+### Other Changes 🤖
+
+- **The protocol-required SCRAM-SHA-1 exception is attached to its only digest
+  operation.** MongoDB's legacy mechanism still mandates MD5 password
+  preparation, but the implementation now uses one direct digest instead of a
+  streaming hash whose reported sink was separate from the documented CodeQL
+  exception. SCRAM tests continue to cover the compatible result for alert 6
+  by @xet7. Thanks to GitHub CodeQL and xet7.
+
 ## [v1.59.0](https://github.com/wekan/FerretDB/releases/tag/v1.59.0) (2026-08-25)
 
 ### Fixed 🐛

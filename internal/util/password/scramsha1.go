@@ -65,12 +65,8 @@ func scramSHA1VariationHashParams(username string, password Password, salt []byt
 	// unusable; new deployments should use the supported SCRAM-SHA-256 mechanism.
 	//
 	// codeql[go/weak-sensitive-data-hashing]
-	md5sum := md5.New()
-	if _, err := md5sum.Write([]byte(username + ":mongo:" + password.Password())); err != nil {
-		return nil, lazyerrors.Error(err)
-	}
-
-	src := md5sum.Sum(nil)
+	sum := md5.Sum([]byte(username + ":mongo:" + password.Password()))
+	src := sum[:]
 	dst := make([]byte, hex.EncodedLen(len(src)))
 	hex.Encode(dst, src)
 

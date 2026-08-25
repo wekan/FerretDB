@@ -24,6 +24,7 @@ package operators
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -31,6 +32,18 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
+
+// aggregationIndex returns the smallest BSON integer type that can represent a
+// native collection/string index without narrowing it. Real BSON documents are
+// far below MaxInt32, but the int64 fallback keeps the conversion correct even
+// for synthetic values on 64-bit hosts.
+func aggregationIndex(index int) any {
+	if int64(index) <= math.MaxInt32 {
+		return int32(index)
+	}
+
+	return int64(index)
+}
 
 // newOperatorFunc is a type for a function that creates a standard aggregation operator.
 //

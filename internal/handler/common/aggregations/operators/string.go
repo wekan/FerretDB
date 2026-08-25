@@ -800,12 +800,12 @@ func (o *indexOf) indexCP(s, sub []rune, doc *types.Document) (any, error) {
 	}
 
 	if len(sub) == 0 {
-		return int32(start), nil
+		return aggregationIndex(start), nil
 	}
 
 	for i := start; i+len(sub) <= end; i++ {
 		if string(s[i:i+len(sub)]) == string(sub) {
-			return int32(i), nil
+			return aggregationIndex(i), nil
 		}
 	}
 
