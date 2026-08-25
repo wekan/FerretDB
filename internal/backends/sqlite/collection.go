@@ -66,6 +66,9 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	}
 
 	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
+	if index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter); index != "" {
+		q += fmt.Sprintf(` INDEXED BY %q`, index)
+	}
 
 	// Push the filter's top-level equality conditions down to
 	// SQLite (superset semantics; the Go filter stays authoritative). Previously
@@ -268,6 +271,9 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 	}
 
 	selectClause := prepareSelectClause(meta.TableName, "", meta.Capped(), false)
+	if index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter); index != "" {
+		selectClause += fmt.Sprintf(` INDEXED BY %q`, index)
+	}
 
 	// Same pushdown as Query — top-level equality conditions
 	// (superset semantics; the Go filter stays authoritative).

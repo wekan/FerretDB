@@ -2,6 +2,28 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **SQLite honors the application's compound indexes for multi-field filters.**
+  Mongo-compatible scalar equality also admits array candidates, and those OR
+  arms could make SQLite choose an unrelated single-field index instead of the
+  declared compound prefix. The SQLite backend now selects the longest matching
+  declared prefix (preferring the narrowest index on a tie), while the existing
+  in-Go filter remains authoritative for exact MongoDB semantics. Linked-card
+  and parent-card discovery consequently use their respective
+  `boardId`/`archived`/`type` and `boardId`/`archived`/`parentId` indexes by
+  @xet7. Thanks to xet7.
+
+- **Sorted limited queries retain only the requested result window.** A `find`
+  with `sort`, `skip` and `limit` previously decoded and retained every matching
+  document before sorting, even when the caller requested a small page. It now
+  uses an exact BSON-order top-N heap capped at `skip + limit`, then applies the
+  existing skip, limit and projection stages. Unlimited sorts retain their
+  previous behavior, and mixed BSON types keep FerretDB's MongoDB-compatible
+  comparator by @xet7. Thanks to xet7.
+
 ## [v1.56.0](https://github.com/wekan/FerretDB/releases/tag/v1.56.0) (2026-08-23)
 
 ### Fixed 🐛

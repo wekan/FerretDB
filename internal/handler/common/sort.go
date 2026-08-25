@@ -31,26 +31,38 @@ import (
 //
 // If sort path is invalid, it returns a possibly wrapped types.PathError.
 func SortDocuments(docs []*types.Document, sortDoc *types.Document) error {
-	if sortDoc.Len() == 0 {
+	sortFuncs, err := makeSortFuncs(sortDoc)
+	if err != nil {
+		return err
+	}
+	if len(sortFuncs) == 0 {
 		return nil
 	}
 
+	sorter := &docsSorter{docs: docs, sorts: sortFuncs}
+	sort.Sort(sorter)
+
+	return nil
+}
+
+// makeSortFuncs validates sortDoc and returns its document comparators without
+// consuming an iterator. It is shared by the full sorter and the bounded top-N
+// sorter used by find with a limit.
+func makeSortFuncs(sortDoc *types.Document) ([]sortFunc, error) {
+	if sortDoc.Len() == 0 {
+		return nil, nil
+	}
 	if sortDoc.Len() > 32 {
-		return lazyerrors.Errorf("maximum sort keys exceeded: %v", sortDoc.Len())
+		return nil, lazyerrors.Errorf("maximum sort keys exceeded: %v", sortDoc.Len())
 	}
 
 	sortFuncs := make([]sortFunc, sortDoc.Len())
-
 	for i, sortKey := range sortDoc.Keys() {
 		fields := strings.Split(sortKey, ".")
-
-		switch {
-		case sortKey == "$natural":
-		default:
-			// TODO https://github.com/FerretDB/FerretDB/issues/3127
+		if sortKey != "$natural" {
 			for _, field := range fields {
 				if strings.HasPrefix(field, "$") {
-					return handlererrors.NewCommandErrorMsgWithArgument(
+					return nil, handlererrors.NewCommandErrorMsgWithArgument(
 						handlererrors.ErrFieldPathInvalidName,
 						"FieldPath field names may not start with '$'. Consider using $getField or $setField.",
 						"sort",
@@ -59,30 +71,30 @@ func SortDocuments(docs []*types.Document, sortDoc *types.Document) error {
 			}
 		}
 
-		sortField := must.NotFail(sortDoc.Get(sortKey))
-
-		sortType, err := GetSortType(sortKey, sortField)
+		sortType, err := GetSortType(sortKey, must.NotFail(sortDoc.Get(sortKey)))
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		sortPath, err := types.NewPathFromString(sortKey)
 		if err != nil {
-			return err
+			return nil, err
 		}
-
 		sortFuncs[i] = lessFunc(sortPath, sortType)
 	}
 
-	if len(sortFuncs) == 0 {
-		// no keys to sort by
-		return nil
+	return sortFuncs, nil
+}
+
+func compareSortedDocuments(p, q *types.Document, sorts []sortFunc) int {
+	for _, sortFunc := range sorts {
+		if sortFunc(p, q) {
+			return -1
+		}
+		if sortFunc(q, p) {
+			return 1
+		}
 	}
-
-	sorter := &docsSorter{docs: docs, sorts: sortFuncs}
-	sort.Sort(sorter)
-
-	return nil
+	return 0
 }
 
 // ValidateSortDocument validates sort documents, and return

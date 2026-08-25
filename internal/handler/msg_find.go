@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -314,7 +315,12 @@ func (h *Handler) makeFindIter(iter types.DocumentsIterator, closer *iterator.Mu
 
 	iter = common.FilterIterator(iter, closer, params.Filter)
 
-	iter, err := common.SortIterator(iter, closer, params.Sort)
+	var err error
+	if params.Sort.Len() != 0 && params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit {
+		iter, err = common.SortLimitIterator(iter, closer, params.Sort, params.Skip+params.Limit)
+	} else {
+		iter, err = common.SortIterator(iter, closer, params.Sort)
+	}
 	if err != nil {
 		closer.Close()
 

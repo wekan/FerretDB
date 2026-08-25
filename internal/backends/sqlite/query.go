@@ -176,6 +176,55 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	return ` WHERE ` + strings.Join(conds, ` AND `), args
 }
 
+// preferredCompoundIndex returns the physical SQLite index whose longest
+// leading run of keys is constrained by top-level fields in filter. SQLite's
+// JSON equality predicates include an array-containment fallback to preserve
+// MongoDB semantics; that OR can make SQLite choose a less selective single-key
+// index even when the application declared the exact compound index. INDEXED BY
+// keeps the superset predicate fully correct while making the declared compound
+// prefix the access path. A one-key match is left to SQLite's cost model.
+func preferredCompoundIndex(
+	table string,
+	indexes []metadata.IndexInfo,
+	filter *types.Document,
+) string {
+	if filter == nil || filter.Len() == 0 {
+		return ""
+	}
+
+	fields := make(map[string]struct{}, filter.Len())
+	for _, key := range filter.Keys() {
+		if key != "" && !strings.HasPrefix(key, "$") {
+			fields[key] = struct{}{}
+		}
+	}
+
+	bestName := ""
+	bestPrefix := 1
+	bestWidth := int(^uint(0) >> 1)
+	for _, index := range indexes {
+		if index.Hidden || len(index.Key) < 2 {
+			continue
+		}
+
+		prefix := 0
+		for _, key := range index.Key {
+			if _, ok := fields[key.Field]; !ok {
+				break
+			}
+			prefix++
+		}
+
+		if prefix > bestPrefix || (prefix == bestPrefix && prefix > 1 && len(index.Key) < bestWidth) {
+			bestName = table + "_" + index.Name
+			bestPrefix = prefix
+			bestWidth = len(index.Key)
+		}
+	}
+
+	return bestName
+}
+
 // pushdownOrCondition pushes down a top-level $or, but ONLY when every branch
 // can be pushed down.
 //

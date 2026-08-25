@@ -108,6 +108,37 @@ func TestPushdownSafeString(t *testing.T) {
 	}
 }
 
+func TestPreferredCompoundIndex(t *testing.T) {
+	t.Parallel()
+
+	indexes := []metadata.IndexInfo{
+		{Name: "boardId_1_archived_1", Key: []metadata.IndexKeyPair{
+			{Field: "boardId"}, {Field: "archived"},
+		}},
+		{Name: "boardId_1_archived_1_type_1", Key: []metadata.IndexKeyPair{
+			{Field: "boardId"}, {Field: "archived"}, {Field: "type"},
+		}},
+		{Name: "type_1", Key: []metadata.IndexKeyPair{{Field: "type"}}},
+	}
+
+	t.Run("ExactCompound", func(t *testing.T) {
+		filter := must.NotFail(types.NewDocument(
+			"boardId", "b1", "archived", false, "type", "cardType-linkedCard",
+		))
+		assert.Equal(t, "cards_boardId_1_archived_1_type_1", preferredCompoundIndex("cards", indexes, filter))
+	})
+
+	t.Run("ShortestMatchingPrefix", func(t *testing.T) {
+		filter := must.NotFail(types.NewDocument("boardId", "b1", "archived", false))
+		assert.Equal(t, "cards_boardId_1_archived_1", preferredCompoundIndex("cards", indexes, filter))
+	})
+
+	t.Run("SingleFieldLeftToPlanner", func(t *testing.T) {
+		filter := must.NotFail(types.NewDocument("type", "cardType-linkedCard"))
+		assert.Empty(t, preferredCompoundIndex("cards", indexes, filter))
+	})
+}
+
 func TestPrepareWhereClause(t *testing.T) {
 	t.Parallel()
 

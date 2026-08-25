@@ -15,6 +15,10 @@
 package common
 
 import (
+	"container/heap"
+	"errors"
+	"sort"
+
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
@@ -44,4 +48,58 @@ func SortIterator(iter types.DocumentsIterator, closer *iterator.MultiCloser, so
 	closer.Add(res)
 
 	return res, nil
+}
+
+// SortLimitIterator returns the first keep documents in MongoDB sort order.
+// It retains at most keep documents while consuming the filtered stream.
+func SortLimitIterator(iter types.DocumentsIterator, closer *iterator.MultiCloser, sortDoc *types.Document, keep int64) (types.DocumentsIterator, error) { //nolint:lll // arguments document the iterator pipeline
+	if sortDoc.Len() == 0 || keep <= 0 {
+		return SortIterator(iter, closer, sortDoc)
+	}
+
+	sorts, err := makeSortFuncs(sortDoc)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	h := &documentsMaxHeap{sorts: sorts, docs: make([]*types.Document, 0, keep)}
+	heap.Init(h)
+	for {
+		_, doc, nextErr := iter.Next()
+		if nextErr != nil {
+			if errors.Is(nextErr, iterator.ErrIteratorDone) {
+				break
+			}
+			return nil, lazyerrors.Error(nextErr)
+		}
+		if int64(h.Len()) < keep {
+			heap.Push(h, doc)
+		} else if compareSortedDocuments(doc, h.docs[0], sorts) < 0 {
+			heap.Pop(h)
+			heap.Push(h, doc)
+		}
+	}
+
+	sort.Sort(&docsSorter{docs: h.docs, sorts: sorts})
+	res := iterator.Values(iterator.ForSlice(h.docs))
+	closer.Add(res)
+	return res, nil
+}
+
+type documentsMaxHeap struct {
+	docs  []*types.Document
+	sorts []sortFunc
+}
+
+func (h documentsMaxHeap) Len() int      { return len(h.docs) }
+func (h documentsMaxHeap) Swap(i, j int) { h.docs[i], h.docs[j] = h.docs[j], h.docs[i] }
+func (h documentsMaxHeap) Less(i, j int) bool {
+	return compareSortedDocuments(h.docs[i], h.docs[j], h.sorts) > 0
+}
+func (h *documentsMaxHeap) Push(value any) { h.docs = append(h.docs, value.(*types.Document)) }
+func (h *documentsMaxHeap) Pop() any {
+	last := len(h.docs) - 1
+	value := h.docs[last]
+	h.docs = h.docs[:last]
+	return value
 }
