@@ -64,6 +64,7 @@ func scramSHA1VariationHashParams(username string, password Password, salt []byt
 	// derivation below. Changing it would make existing SCRAM-SHA-1 credentials
 	// unusable; new deployments should use the supported SCRAM-SHA-256 mechanism.
 	//
+	// lgtm[go/weak-sensitive-data-hashing]
 	// codeql[go/weak-sensitive-data-hashing]
 	sum := md5.Sum([]byte(username + ":mongo:" + password.Password()))
 	src := sum[:]

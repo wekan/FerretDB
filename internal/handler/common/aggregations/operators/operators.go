@@ -24,7 +24,7 @@ package operators
 import (
 	"errors"
 	"fmt"
-	"math"
+	"strconv"
 	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -38,11 +38,17 @@ import (
 // far below MaxInt32, but the int64 fallback keeps the conversion correct even
 // for synthetic values on 64-bit hosts.
 func aggregationIndex(index int) any {
-	if int64(index) <= math.MaxInt32 {
-		return int32(index)
+	text := strconv.Itoa(index)
+	if value, err := strconv.ParseInt(text, 10, 32); err == nil {
+		return int32(value)
 	}
 
-	return int64(index)
+	value, err := strconv.ParseInt(text, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+
+	return value
 }
 
 // newOperatorFunc is a type for a function that creates a standard aggregation operator.

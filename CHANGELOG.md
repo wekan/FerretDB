@@ -2,6 +2,27 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Aggregation result indexes are parsed directly at their BSON width.** The
+  small-result path now uses a 32-bit `strconv` parse before constructing a
+  BSON int32, rather than narrowing an architecture-dependent native integer;
+  oversized synthetic indexes retain the existing int64 fallback. Native
+  boundary tests, vet and 32-bit cross-compilation cover CodeQL alert 44 by
+  @xet7. Thanks to GitHub CodeQL and xet7.
+
+### Other Changes 🤖
+
+- **Both supported CodeQL suppression forms mark the mandatory legacy digest.**
+  MongoDB's SCRAM-SHA-1 protocol requires MD5 password preparation before its
+  PBKDF2-SHA-1 derivation, so changing the digest would reject compatible
+  credentials rather than improve their security. The source now carries both
+  current `codeql` and legacy `lgtm` query-specific annotations immediately at
+  the one digest operation reported as alert 43. MongoDB-generated test vectors
+  still pass by @xet7. Thanks to GitHub CodeQL and xet7.
+
 ## [v1.60.0](https://github.com/wekan/FerretDB/releases/tag/v1.60.0) (2026-08-25)
 
 ### Fixed 🐛
