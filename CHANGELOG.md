@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **The legacy SCRAM-SHA-1 CodeQL exception is anchored in both supported
+  forms.** MongoDB mandates this MD5 password-preparation operation for
+  protocol compatibility. The modern `codeql` annotation remains immediately
+  above it, while the legacy `lgtm` annotation now shares the reported line as
+  that syntax requires. A source regression prevents either annotation from
+  drifting away from alert 43 by @xet7. Thanks to GitHub CodeQL and xet7.
+
 ## [v1.61.0](https://github.com/wekan/FerretDB/releases/tag/v1.61.0) (2026-08-25)
 
 ### Fixed 🐛
