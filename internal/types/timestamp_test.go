@@ -21,6 +21,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestFormatTimestampComponents(t *testing.T) {
+	t.Parallel()
+
+	ts := Timestamp(uint64(0xffffffff)<<32 | uint64(0x80000000))
+	assert.Equal(t, "Timestamp(4294967295, 2147483648)", FormatAnyValue(ts))
+}
+
 //nolint:paralleltest // we modify the global timestampCounter
 func TestNextTimestamp(t *testing.T) {
 	t.Run("UnixZero", func(t *testing.T) {

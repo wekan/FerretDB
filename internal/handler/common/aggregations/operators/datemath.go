@@ -17,6 +17,7 @@ package operators
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -86,7 +87,8 @@ func asInt(name, field string, v any) (int64, error) {
 	case int64:
 		return v, nil
 	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) || v != math.Trunc(v) {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v != math.Trunc(v) ||
+			v >= float64(math.MaxInt64) || v < float64(math.MinInt64) {
 			return 0, dateError(name, fmt.Sprintf("%s expects an integer for %s", name, field))
 		}
 
@@ -96,6 +98,17 @@ func asInt(name, field string, v any) (int64, error) {
 			"%s expects a number for %s, but got %s", name, field, handlerparams.AliasFromType(v),
 		))
 	}
+}
+
+// nativeInt converts an int64 only after proving that it fits the platform's
+// native int width. time.Date uses native ints even though BSON numbers are
+// fixed-width values.
+func nativeInt(name, field string, v int64) (int, error) {
+	if strconv.IntSize == 32 && (v > math.MaxInt32 || v < math.MinInt32) {
+		return 0, dateError(name, fmt.Sprintf("%s value for %s is out of range", name, field))
+	}
+
+	return int(v), nil
 }
 
 // evalTimezone evaluates an optional timezone expression on a spec document,
@@ -332,7 +345,7 @@ func (o *dateFromParts) Process(doc *types.Document) (any, error) {
 		}
 	}
 
-	vals := make(map[string]int64, len(parts))
+	vals := make(map[string]int, len(parts))
 
 	for _, p := range parts {
 		v, null, err := o.partValue(p.key, p.def, doc)
@@ -344,21 +357,24 @@ func (o *dateFromParts) Process(doc *types.Document) (any, error) {
 			return types.Null, nil
 		}
 
-		vals[p.key] = v
+		vals[p.key], err = nativeInt("$dateFromParts", p.key, v)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var t time.Time
 
 	if iso {
 		t = isoPartsToTime(
-			int(vals["isoWeekYear"]), int(vals["isoWeek"]), int(vals["isoDayOfWeek"]),
-			int(vals["hour"]), int(vals["minute"]), int(vals["second"]), int(vals["millisecond"]), loc,
+			vals["isoWeekYear"], vals["isoWeek"], vals["isoDayOfWeek"],
+			vals["hour"], vals["minute"], vals["second"], vals["millisecond"], loc,
 		)
 	} else {
 		t = time.Date(
-			int(vals["year"]), time.Month(vals["month"]), int(vals["day"]),
-			int(vals["hour"]), int(vals["minute"]), int(vals["second"]),
-			int(vals["millisecond"])*int(time.Millisecond), loc,
+			vals["year"], time.Month(vals["month"]), vals["day"],
+			vals["hour"], vals["minute"], vals["second"],
+			vals["millisecond"]*int(time.Millisecond), loc,
 		)
 	}
 

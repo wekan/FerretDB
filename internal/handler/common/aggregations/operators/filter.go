@@ -127,7 +127,7 @@ func (f *filter) Process(doc *types.Document) (any, error) {
 		)
 	}
 
-	limit := -1
+	limit := int64(-1)
 
 	if f.limit != nil {
 		limitValue, err := evaluateExpression(f.limit, doc)
@@ -153,7 +153,7 @@ func (f *filter) Process(doc *types.Document) (any, error) {
 				)
 			}
 
-			limit = int(n)
+			limit = n
 		}
 	}
 
@@ -172,7 +172,7 @@ func (f *filter) Process(doc *types.Document) (any, error) {
 			return nil, lazyerrors.Error(err)
 		}
 
-		if limit >= 0 && res.Len() >= limit {
+		if limit >= 0 && int64(res.Len()) >= limit {
 			break
 		}
 

@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Numeric query arguments no longer wrap during native-integer conversions.**
+  CodeQL alerts 12 through 30 identified unsafe conversions shared by date-part
+  construction, array filtering, substring and string-index expressions, and
+  BSON timestamp formatting. Query bounds now remain fixed-width until they are
+  safely clamped, date parts reject values outside the native range, filter
+  limits stay 64-bit, and timestamp components are formatted as their unsigned
+  BSON values. Extreme-value, fractional-value and 32-bit regression tests cover
+  the affected paths by @xet7. Thanks to GitHub CodeQL and xet7.
+
 ## [v1.57.0](https://github.com/wekan/FerretDB/releases/tag/v1.57.0) (2026-08-25)
 
 ### Fixed 🐛

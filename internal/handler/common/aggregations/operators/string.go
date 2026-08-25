@@ -337,6 +337,10 @@ func (o *substr) Process(doc *types.Document) (any, error) {
 		return "", nil
 	}
 
+	if start > int64(len(s)) {
+		return "", nil
+	}
+
 	if o.codePoints {
 		return substrRunes(s, start, length), nil
 	}
@@ -344,8 +348,8 @@ func (o *substr) Process(doc *types.Document) (any, error) {
 	return substrBytes(s, start, length), nil
 }
 
-// intArg evaluates arg and returns it as an int, requiring a numeric value.
-func (o *substr) intArg(arg any, doc *types.Document) (int, error) {
+// intArg evaluates arg and returns it as an int64, requiring a whole numeric value.
+func (o *substr) intArg(arg any, doc *types.Document) (int64, error) {
 	v, err := evaluateExpression(arg, doc)
 	if err != nil {
 		return 0, err
@@ -355,7 +359,8 @@ func (o *substr) intArg(arg any, doc *types.Document) (int, error) {
 		return 0, nil
 	}
 
-	if !numberValue(v) {
+	n, err := handlerparams.GetWholeNumberParam(v)
+	if err != nil {
 		return 0, handlererrors.NewCommandErrorMsgWithArgument(
 			handlererrors.ErrTypeMismatch,
 			fmt.Sprintf("%s requires numeric starting and length arguments, found: %s", o.name, handlerparams.AliasFromType(v)),
@@ -363,39 +368,41 @@ func (o *substr) intArg(arg any, doc *types.Document) (int, error) {
 		)
 	}
 
-	return int(toFloat64(v)), nil
+	return n, nil
 }
 
 // substrBytes returns the byte-offset substring of s starting at start with the
 // given length; a negative length means the rest of the string.
-func substrBytes(s string, start, length int) string {
-	if start >= len(s) {
+func substrBytes(s string, start, length int64) string {
+	if start >= int64(len(s)) {
 		return ""
 	}
 
 	end := len(s)
-	if length >= 0 && start+length < end {
-		end = start + length
+	startInt := int(start)
+	if length >= 0 && length < int64(end-startInt) {
+		end = startInt + int(length)
 	}
 
-	return s[start:end]
+	return s[startInt:end]
 }
 
 // substrRunes returns the code-point-offset substring of s starting at start
 // with the given length; a negative length means the rest of the string.
-func substrRunes(s string, start, length int) string {
+func substrRunes(s string, start, length int64) string {
 	runes := []rune(s)
 
-	if start >= len(runes) {
+	if start >= int64(len(runes)) {
 		return ""
 	}
 
 	end := len(runes)
-	if length >= 0 && start+length < end {
-		end = start + length
+	startInt := int(start)
+	if length >= 0 && length < int64(end-startInt) {
+		end = startInt + int(length)
 	}
 
-	return string(runes[start:end])
+	return string(runes[startInt:end])
 }
 
 // split represents `$split` operator.
@@ -679,7 +686,8 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 		}
 
 		if !isNullValue(v) {
-			if !numberValue(v) {
+			n, convErr := handlerparams.GetWholeNumberParam(v)
+			if convErr != nil {
 				return 0, 0, handlererrors.NewCommandErrorMsgWithArgument(
 					handlererrors.ErrTypeMismatch,
 					fmt.Sprintf("%s requires an integral starting index", o.name),
@@ -687,7 +695,14 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 				)
 			}
 
-			start = int(toFloat64(v))
+			switch {
+			case n < 0:
+				start = 0
+			case n > int64(length):
+				start = length
+			default:
+				start = int(n)
+			}
 		}
 	}
 
@@ -698,7 +713,8 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 		}
 
 		if !isNullValue(v) {
-			if !numberValue(v) {
+			n, convErr := handlerparams.GetWholeNumberParam(v)
+			if convErr != nil {
 				return 0, 0, handlererrors.NewCommandErrorMsgWithArgument(
 					handlererrors.ErrTypeMismatch,
 					fmt.Sprintf("%s requires an integral ending index", o.name),
@@ -706,7 +722,14 @@ func (o *indexOf) bounds(length int, doc *types.Document) (start, end int, err e
 				)
 			}
 
-			end = int(toFloat64(v))
+			switch {
+			case n < 0:
+				end = 0
+			case n > int64(length):
+				end = length
+			default:
+				end = int(n)
+			}
 		}
 	}
 
