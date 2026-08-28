@@ -6,6 +6,13 @@
 
 ### New Features 🎉
 
+- **DEBUGSPEED captures connection failures without recording wire payloads.**
+  Opt-in diagnostic runs now default to `info`, so their log contains listener
+  lifecycle, connection warnings and errors, plus the existing bounded SQLite
+  query-shape records. Debug-level request messages remain disabled because
+  they can contain user data. A unit test pins the opt-in level by @xet7.
+  Thanks to xet7.
+
 - **Opt-in SQLite query-shape diagnostics identify expensive pushdown work.**
   With `DEBUGSPEED=true`, completed SQLite cursors whose SQL execution, SJSON
   decoding or candidate-row count crosses a bounded threshold log the database,

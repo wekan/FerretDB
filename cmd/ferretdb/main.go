@@ -246,6 +246,15 @@ func main() {
 
 // defaultLogLevel returns the default log level.
 func defaultLogLevel() slog.Level {
+	// DEBUGSPEED is an explicitly opt-in diagnostic run. Info includes listener
+	// lifecycle, connection failures (warn) and the bounded DEBUGSPEED query-shape
+	// records without enabling debug-level wire messages, which may contain user
+	// data. This must precede DebugBuild so tests and diagnostic builds exercise
+	// the same safe level.
+	if os.Getenv("DEBUGSPEED") == "true" {
+		return slog.LevelInfo
+	}
+
 	if version.Get().DebugBuild {
 		return slog.LevelDebug
 	}
