@@ -78,6 +78,10 @@ type QueryParams struct {
 	Filter *types.Document
 	Sort   *types.Document
 	Limit  int64
+	// DecodeFields lets document backends avoid recursively decoding fields that
+	// the handler's inclusion projection, filter and sort cannot observe. Other
+	// backends may ignore it and return complete documents.
+	DecodeFields []string
 
 	OnlyRecordIDs bool
 	Comment       string

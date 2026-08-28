@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -244,6 +245,18 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 		Comment: params.Comment,
 	}
 
+	if _, inclusion, projectionErr := common.ValidateProjection(params.Projection); projectionErr == nil && inclusion {
+		fields := make(map[string]struct{})
+		collectDecodeFields(params.Projection, fields)
+		collectDecodeFields(params.Filter, fields)
+		collectDecodeFields(params.Sort, fields)
+		qp.DecodeFields = make([]string, 0, len(fields))
+		for field := range fields {
+			qp.DecodeFields = append(qp.DecodeFields, field)
+		}
+		slices.Sort(qp.DecodeFields)
+	}
+
 	var err error
 	if params.Filter != nil {
 		if qp.Comment, err = common.GetOptionalParam(params.Filter, "$comment", qp.Comment); err != nil {
@@ -314,6 +327,34 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 	h.L.DebugContext(ctx, fmt.Sprintf("Converted %+v for %+v to %+v.", params, cInfo, qp))
 
 	return qp, nil
+}
+
+// collectDecodeFields records top-level document fields observable by a query.
+// Operator documents are traversed; dotted paths require decoding their root.
+func collectDecodeFields(doc *types.Document, fields map[string]struct{}) {
+	if doc == nil {
+		return
+	}
+	for _, key := range doc.Keys() {
+		value := must.NotFail(doc.Get(key))
+		if strings.HasPrefix(key, "$") {
+			switch value := value.(type) {
+			case *types.Document:
+				collectDecodeFields(value, fields)
+			case *types.Array:
+				for i := 0; i < value.Len(); i++ {
+					if branch, ok := must.NotFail(value.Get(i)).(*types.Document); ok {
+						collectDecodeFields(branch, fields)
+					}
+				}
+			}
+			continue
+		}
+		root, _, _ := strings.Cut(strings.TrimSuffix(key, ".$"), ".")
+		if root != "" {
+			fields[root] = struct{}{}
+		}
+	}
 }
 
 // makeFindIter creates an iterator chain for the find command.

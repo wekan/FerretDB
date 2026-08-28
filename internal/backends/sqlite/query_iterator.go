@@ -41,6 +41,7 @@ type queryIterator struct {
 	token         *resource.Token
 	m             sync.Mutex
 	onlyRecordIDs bool
+	decodeFields  []string
 	speed         *querySpeed
 }
 
@@ -80,12 +81,15 @@ func newSpeedQueryIterator(iter *queryIterator, speed *querySpeed) *queryIterato
 //
 // Nil rows are possible and return already done iterator.
 // It still should be Close'd.
-func newQueryIterator(ctx context.Context, rows *fsql.Rows, onlyRecordIDs bool) *queryIterator {
+func newQueryIterator(ctx context.Context, rows *fsql.Rows, onlyRecordIDs bool, decodeFields ...[]string) *queryIterator {
 	iter := &queryIterator{
 		ctx:           ctx,
 		rows:          rows,
 		onlyRecordIDs: onlyRecordIDs,
 		token:         resource.NewToken(),
+	}
+	if len(decodeFields) != 0 {
+		iter.decodeFields = decodeFields[0]
 	}
 	resource.Track(iter, iter.token)
 
@@ -154,7 +158,12 @@ func (iter *queryIterator) Next() (struct{}, *types.Document, error) {
 
 	if !iter.onlyRecordIDs {
 		decodeStarted := time.Now()
-		if doc, err = sjson.Unmarshal(b); err != nil {
+		if len(iter.decodeFields) == 0 {
+			doc, err = sjson.Unmarshal(b)
+		} else {
+			doc, err = sjson.UnmarshalFields(b, iter.decodeFields)
+		}
+		if err != nil {
 			iter.close()
 			return unused, nil, lazyerrors.Error(err)
 		}

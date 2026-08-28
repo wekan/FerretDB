@@ -66,6 +66,32 @@ func TestMarshalUnmarshal(t *testing.T) {
 	}
 }
 
+func TestUnmarshalFields(t *testing.T) {
+	t.Parallel()
+
+	nested := must.NotFail(types.NewDocument(
+		"members", must.NotFail(types.NewArray(
+			must.NotFail(types.NewDocument("userId", "u1", "active", true)),
+		)),
+	))
+	doc := must.NotFail(types.NewDocument(
+		"title", "large board",
+		"_id", types.ObjectID{1, 2, 3},
+		"archived", false,
+		"nested", nested,
+	))
+	b, err := Marshal(doc)
+	require.NoError(t, err)
+
+	actual, err := UnmarshalFields(b, []string{"archived", "_id", "missing"})
+	require.NoError(t, err)
+	assert.Equal(t, must.NotFail(types.NewDocument(
+		"_id", types.ObjectID{1, 2, 3},
+		"archived", false,
+	)), actual, "selected fields retain stored order and missing fields remain missing")
+	assert.False(t, actual.Has("nested"), "unobservable nested values must not be recursively decoded")
+}
+
 // TestUnmarshalInvalid checks that in case of invalid data, we return errors and not just ignore issues.
 func TestUnmarshalInvalid(t *testing.T) {
 	t.Parallel()

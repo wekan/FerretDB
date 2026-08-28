@@ -237,6 +237,58 @@ func Unmarshal(data []byte) (*types.Document, error) {
 	return d, nil
 }
 
+// UnmarshalFields decodes only selected top-level fields. It still parses the
+// complete outer JSON object, but avoids recursively decoding unobservable
+// values and their often much larger schemas (for example member arrays when a
+// client requested only _id). Missing selected fields remain missing.
+func UnmarshalFields(data []byte, fields []string) (*types.Document, error) {
+	var values map[string]json.RawMessage
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	jsch, ok := values["$s"]
+	if !ok {
+		return nil, lazyerrors.Errorf("schema is not set")
+	}
+	var sch struct {
+		Properties map[string]json.RawMessage `json:"p"`
+		Keys       []string                   `json:"$k"`
+	}
+	if err := json.Unmarshal(jsch, &sch); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	wanted := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		wanted[field] = struct{}{}
+	}
+	d := must.NotFail(types.NewDocument())
+	for _, key := range sch.Keys {
+		if _, ok := wanted[key]; !ok {
+			continue
+		}
+		value, exists := values[key]
+		if !exists {
+			return nil, lazyerrors.Errorf("sjson.UnmarshalFields: missing key %q", key)
+		}
+		rawElem, exists := sch.Properties[key]
+		if !exists {
+			return nil, lazyerrors.Errorf("sjson.UnmarshalFields: missing schema for key %q", key)
+		}
+		var fieldSchema elem
+		if err := json.Unmarshal(rawElem, &fieldSchema); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		decoded, err := unmarshalSingleValue(value, &fieldSchema)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		d.Set(key, decoded)
+	}
+	return d, nil
+}
+
 // unmarshalSingleValue decodes the given sjson-encoded data element by the given schema.
 func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
 	if bytes.Equal(data, []byte("null")) {

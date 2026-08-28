@@ -94,7 +94,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		return nil, lazyerrors.Error(err)
 	}
 
-	iter := newQueryIterator(ctx, rows, params.OnlyRecordIDs)
+	iter := newQueryIterator(ctx, rows, params.OnlyRecordIDs, params.DecodeFields)
 	if os.Getenv("DEBUGSPEED") == "true" {
 		iter = newSpeedQueryIterator(iter, &querySpeed{
 			logger:        c.r.Logger(),
