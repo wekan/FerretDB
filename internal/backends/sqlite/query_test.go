@@ -133,9 +133,9 @@ func TestPreferredCompoundIndex(t *testing.T) {
 		assert.Equal(t, "cards_boardId_1_archived_1", preferredCompoundIndex("cards", indexes, filter))
 	})
 
-	t.Run("SingleFieldLeftToPlanner", func(t *testing.T) {
+	t.Run("SingleFieldForced", func(t *testing.T) {
 		filter := must.NotFail(types.NewDocument("type", "cardType-linkedCard"))
-		assert.Empty(t, preferredCompoundIndex("cards", indexes, filter))
+		assert.Equal(t, "cards_type_1", preferredCompoundIndex("cards", indexes, filter))
 	})
 }
 
@@ -189,13 +189,13 @@ func TestPrepareWhereClause(t *testing.T) {
 					must.NotFail(types.NewDocument("members.userId", "u1")),
 				)),
 			)),
-			expectWhere: ` WHERE (` +
+			expectWhere: ` WHERE ` + arrayArm("archived") + ` AND (` +
 				`(` + arrayArm("permission") + `)` +
 				` OR ` +
 				`(` + fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`,
 				metadata.DefaultColumn+`->"members"->"userId"`) + `)` +
 				`)`,
-			expectArgs: []any{`"public"`, `"u1"`},
+			expectArgs: []any{`false`, `"public"`, `"u1"`},
 		},
 
 		// ALL OR NOTHING. Every other pushdown narrows: a condition that cannot
@@ -253,6 +253,11 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter:      must.NotFail(types.NewDocument("boardId", "b1")),
 			expectWhere: ` WHERE ` + arrayArm("boardId"),
 			expectArgs:  []any{`"b1"`},
+		},
+		"TopLevelBool": {
+			filter:      must.NotFail(types.NewDocument("archived", false)),
+			expectWhere: ` WHERE ` + arrayArm("archived"),
+			expectArgs:  []any{`false`},
 		},
 		"MultipleFields": {
 			filter:      must.NotFail(types.NewDocument("boardId", "b1", "listId", "l1")),
@@ -328,6 +333,11 @@ func TestPrepareWhereClause(t *testing.T) {
 			expectWhere: ` WHERE ` + expr("_id") + ` IN (?, ?)`,
 			expectArgs:  []any{`"a"`, `"b"`},
 		},
+		"EmptyInMatchesNothing": {
+			filter: must.NotFail(types.NewDocument("_id",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray()))))),
+			expectWhere: ` WHERE 0`,
+		},
 		"InWithNullPushed": {
 			// {boardId: {$in: [id, null]}} — a board's card-scope shape when no
 			// subtasks-default board is set. The id pushes as an IN, the null as an
@@ -382,9 +392,10 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("meta.n",
 				must.NotFail(types.NewDocument("$gt", int64(5))))),
 		},
-		"InEmptyNotPushed": {
+		"InEmptyMatchesNothing": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray()))))),
+			expectWhere: ` WHERE 0`,
 		},
 		"InUnsafeElementNotPushed": {
 			// a non-string element: dropping it would make IN a SUBSET, so nothing

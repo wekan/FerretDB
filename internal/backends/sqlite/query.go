@@ -182,7 +182,11 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 // MongoDB semantics; that OR can make SQLite choose a less selective single-key
 // index even when the application declared the exact compound index. INDEXED BY
 // keeps the superset predicate fully correct while making the declared compound
-// prefix the access path. A one-key match is left to SQLite's cost model.
+// prefix the access path. Single-key matches are forced too: the Mongo-compatible
+// array arm (`expr = ? OR expr is an array`) otherwise makes SQLite choose a
+// table scan for small/restored statistics even when the exact expression index
+// exists. That turned `_id`, `meta.boardId` and one-element `$in` polling into
+// full collection decodes.
 func preferredCompoundIndex(
 	table string,
 	indexes []metadata.IndexInfo,
@@ -194,16 +198,28 @@ func preferredCompoundIndex(
 
 	fields := make(map[string]struct{}, filter.Len())
 	for _, key := range filter.Keys() {
-		if key != "" && !strings.HasPrefix(key, "$") {
+		if key == "" || strings.HasPrefix(key, "$") {
+			continue
+		}
+
+		value := must.NotFail(filter.Get(key))
+		expr := jsonPathExpr(key)
+		var ok bool
+		if strings.ContainsRune(key, '.') {
+			_, _, ok = pushdownDottedFieldCondition(expr, value)
+		} else {
+			_, _, ok = pushdownFieldCondition(expr, key, value)
+		}
+		if ok {
 			fields[key] = struct{}{}
 		}
 	}
 
 	bestName := ""
-	bestPrefix := 1
+	bestPrefix := 0
 	bestWidth := int(^uint(0) >> 1)
 	for _, index := range indexes {
-		if index.Hidden || len(index.Key) < 2 {
+		if index.Hidden || len(index.Key) == 0 {
 			continue
 		}
 
@@ -215,7 +231,7 @@ func preferredCompoundIndex(
 			prefix++
 		}
 
-		if prefix > bestPrefix || (prefix == bestPrefix && prefix > 1 && len(index.Key) < bestWidth) {
+		if prefix > bestPrefix || (prefix == bestPrefix && prefix > 0 && len(index.Key) < bestWidth) {
 			bestName = table + "_" + index.Name
 			bestPrefix = prefix
 			bestWidth = len(index.Key)
@@ -310,7 +326,7 @@ func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {
 
 		return equalityCondition(expr, key), []any{marshalPushdownValue(v)}, true
 
-	case types.ObjectID:
+	case types.ObjectID, bool:
 		// hex-encoded by sjson; always byte-identical in both serializations
 		return equalityCondition(expr, key), []any{marshalPushdownValue(v)}, true
 
@@ -355,7 +371,7 @@ func pushdownDottedFieldCondition(expr string, v any) (string, []any, bool) {
 
 		return equalityCondition(expr, ""), []any{marshalPushdownValue(v)}, true
 
-	case types.ObjectID:
+	case types.ObjectID, bool:
 		return equalityCondition(expr, ""), []any{marshalPushdownValue(v)}, true
 
 	case *types.Document:
@@ -612,7 +628,10 @@ func numericBound(v any) (any, bool) {
 // doc/array — since pushing only the other elements would make IN a SUBSET.
 func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 	if arr.Len() == 0 {
-		return "", nil, false
+		// MongoDB's $in with no alternatives can never match, including when the
+		// field is an array. Push that exact result down instead of decoding the
+		// whole collection merely to return no documents.
+		return "0", nil, true
 	}
 
 	placeholders := make([]string, 0, arr.Len())
@@ -629,7 +648,7 @@ func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 			}
 			placeholders = append(placeholders, "?")
 			condArgs = append(condArgs, marshalPushdownValue(e))
-		case types.ObjectID:
+		case types.ObjectID, bool:
 			placeholders = append(placeholders, "?")
 			condArgs = append(condArgs, marshalPushdownValue(e))
 		case types.NullType:
