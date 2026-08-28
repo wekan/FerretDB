@@ -79,6 +79,9 @@ func (h *Handler) MsgDistinct(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 	// every candidate. Keep _id as the document invariant expected by handler
 	// iterators even though distinct does not return it.
 	qp.DecodeFields = distinctDecodeFields(params.Key, params.Filter)
+	if !strings.ContainsRune(params.Key, '.') {
+		qp.DistinctField = params.Key
+	}
 
 	// TODO https://github.com/FerretDB/FerretDB/issues/3235
 	queryRes, err := c.Query(connCtx, &qp)
@@ -104,7 +107,7 @@ func (h *Handler) MsgDistinct(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 }
 
 func distinctDecodeFields(key string, filter *types.Document) []string {
-	fields := map[string]struct{}{"_id": {}}
+	fields := make(map[string]struct{})
 	collectDecodeFields(filter, fields)
 	root, _, _ := strings.Cut(key, ".")
 	if root != "" {

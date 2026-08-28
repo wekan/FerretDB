@@ -49,6 +49,36 @@ func prepareSelectClause(table, comment string, capped, onlyRecordIDs bool) stri
 	return fmt.Sprintf(`SELECT %s %s FROM %q`, comment, metadata.DefaultColumn, table)
 }
 
+// prepareDistinctSelectClause returns one minimal SJSON document for each
+// distinct combination of fields consumed by the command. Keeping filter fields
+// in the document lets the handler re-apply MongoDB semantics, while SQLite no
+// longer sends unrelated complete documents through the Go decoder.
+func prepareDistinctSelectClause(table, comment string, fields []string) string {
+	if comment != "" {
+		comment = strings.ReplaceAll(comment, "/*", "/ *")
+		comment = strings.ReplaceAll(comment, "*/", "* /")
+		comment = `/* ` + comment + ` */`
+	}
+
+	propertyArgs := make([]string, 0, len(fields)*2)
+	keyArgs := make([]string, 0, len(fields))
+	valueArgs := make([]string, 0, len(fields)*2)
+	for _, field := range fields {
+		literal := `'` + strings.ReplaceAll(field, `'`, `''`) + `'`
+		expr := jsonPathExpr(field)
+		schemaExpr := metadata.DefaultColumn + `->'$."$s"'->'p'->` + literal
+		propertyArgs = append(propertyArgs, literal, schemaExpr)
+		keyArgs = append(keyArgs, literal)
+		valueArgs = append(valueArgs, literal, expr)
+	}
+
+	schema := `json_object('p',json_object(` + strings.Join(propertyArgs, `,`) +
+		`),'$k',json_array(` + strings.Join(keyArgs, `,`) + `))`
+	doc := `json_object('$s',` + schema + `,` + strings.Join(valueArgs, `,`) + `)`
+
+	return fmt.Sprintf(`SELECT DISTINCT %s %s AS %s FROM %q`, comment, doc, metadata.DefaultColumn, table)
+}
+
 // pushdownSafeString reports whether Go's encoding/json (used by sjson when the
 // document was stored) and SQLite's -> operator (which re-renders the stored
 // JSON when we compare against it) produce byte-identical serializations of s,

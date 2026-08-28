@@ -68,6 +68,11 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	}
 
 	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
+	distinctPushdown := params.DistinctField != "" && len(params.DecodeFields) != 0 &&
+		!params.OnlyRecordIDs && !meta.Capped()
+	if distinctPushdown {
+		q = prepareDistinctSelectClause(meta.TableName, params.Comment, params.DecodeFields)
+	}
 	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
 	if index != "" {
 		q += fmt.Sprintf(` INDEXED BY %q`, index)
@@ -78,6 +83,14 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	// only a bare {_id: X} filter was pushed down, so every other query decoded
 	// the WHOLE collection in Go on every Meteor poll.
 	whereClause, args := prepareWhereClause(params.Filter)
+	if distinctPushdown {
+		exists := `json_type(` + jsonPathExpr(params.DistinctField) + `) IS NOT NULL`
+		if whereClause == "" {
+			whereClause = ` WHERE ` + exists
+		} else {
+			whereClause += ` AND ` + exists
+		}
+	}
 
 	q += whereClause
 	q += prepareOrderByClause(params.Sort)

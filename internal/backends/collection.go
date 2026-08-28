@@ -82,6 +82,9 @@ type QueryParams struct {
 	// the handler's inclusion projection, filter and sort cannot observe. Other
 	// backends may ignore it and return complete documents.
 	DecodeFields []string
+	// DistinctField asks capable backends to collapse a top-level distinct key
+	// before returning candidates. The handler still filters and deduplicates.
+	DistinctField string
 
 	OnlyRecordIDs bool
 	Comment       string

@@ -79,7 +79,7 @@ func TestDistinctDecodeFields(t *testing.T) {
 		)),
 	))
 	assert.Equal(t,
-		[]string{"_id", "archived", "members", "swimlane"},
+		[]string{"archived", "members", "swimlane"},
 		distinctDecodeFields("swimlane.id", filter),
 	)
 }

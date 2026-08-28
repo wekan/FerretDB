@@ -87,6 +87,58 @@ func TestCappedCollectionInsertAllQueryExplain(t *testing.T) {
 	})
 }
 
+func TestQueryDistinctFieldPushdown(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	large := must.NotFail(types.NewArray())
+	for i := 0; i < 100; i++ {
+		large.Append(must.NotFail(types.NewDocument("unused", int64(i))))
+	}
+	docs := []*types.Document{
+		must.NotFail(types.NewDocument("_id", "1", "swimlaneId", "s1", "archived", false, "payload", large)),
+		must.NotFail(types.NewDocument("_id", "2", "swimlaneId", "s1", "archived", false, "payload", large)),
+		must.NotFail(types.NewDocument("_id", "3", "swimlaneId", "s2", "archived", false, "payload", large)),
+		must.NotFail(types.NewDocument("_id", "4", "swimlaneId", "s3", "archived", true, "payload", large)),
+		must.NotFail(types.NewDocument("_id", "5", "archived", false, "payload", large)),
+	}
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: docs})
+	require.NoError(t, err)
+
+	res, err := coll.Query(ctx, &backends.QueryParams{
+		Filter:        must.NotFail(types.NewDocument("archived", false)),
+		DecodeFields:  []string{"archived", "swimlaneId"},
+		DistinctField: "swimlaneId",
+	})
+	require.NoError(t, err)
+	actual, err := iterator.ConsumeValues[struct{}, *types.Document](res.Iter)
+	require.NoError(t, err)
+	require.Len(t, actual, 2, "SQLite must collapse duplicate keys before SJSON decoding")
+
+	values := []string{
+		must.NotFail(actual[0].Get("swimlaneId")).(string),
+		must.NotFail(actual[1].Get("swimlaneId")).(string),
+	}
+	assert.ElementsMatch(t, []string{"s1", "s2"}, values)
+	for _, doc := range actual {
+		assert.False(t, doc.Has("payload"), "unconsumed fields must not cross the SQLite iterator")
+		assert.Equal(t, false, must.NotFail(doc.Get("archived")))
+	}
+}
+
 // TestQueryOrPushdown verifies end-to-end that a top-level $or is pushed down
 // CORRECTLY, which for an OR means one thing above all: NOTHING THAT MATCHES IS
 // LOST. Every other pushdown narrows, and the Go filter removes whatever extra
