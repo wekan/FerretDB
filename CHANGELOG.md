@@ -11,9 +11,12 @@
   iterator now recursively decodes only projected top-level fields plus fields
   required by filters and sorts. Small projections such as `_id` no longer
   decode large member arrays from every matching document during collection
-  scans. Exclusion projections retain full decoding. Unit tests cover nested
-  query-field collection, missing fields, stored field order and skipped nested
-  values by @xet7. Thanks to xet7.
+  scans. The decoder always retains `_id`, including when its inclusion is
+  implicit or it is removed only by the final projection stage, preventing
+  partial documents from terminating a client connection. Exclusion projections
+  retain full decoding. Unit tests cover both `_id` forms, nested query-field
+  collection, missing fields, stored field order and skipped nested values by
+  @xet7. Thanks to xet7.
 
 - **Tailable OpLog cursors wake on writes instead of polling SQLite.** The
   OpLog decorator now broadcasts each successful append to every `awaitData`

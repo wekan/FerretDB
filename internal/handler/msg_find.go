@@ -246,7 +246,10 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 	}
 
 	if _, inclusion, projectionErr := common.ValidateProjection(params.Projection); projectionErr == nil && inclusion {
-		fields := make(map[string]struct{})
+		// ProjectDocument always reads _id first because MongoDB includes it by
+		// default and only then applies an explicit {_id: 0}. Keep it available in
+		// both cases; omitting it makes the projection iterator panic.
+		fields := map[string]struct{}{"_id": {}}
 		collectDecodeFields(params.Projection, fields)
 		collectDecodeFields(params.Filter, fields)
 		collectDecodeFields(params.Sort, fields)

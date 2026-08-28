@@ -18,9 +18,13 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
+	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/handler/common"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
 func TestCollectDecodeFields(t *testing.T) {
@@ -40,4 +44,27 @@ func TestCollectDecodeFields(t *testing.T) {
 	assert.Equal(t, map[string]struct{}{
 		"_id": {}, "profile": {}, "services": {}, "archived": {}, "members": {},
 	}, fields)
+}
+
+func TestFindDecodeFieldsAlwaysKeepID(t *testing.T) {
+	t.Parallel()
+
+	h := &Handler{NewOpts: &NewOpts{L: testutil.Logger(t)}}
+	for name, projection := range map[string]*types.Document{
+		"Implicit":          must.NotFail(types.NewDocument("title", int64(1))),
+		"ExplicitExclusion": must.NotFail(types.NewDocument("title", int64(1), "_id", int64(0))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			params := &common.FindParams{
+				Filter:     must.NotFail(types.NewDocument("archived", false)),
+				Sort:       must.NotFail(types.NewDocument()),
+				Projection: projection,
+			}
+			qp, err := h.makeFindQueryParams(testutil.Ctx(t), params, &backends.CollectionInfo{})
+			require.NoError(t, err)
+			assert.Contains(t, qp.DecodeFields, "_id")
+			assert.Contains(t, qp.DecodeFields, "title")
+			assert.Contains(t, qp.DecodeFields, "archived")
+		})
+	}
 }
