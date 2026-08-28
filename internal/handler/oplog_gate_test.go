@@ -147,8 +147,16 @@ func TestOpLogWrittenWithReplSetName(t *testing.T) {
 
 	h, err := New(&NewOpts{Backend: b, ReplSetName: "rs0", L: testutil.Logger(t)})
 	require.NoError(t, err)
+	notifier, ok := h.b.(interface{ Notifications() <-chan struct{} })
+	require.True(t, ok)
+	changed := notifier.Notifications()
 
 	insertOne(t, h, "testdb", "testcoll")
+	select {
+	case <-changed:
+	default:
+		assert.Fail(t, "successful OpLog append did not wake awaitData listeners")
+	}
 
 	assert.Greater(t, oplogLen(t, b), before,
 		"the gate must not have turned OpLog recording off for the deployments that "+

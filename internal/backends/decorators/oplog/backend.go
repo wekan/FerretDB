@@ -17,6 +17,7 @@ package oplog
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -25,16 +26,35 @@ import (
 
 // backend implements backends.Backend interface by delegating all methods to the wrapped backend.
 type backend struct {
-	origB backends.Backend
-	l     *slog.Logger
+	origB   backends.Backend
+	l       *slog.Logger
+	m       sync.Mutex
+	changed chan struct{}
 }
 
 // NewBackend creates a new Backend that wraps the given backend.
 func NewBackend(origB backends.Backend, l *slog.Logger) backends.Backend {
 	return &backend{
-		origB: origB,
-		l:     l,
+		origB:   origB,
+		l:       l,
+		changed: make(chan struct{}),
 	}
+}
+
+// Notifications returns a broadcast channel that closes when an OpLog entry is
+// appended. Callers take a fresh channel before each query to avoid missing a
+// write between querying and waiting.
+func (b *backend) Notifications() <-chan struct{} {
+	b.m.Lock()
+	defer b.m.Unlock()
+	return b.changed
+}
+
+func (b *backend) notify() {
+	b.m.Lock()
+	close(b.changed)
+	b.changed = make(chan struct{})
+	b.m.Unlock()
 }
 
 // Close implements backends.Backend interface.
@@ -54,7 +74,7 @@ func (b *backend) Database(name string) (backends.Database, error) {
 		return nil, err
 	}
 
-	return newDatabase(origDB, name, b.origB, b.l), nil
+	return newDatabase(origDB, name, b.origB, b.notify, b.l), nil
 }
 
 // ListDatabases implements backends.Backend interface.

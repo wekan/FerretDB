@@ -38,16 +38,18 @@ type collection struct {
 	dbName string
 	origB  backends.Backend
 	l      *slog.Logger
+	notify func()
 }
 
 // newCollection creates a new Collection that wraps the given collection.
-func newCollection(origC backends.Collection, name, dbName string, origB backends.Backend, l *slog.Logger) backends.Collection {
+func newCollection(origC backends.Collection, name, dbName string, origB backends.Backend, notify func(), l *slog.Logger) backends.Collection {
 	return &collection{
 		origC:  origC,
 		name:   name,
 		dbName: dbName,
 		origB:  origB,
 		l:      l,
+		notify: notify,
 	}
 }
 
@@ -88,6 +90,8 @@ func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllPa
 		})
 		if err != nil {
 			c.l.ErrorContext(ctx, "Failed to insert documents", logging.Error(err))
+		} else {
+			c.notify()
 		}
 	}
 
@@ -109,10 +113,12 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 
 		for i, doc := range params.Docs {
 			d := &document{
-				o: must.NotFail(types.NewDocument(
-					"$v", int32(1),
-					"$set", doc,
-				)),
+				// UpdateAll receives the complete post-update document. Record it as
+				// a replacement update, which is a valid MongoDB OpLog shape and lets
+				// observers apply it directly. Wrapping the whole document in $set
+				// also included immutable _id; clients rejected that modifier and had
+				// to re-fetch every update, stalling sorted/limited observers.
+				o:  doc,
 				o2: must.NotFail(types.NewDocument("_id", must.NotFail(doc.Get("_id")))),
 				ns: c.dbName + "." + c.name,
 				op: "u",
@@ -130,6 +136,8 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 		})
 		if err != nil {
 			c.l.ErrorContext(ctx, "Failed to insert documents", logging.Error(err))
+		} else {
+			c.notify()
 		}
 	}
 
@@ -173,6 +181,8 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 		})
 		if err != nil {
 			c.l.ErrorContext(ctx, "Failed to insert documents", logging.Error(err))
+		} else {
+			c.notify()
 		}
 	}
 

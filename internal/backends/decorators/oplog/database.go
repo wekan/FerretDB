@@ -27,15 +27,17 @@ type database struct {
 	name   string
 	origB  backends.Backend
 	l      *slog.Logger
+	notify func()
 }
 
 // newDatabase creates a new Database that wraps the given database.
-func newDatabase(origDB backends.Database, name string, origB backends.Backend, l *slog.Logger) backends.Database {
+func newDatabase(origDB backends.Database, name string, origB backends.Backend, notify func(), l *slog.Logger) backends.Database {
 	return &database{
 		origDB: origDB,
 		name:   name,
 		origB:  origB,
 		l:      l,
+		notify: notify,
 	}
 }
 
@@ -46,7 +48,7 @@ func (db *database) Collection(name string) (backends.Collection, error) {
 		return nil, err
 	}
 
-	return newCollection(origC, name, db.name, db.origB, db.l), nil
+	return newCollection(origC, name, db.name, db.origB, db.notify, db.l), nil
 }
 
 // ListCollections implements backends.Database interface.

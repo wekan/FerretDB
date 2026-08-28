@@ -83,19 +83,29 @@ func TestOplogUpdate(t *testing.T) {
 			actual := integration.ConvertDocument(t, lastOplogEntry)
 
 			o := must.NotFail(actual.Get("o")).(*types.Document)
-			version := must.NotFail(o.Get("$v")).(int32)
-			switch version {
-			case 1:
-				diff := must.NotFail(o.Get("$set")).(*types.Document)
-				assert.Equal(t, tc.expectedDiffV1, diff)
-
+			versionValue, _ := o.Get("$v")
+			if versionValue == nil {
+				// FerretDB's backend receives the complete post-update document and
+				// records a replacement update. MongoDB may record an equivalent v1
+				// or v2 modifier depending on its version.
+				assert.Equal(t, tc.expectedDiffV1, o)
 				o2 := must.NotFail(actual.Get("o2")).(*types.Document)
 				assert.Equal(t, tc.expectedO2, o2)
-			case 2:
-				diff := must.NotFail(o.Get("diff")).(*types.Document)
-				assert.Equal(t, tc.expectedDiffV2, diff)
-			default:
-				t.Fatalf("unexpected version %d", version)
+			} else {
+				version := versionValue.(int32)
+				switch version {
+				case 1:
+					diff := must.NotFail(o.Get("$set")).(*types.Document)
+					assert.Equal(t, tc.expectedDiffV1, diff)
+
+					o2 := must.NotFail(actual.Get("o2")).(*types.Document)
+					assert.Equal(t, tc.expectedO2, o2)
+				case 2:
+					diff := must.NotFail(o.Get("diff")).(*types.Document)
+					assert.Equal(t, tc.expectedDiffV2, diff)
+				default:
+					t.Fatalf("unexpected version %d", version)
+				}
 			}
 
 			unsetUnusedOplogFields(actual)

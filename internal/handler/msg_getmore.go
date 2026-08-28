@@ -336,6 +336,11 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 	}()
 
 	for {
+		var notification <-chan struct{}
+		if notifier, ok := h.b.(interface{ Notifications() <-chan struct{} }); ok {
+			notification = notifier.Notifications()
+		}
+
 		var queryRes *backends.QueryResult
 
 		queryRes, err = data.coll.Query(ctx, data.qp)
@@ -371,7 +376,17 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 		// that query continuously and pins CPU even when completely idle. Poll at a calmer
 		// interval, bounded by the remaining maxTimeMS budget (ctxutil.Sleep returns as
 		// soon as ctx's deadline passes), so new-data latency stays within that budget.
-		ctxutil.Sleep(ctx, tailableAwaitPollInterval())
+		if notification == nil {
+			ctxutil.Sleep(ctx, tailableAwaitPollInterval())
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			return
+		case <-notification:
+		}
 	}
 }
 
