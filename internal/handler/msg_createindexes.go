@@ -352,8 +352,10 @@ func processIndex(command string, indexDoc *types.Document) (*backends.IndexInfo
 				index.Unique = true
 			}
 
-		case "background":
-			// ignore deprecated options
+		case "background", "ns":
+			// Ignore deprecated options. MongoDB 3.x index metadata contains the
+			// namespace in `ns`; mongorestore forwards it in createIndexes when
+			// restoring that metadata into a newer server.
 
 		case "sparse":
 			// Ignore for now to make Meteor apps work.

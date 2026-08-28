@@ -4,6 +4,15 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- **MongoDB 3.x index metadata restores no longer stop at the legacy `ns`
+  option.** Modern `mongorestore` can forward that deprecated namespace field
+  in `createIndexes`; FerretDB now ignores it as metadata instead of rejecting
+  the remaining indexes after all documents have restored. An integration test
+  creates and lists such an index, while a negative case proves unrelated
+  unknown options still return `BadValue` by @xet7. Thanks to xet7.
+
 ### New Features 🎉
 
 - **BSON restores preserve NaN double values.** FerretDB now accepts the

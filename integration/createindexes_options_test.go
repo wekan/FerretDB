@@ -171,6 +171,23 @@ func TestCreateIndexesOptions(t *testing.T) {
 		assert.EqualValues(t, 2, m["2dsphereIndexVersion"], "explicit 2dsphereIndexVersion must round-trip")
 	})
 
+	t.Run("LegacyNamespace", func(t *testing.T) {
+		t.Parallel()
+
+		// MongoDB 3.x writes `ns` into dumped index metadata. Modern
+		// mongorestore may forward it, so accept and discard it like MongoDB.
+		require.NoError(t, createIndex(bson.D{
+			{"key", bson.D{{"legacy", 1}}},
+			{"name", "legacy_1"},
+			{"ns", collection.Database().Name() + "." + collection.Name()},
+		}))
+
+		m := listIndexByName(t, ctx, collection, "legacy_1")
+		require.NotNil(t, m, "legacy index must be created")
+		_, ok := m["ns"]
+		assert.False(t, ok, "deprecated ns must not become a stored index option")
+	})
+
 	// Negative: an option that remains unimplemented must still be rejected.
 	t.Run("UnsupportedStorageEngine", func(t *testing.T) {
 		t.Parallel()
@@ -227,5 +244,20 @@ func TestCreateIndexesOptions(t *testing.T) {
 		var ce mongo.CommandError
 		require.True(t, errors.As(err, &ce))
 		assert.EqualValues(t, 14, ce.Code, "malformed collation must return TypeMismatch (14)")
+	})
+
+	t.Run("UnknownOption", func(t *testing.T) {
+		t.Parallel()
+
+		err := createIndex(bson.D{
+			{"key", bson.D{{"unknown", 1}}},
+			{"name", "unknown_idx"},
+			{"notALegacyOption", true},
+		})
+		require.Error(t, err, "unrelated unknown options must still be rejected")
+
+		var ce mongo.CommandError
+		require.True(t, errors.As(err, &ce))
+		assert.EqualValues(t, 2, ce.Code, "unknown option must return BadValue (2)")
 	})
 }
