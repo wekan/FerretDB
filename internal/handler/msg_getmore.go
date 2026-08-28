@@ -303,6 +303,10 @@ type awaitDataParams struct {
 	batchSize int64
 }
 
+type oplogNotifier interface {
+	Notifications() <-chan struct{}
+}
+
 // awaitData stops the goroutine, and waits for a new data for the cursor.
 // If there's a new document, or the maxTimeMS have passed it returns the nextBatch.
 func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBatch *types.Array, err error) {
@@ -336,9 +340,17 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 	}()
 
 	for {
-		var notification <-chan struct{}
-		if notifier, ok := h.b.(interface{ Notifications() <-chan struct{} }); ok {
-			notification = notifier.Notifications()
+		if data.notifier != nil {
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+				return
+			case <-data.notification:
+			}
+
+			// Snapshot the next generation before querying. A write racing with
+			// the query closes this channel, so the next loop cannot miss it.
+			data.notification = data.notifier.Notifications()
 		}
 
 		var queryRes *backends.QueryResult
@@ -376,16 +388,8 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 		// that query continuously and pins CPU even when completely idle. Poll at a calmer
 		// interval, bounded by the remaining maxTimeMS budget (ctxutil.Sleep returns as
 		// soon as ctx's deadline passes), so new-data latency stays within that budget.
-		if notification == nil {
+		if data.notifier == nil {
 			ctxutil.Sleep(ctx, tailableAwaitPollInterval())
-			continue
-		}
-
-		select {
-		case <-ctx.Done():
-			err = ctx.Err()
-			return
-		case <-notification:
 		}
 	}
 }

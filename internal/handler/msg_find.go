@@ -101,6 +101,15 @@ func (h *Handler) MsgFind(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 		return nil, err
 	}
 
+	var notifier oplogNotifier
+	var notification <-chan struct{}
+	if params.AwaitData {
+		if n, ok := h.b.(oplogNotifier); ok {
+			notifier = n
+			notification = n.Notifications()
+		}
+	}
+
 	ctx := connCtx
 	cancel := func() {}
 
@@ -148,9 +157,11 @@ func (h *Handler) MsgFind(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 
 	c := h.cursors.NewCursor(ctx, iter, &cursor.NewParams{
 		Data: &findCursorData{
-			coll:       coll,
-			qp:         qp,
-			findParams: params,
+			coll:         coll,
+			qp:           qp,
+			findParams:   params,
+			notifier:     notifier,
+			notification: notification,
 		},
 		DB:           params.DB,
 		Collection:   params.Collection,
@@ -220,9 +231,11 @@ func (h *Handler) MsgFind(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 }
 
 type findCursorData struct {
-	coll       backends.Collection
-	qp         *backends.QueryParams
-	findParams *common.FindParams
+	coll         backends.Collection
+	qp           *backends.QueryParams
+	findParams   *common.FindParams
+	notifier     oplogNotifier
+	notification <-chan struct{}
 }
 
 // makeFindQueryParams creates the backend's query parameters for the find command.

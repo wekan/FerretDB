@@ -252,6 +252,58 @@ func TestEnsureOplogCreatesCappedOplog(t *testing.T) {
 	assert.True(t, c.Capped(), "local.oplog.rs must be a CAPPED collection")
 	assert.Equal(t, oplogCappedSizeBytes, c.CappedSize, "cap size must be oplogCappedSizeBytes")
 	assert.LessOrEqual(t, c.CappedSize, int64(16*1024*1024), "oplog cap must stay small (#6492)")
+
+	coll, err := db.Collection("oplog.rs")
+	require.NoError(t, err)
+
+	indexes, err := coll.ListIndexes(ctx, nil)
+	require.NoError(t, err)
+	assert.Contains(t, indexes.Indexes, backends.IndexInfo{
+		Name: "ts_1",
+		Key:  []backends.IndexKeyPair{{Field: "ts"}},
+	}, "the tailable timestamp query must have a logical index")
+}
+
+// TestEnsureOplogRepairsTimestampIndex covers databases created by versions
+// that made local.oplog.rs without its public timestamp index. Startup must
+// repair that collection instead of returning merely because it already exists.
+func TestEnsureOplogRepairsTimestampIndex(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := sqlite.NewBackend(&sqlite.NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	db, err := b.Database("local")
+	require.NoError(t, err)
+	require.NoError(t, db.CreateCollection(ctx, &backends.CreateCollectionParams{
+		Name: "oplog.rs", CappedSize: oplogCappedSizeBytes,
+	}))
+
+	coll, err := db.Collection("oplog.rs")
+	require.NoError(t, err)
+	before, err := coll.ListIndexes(ctx, nil)
+	require.NoError(t, err)
+	assert.NotContains(t, before.Indexes, backends.IndexInfo{
+		Name: "ts_1",
+		Key:  []backends.IndexKeyPair{{Field: "ts"}},
+	}, "fixture must model an old oplog without the logical timestamp index")
+
+	h := &Handler{NewOpts: &NewOpts{ReplSetName: "rs0", L: testutil.Logger(t)}, b: b}
+	h.ensureOplog()
+
+	after, err := coll.ListIndexes(ctx, nil)
+	require.NoError(t, err)
+	assert.Contains(t, after.Indexes, backends.IndexInfo{
+		Name: "ts_1",
+		Key:  []backends.IndexKeyPair{{Field: "ts"}},
+	})
 }
 
 // TestEnsureOplogNoopWithBackendButNoReplSet is a negative integration test: with a

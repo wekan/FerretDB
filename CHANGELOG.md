@@ -8,11 +8,14 @@
 
 - **Tailable OpLog cursors wake on writes instead of polling SQLite.** The
   OpLog decorator now broadcasts each successful append to every `awaitData`
-  waiter, closing the race between querying and sleeping while eliminating
-  repeated idle queries. Updates are emitted as standard replacement entries
-  rather than an invalid whole-document `$set` containing immutable `_id`, so
-  clients can apply them directly without repeated fetches. Unit tests cover
-  broadcast fan-out and renewal by @xet7. Thanks to xet7.
+  waiter. Cursors retain that notification generation and wait before their
+  next query, eliminating the remaining once-per-second idle scan without
+  missing a write racing with a query. Startup also repairs the missing public
+  timestamp index on OpLogs created by older versions. Updates are emitted as
+  standard replacement entries rather than an invalid whole-document `$set`
+  containing immutable `_id`, so clients can apply them directly without
+  repeated fetches. Unit tests cover broadcast fan-out, renewal, new OpLog
+  indexes and old OpLog index repair by @xet7. Thanks to xet7.
 
 - **Positional projection follows predicates on fields inside array elements.**
   A projection such as `services.resume.loginTokens.$` now identifies its array

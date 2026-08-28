@@ -368,20 +368,34 @@ func (h *Handler) ensureOplog() {
 		return
 	}
 
-	if len(cList.Collections) > 0 {
-		return
+	if len(cList.Collections) == 0 {
+		err = db.CreateCollection(ctx, &backends.CreateCollectionParams{
+			Name:       "oplog.rs",
+			CappedSize: oplogCappedSizeBytes,
+		})
+		if err != nil && !backends.ErrorCodeIs(err, backends.ErrorCodeCollectionAlreadyExists) {
+			l.WarnContext(ctx, "Failed to create capped oplog collection", logging.Error(err))
+			return
+		}
+
+		l.InfoContext(ctx, "Enabled OpLog tailing (created capped local.oplog.rs)", slog.String("replSet", h.ReplSetName))
 	}
 
-	err = db.CreateCollection(ctx, &backends.CreateCollectionParams{
-		Name:       "oplog.rs",
-		CappedSize: oplogCappedSizeBytes,
-	})
-	if err != nil && !backends.ErrorCodeIs(err, backends.ErrorCodeCollectionAlreadyExists) {
-		l.WarnContext(ctx, "Failed to create capped oplog collection", logging.Error(err))
+	// Older OpLog collections predate the public timestamp index. Repair them at
+	// every startup (CreateIndexes is idempotent) so the client's nested $and
+	// timestamp bound is visible to the query planner and can use an index.
+	c, err := db.Collection("oplog.rs")
+	if err != nil {
+		l.WarnContext(ctx, "Failed to open oplog collection for timestamp index", logging.Error(err))
 		return
 	}
-
-	l.InfoContext(ctx, "Enabled OpLog tailing (created capped local.oplog.rs)", slog.String("replSet", h.ReplSetName))
+	_, err = c.CreateIndexes(ctx, &backends.CreateIndexesParams{Indexes: []backends.IndexInfo{{
+		Name: "ts_1",
+		Key:  []backends.IndexKeyPair{{Field: "ts"}},
+	}}})
+	if err != nil {
+		l.WarnContext(ctx, "Failed to ensure oplog timestamp index", logging.Error(err))
+	}
 }
 
 // runCappedCleanup calls capped collections cleanup function according to the given interval.
