@@ -9,14 +9,16 @@
 - **Inclusion projections no longer decode fields the query cannot observe.**
   SQLite still parses and filters the unchanged stored SJSON document, but its
   iterator now recursively decodes only projected top-level fields plus fields
-  required by filters and sorts. Small projections such as `_id` no longer
-  decode large member arrays from every matching document during collection
-  scans. The decoder always retains `_id`, including when its inclusion is
-  implicit or it is removed only by the final projection stage, preventing
-  partial documents from terminating a client connection. Exclusion projections
-  retain full decoding. Unit tests cover both `_id` forms, nested query-field
-  collection, missing fields, stored field order and skipped nested values by
-  @xet7. Thanks to xet7.
+  required by filters and sorts. The `distinct` command uses the same bounded
+  path for its result key and filter, so extracting one field no longer decodes
+  unrelated large arrays from every candidate document. Small projections such
+  as `_id` likewise avoid those recursive collection scans. The decoder always
+  retains `_id`, including when its inclusion is implicit or it is removed only
+  by the final projection stage, preventing partial documents from terminating
+  a client connection. Exclusion projections retain full decoding. Unit tests
+  cover distinct nested paths, both `_id` forms, nested query-field collection,
+  missing fields, stored field order and skipped nested values by @xet7. Thanks
+  to xet7.
 
 - **Tailable OpLog cursors wake on writes instead of polling SQLite.** The
   OpLog decorator now broadcasts each successful append to every `awaitData`

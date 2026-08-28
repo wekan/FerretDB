@@ -68,3 +68,18 @@ func TestFindDecodeFieldsAlwaysKeepID(t *testing.T) {
 		})
 	}
 }
+
+func TestDistinctDecodeFields(t *testing.T) {
+	t.Parallel()
+
+	filter := must.NotFail(types.NewDocument(
+		"archived", false,
+		"$and", must.NotFail(types.NewArray(
+			must.NotFail(types.NewDocument("members.userId", "u1")),
+		)),
+	))
+	assert.Equal(t,
+		[]string{"_id", "archived", "members", "swimlane"},
+		distinctDecodeFields("swimlane.id", filter),
+	)
+}

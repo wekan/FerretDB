@@ -17,6 +17,8 @@ package handler
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/FerretDB/wire"
 
@@ -71,6 +73,13 @@ func (h *Handler) MsgDistinct(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 		qp.Filter = params.Filter
 	}
 
+	// Distinct consumes only its key and the fields observed by its filter. The
+	// SQLite backend stores whole SJSON documents, so telling it that bounded
+	// field set avoids recursively decoding unrelated large arrays/objects from
+	// every candidate. Keep _id as the document invariant expected by handler
+	// iterators even though distinct does not return it.
+	qp.DecodeFields = distinctDecodeFields(params.Key, params.Filter)
+
 	// TODO https://github.com/FerretDB/FerretDB/issues/3235
 	queryRes, err := c.Query(connCtx, &qp)
 	if err != nil {
@@ -92,4 +101,19 @@ func (h *Handler) MsgDistinct(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 			"ok", float64(1),
 		)),
 	)
+}
+
+func distinctDecodeFields(key string, filter *types.Document) []string {
+	fields := map[string]struct{}{"_id": {}}
+	collectDecodeFields(filter, fields)
+	root, _, _ := strings.Cut(key, ".")
+	if root != "" {
+		fields[root] = struct{}{}
+	}
+	res := make([]string, 0, len(fields))
+	for field := range fields {
+		res = append(res, field)
+	}
+	slices.Sort(res)
+	return res
 }
