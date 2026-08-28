@@ -130,14 +130,20 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 		}
 
 		// A top-level $-operator is not a field. Most stay in the Go filter, but
-		// $or is worth pushing down when it can be: a selector whose only
+		// $or and $and are worth pushing down when they can be: a selector whose only
 		// SELECTIVE terms sit inside one - a membership test ORed over several
 		// ways of belonging, say, beside a non-selective `archived = false` -
 		// otherwise produces a WHERE that narrows nothing, and every row is
 		// decoded and filtered in Go to return a handful.
 		if strings.HasPrefix(k, "$") {
-			if k == "$or" {
+			switch k {
+			case "$or":
 				if cond, condArgs, ok := pushdownOrCondition(must.NotFail(filter.Get(k))); ok {
+					conds = append(conds, cond)
+					args = append(args, condArgs...)
+				}
+			case "$and":
+				if cond, condArgs, ok := pushdownAndCondition(must.NotFail(filter.Get(k))); ok {
 					conds = append(conds, cond)
 					args = append(args, condArgs...)
 				}
@@ -176,6 +182,39 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	return ` WHERE ` + strings.Join(conds, ` AND `), args
 }
 
+// pushdownAndCondition pushes every usable branch of a top-level $and. Omitting
+// an unsupported conjunct only widens the SQL candidate set; the Go filter still
+// applies the complete selector, so this remains correct while allowing ordinary
+// client-generated $and wrappers to use the same indexes as flat selectors.
+func pushdownAndCondition(v any) (string, []any, bool) {
+	branches, ok := v.(*types.Array)
+	if !ok || branches.Len() == 0 {
+		return "", nil, false
+	}
+
+	var ands []string
+	var args []any
+	for i := 0; i < branches.Len(); i++ {
+		branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+		if !ok || branch.Len() == 0 {
+			continue
+		}
+
+		where, branchArgs := prepareWhereClause(branch)
+		if where == "" {
+			continue
+		}
+		ands = append(ands, `(`+strings.TrimPrefix(where, ` WHERE `)+`)`)
+		args = append(args, branchArgs...)
+	}
+
+	if len(ands) == 0 {
+		return "", nil, false
+	}
+
+	return `(` + strings.Join(ands, ` AND `) + `)`, args, true
+}
+
 // preferredCompoundIndex returns the physical SQLite index whose longest
 // leading run of keys is constrained by top-level fields in filter. SQLite's
 // JSON equality predicates include an array-containment fallback to preserve
@@ -197,23 +236,7 @@ func preferredCompoundIndex(
 	}
 
 	fields := make(map[string]struct{}, filter.Len())
-	for _, key := range filter.Keys() {
-		if key == "" || strings.HasPrefix(key, "$") {
-			continue
-		}
-
-		value := must.NotFail(filter.Get(key))
-		expr := jsonPathExpr(key)
-		var ok bool
-		if strings.ContainsRune(key, '.') {
-			_, _, ok = pushdownDottedFieldCondition(expr, value)
-		} else {
-			_, _, ok = pushdownFieldCondition(expr, key, value)
-		}
-		if ok {
-			fields[key] = struct{}{}
-		}
-	}
+	collectIndexedFields(filter, fields)
 
 	bestName := ""
 	bestPrefix := 0
@@ -239,6 +262,38 @@ func preferredCompoundIndex(
 	}
 
 	return bestName
+}
+
+func collectIndexedFields(filter *types.Document, fields map[string]struct{}) {
+	for _, key := range filter.Keys() {
+		if key == "$and" {
+			branches, ok := must.NotFail(filter.Get(key)).(*types.Array)
+			if !ok {
+				continue
+			}
+			for i := 0; i < branches.Len(); i++ {
+				if branch, ok := must.NotFail(branches.Get(i)).(*types.Document); ok {
+					collectIndexedFields(branch, fields)
+				}
+			}
+			continue
+		}
+		if key == "" || strings.HasPrefix(key, "$") {
+			continue
+		}
+
+		value := must.NotFail(filter.Get(key))
+		expr := jsonPathExpr(key)
+		var ok bool
+		if strings.ContainsRune(key, '.') {
+			_, _, ok = pushdownDottedFieldCondition(expr, value)
+		} else {
+			_, _, ok = pushdownFieldCondition(expr, key, value)
+		}
+		if ok {
+			fields[key] = struct{}{}
+		}
+	}
 }
 
 // pushdownOrCondition pushes down a top-level $or, but ONLY when every branch

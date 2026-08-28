@@ -10,9 +10,11 @@
   collections.** Boolean predicates are now pushed into SQLite, an empty `$in`
   becomes an exact false SQL condition, and compatible single-field expression
   indexes are selected even when MongoDB array semantics require an additional
-  fallback arm. This keeps unmodified client queries such as active-record,
-  board-membership and empty-ID lookups on their declared indexes. Unit tests
-  cover each pushdown and index-selection path by @xet7. Thanks to xet7.
+  fallback arm. Top-level `$and` wrappers now push their usable conjuncts down
+  and select the same compound index as an equivalent flat selector. This keeps
+  unmodified client queries such as active-record, board-membership and empty-ID
+  lookups on their declared indexes. Unit tests cover each pushdown and
+  index-selection path by @xet7. Thanks to xet7.
 
 - **MongoDB 3.x index metadata restores no longer stop at the legacy `ns`
   option.** Modern `mongorestore` can forward that deprecated namespace field

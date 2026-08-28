@@ -137,6 +137,14 @@ func TestPreferredCompoundIndex(t *testing.T) {
 		filter := must.NotFail(types.NewDocument("type", "cardType-linkedCard"))
 		assert.Equal(t, "cards_type_1", preferredCompoundIndex("cards", indexes, filter))
 	})
+
+	t.Run("FieldsInsideAnd", func(t *testing.T) {
+		filter := must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+			must.NotFail(types.NewDocument("boardId", "b1")),
+			must.NotFail(types.NewDocument("archived", false)),
+		))))
+		assert.Equal(t, "cards_boardId_1_archived_1", preferredCompoundIndex("cards", indexes, filter))
+	})
 }
 
 func TestPrepareWhereClause(t *testing.T) {
@@ -174,6 +182,21 @@ func TestPrepareWhereClause(t *testing.T) {
 		},
 		"EmptyFilter": {
 			filter: must.NotFail(types.NewDocument()),
+		},
+		"AndPushesBranches": {
+			filter: must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("boardId", "b1")),
+				must.NotFail(types.NewDocument("archived", false)),
+				must.NotFail(types.NewDocument("sort", must.NotFail(types.NewDocument("$gt", int64(0))))),
+			)))),
+			expectWhere: ` WHERE ((` + arrayArm("boardId") + `) AND (` + arrayArm("archived") +
+				`) AND (` + scalarExpr("sort") + ` > ?))`,
+			expectArgs: []any{`"b1"`, `false`, int64(0)},
+		},
+		"AndWithNoPushdownStaysInGo": {
+			filter: must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("sort", must.NotFail(types.NewDocument("$ne", int64(0))))),
+			)))),
 		},
 		// ── $or ─────────────────────────────────────────────────────────────
 		//
@@ -229,8 +252,8 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray()))),
 		},
 		"OtherTopLevelOperatorsStillStayInGo": {
-			// $and, $nor and the rest are unchanged: only $or learned this.
-			filter: must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray(
+			// $nor and the remaining logical operators stay in Go.
+			filter: must.NotFail(types.NewDocument("$nor", must.NotFail(types.NewArray(
 				must.NotFail(types.NewDocument("permission", "public")),
 			)))),
 		},
