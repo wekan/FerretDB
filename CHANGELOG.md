@@ -6,6 +6,15 @@
 
 ### New Features 🎉
 
+- **BSON restores preserve NaN double values.** FerretDB now accepts the
+  MongoDB-valid IEEE-754 `NaN` value on the wire and stores it through a
+  reversible JSON-safe SJSON representation.
+  Previously `NaN` terminated only the client connection, causing a bulk restore
+  to stop at the first affected batch even though the server stayed alive.
+  Codec tests cover its round trip plus an invalid spelling, and integration
+  tests cover insert/read round trips, updates and find-and-modify by @xet7.
+  Thanks to xet7.
+
 - **DEBUGSPEED captures connection failures without recording wire payloads.**
   Opt-in diagnostic runs now default to `info`, so their log contains listener
   lifecycle, connection warnings and errors, plus the existing bounded SQLite

@@ -23,9 +23,10 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
-// init sets wire package to return error if float64 NaN value is present in wire messages.
+// init permits IEEE-754 NaN, which MongoDB accepts as a BSON double. The SJSON
+// storage codec preserves it with a JSON-safe string.
 func init() {
-	wire.CheckNaNs = true
+	wire.CheckNaNs = false
 }
 
 // opMsgDocument gets a raw document from section 0 and converts to [*types.Document].

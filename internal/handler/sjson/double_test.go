@@ -38,6 +38,14 @@ var doubleTestCases = []testCase{{
 	v:    pointer.To(doubleType(math.SmallestNonzeroFloat64)),
 	j:    "5e-324",
 }, {
+	name: "NaN",
+	v:    pointer.To(doubleType(math.NaN())),
+	j:    `"NaN"`,
+}, {
+	name: "invalid special value",
+	j:    `"nan"`,
+	jErr: `json: cannot unmarshal string into Go value of type float64`,
+}, {
 	name: "EOF",
 	j:    `{`,
 	jErr: `unexpected EOF`,

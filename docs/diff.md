@@ -15,12 +15,13 @@ slug: /diff/ # referenced in README.md
 3. FerretDB does not support nested arrays.
 4. FerretDB converts `-0` (negative zero) to `0` (positive zero).
 5. Document restrictions:
+   - document fields of double type must not contain `Infinity` or `-Infinity`
+     values;
    - document keys must not contain `.` sign;
    - document keys must not start with `$` sign;
-   - document fields of double type must not contain `Infinity`, `-Infinity`, or `NaN` values.
 6. When insert command is called, insert documents must not have duplicate keys.
 7. Update command restrictions:
-   - update operations producing `Infinity`, `-Infinity`, or `NaN` are not supported.
+   - update operations producing `Infinity` or `-Infinity` are not supported.
 8. Database and collection names restrictions:
    - name cannot start with the reserved prefix `_ferretdb_`;
    - database name must not include non-latin letters;

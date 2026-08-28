@@ -149,22 +149,23 @@ func TestDiffDocumentValidation(t *testing.T) {
 	})
 }
 
-func TestDiffDocumentValidationNaN(t *testing.T) {
+func TestNaNDouble(t *testing.T) {
 	t.Parallel()
 
-	t.Run("InsertNaN", func(t *testing.T) {
+	t.Run("InsertAndRead", func(t *testing.T) {
 		t.Parallel()
 
 		ctx, collection := setup.Setup(t, shareddata.Scalars)
 
-		_, err := collection.InsertOne(ctx, bson.D{{"_id", "nan"}, {"foo", math.NaN()}})
+		_, err := collection.InsertOne(ctx, bson.D{{"_id", "nan"}, {"value", math.NaN()}})
+		require.NoError(t, err)
 
-		if setup.IsMongoDB(t) {
-			require.NoError(t, err)
-			return
-		}
-
-		require.ErrorContains(t, err, "socket was unexpectedly closed")
+		var actual bson.M
+		err = collection.FindOne(ctx, bson.D{{"_id", "nan"}}).Decode(&actual)
+		require.NoError(t, err)
+		value, ok := actual["value"].(float64)
+		require.True(t, ok)
+		require.True(t, math.IsNaN(value))
 	})
 
 	t.Run("Update", func(t *testing.T) {
@@ -192,12 +193,7 @@ func TestDiffDocumentValidationNaN(t *testing.T) {
 
 				_, err := collection.UpdateOne(ctx, tc.filter, tc.update, tc.opts)
 
-				if setup.IsMongoDB(t) {
-					require.NoError(t, err)
-					return
-				}
-
-				require.ErrorContains(t, err, "socket was unexpectedly closed")
+				require.NoError(t, err)
 			})
 		}
 	})
@@ -216,11 +212,6 @@ func TestDiffDocumentValidationNaN(t *testing.T) {
 
 		err = collection.FindOneAndUpdate(ctx, filter, bson.D{{"$set", bson.D{{"foo", math.NaN()}}}}).Err()
 
-		if setup.IsMongoDB(t) {
-			require.NoError(t, err)
-			return
-		}
-
-		require.ErrorContains(t, err, "socket was unexpectedly closed")
+		require.NoError(t, err)
 	})
 }

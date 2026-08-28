@@ -17,6 +17,7 @@ package sjson
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
@@ -31,6 +32,15 @@ func (d *doubleType) sjsontype() {}
 func (d *doubleType) UnmarshalJSON(data []byte) error {
 	if bytes.Equal(data, []byte("null")) {
 		panic("null data")
+	}
+
+	// JSON itself has no NaN number. SJSON uses a string for that IEEE-754 value
+	// while its schema continues to identify the BSON type as a double; an
+	// ordinary string is unambiguous because it has a string schema.
+	switch string(data) {
+	case `"NaN"`:
+		*d = doubleType(math.NaN())
+		return nil
 	}
 
 	r := bytes.NewReader(data)
@@ -54,6 +64,10 @@ func (d *doubleType) UnmarshalJSON(data []byte) error {
 // MarshalJSON implements sjsontype interface.
 func (d *doubleType) MarshalJSON() ([]byte, error) {
 	f := float64(*d)
+	switch {
+	case math.IsNaN(f):
+		return []byte(`"NaN"`), nil
+	}
 
 	res, err := json.Marshal(f)
 	if err != nil {

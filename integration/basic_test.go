@@ -530,7 +530,7 @@ func TestDebugError(t *testing.T) {
 		db := collection.Database()
 
 		err := db.RunCommand(ctx, bson.D{{"debugError", bson.D{{"NaN", math.NaN()}}}}).Err()
-		require.ErrorContains(t, err, "socket was unexpectedly closed")
+		require.ErrorContains(t, err, "wrong type")
 	})
 
 	t.Run("LazyError", func(t *testing.T) {
