@@ -17,8 +17,10 @@ package sqlite
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata"
 	"github.com/FerretDB/FerretDB/internal/handler/sjson"
@@ -39,6 +41,34 @@ type queryIterator struct {
 	token         *resource.Token
 	m             sync.Mutex
 	onlyRecordIDs bool
+	speed         *querySpeed
+}
+
+// querySpeed contains only query SHAPE and timing data. In particular it must
+// never contain filter values: DEBUGSPEED output is intended to be shareable.
+type querySpeed struct {
+	logger         *slog.Logger
+	database       string
+	collection     string
+	filterFields   string
+	sortFields     string
+	index          string
+	limit          int64
+	queryDuration  time.Duration
+	decodeDuration time.Duration
+	candidateRows  int64
+	logged         bool
+}
+
+func shouldLogQuerySpeed(speed *querySpeed) bool {
+	return speed != nil && (speed.candidateRows >= 100 || speed.queryDuration >= 10*time.Millisecond || speed.decodeDuration >= 10*time.Millisecond)
+}
+
+// newSpeedQueryIterator attaches optional measurements without changing the
+// ordinary iterator constructor used throughout tests and non-debug operation.
+func newSpeedQueryIterator(iter *queryIterator, speed *querySpeed) *queryIterator {
+	iter.speed = speed
+	return iter
 }
 
 // newQueryIterator returns a new queryIterator for the given *sql.Rows.
@@ -50,7 +80,7 @@ type queryIterator struct {
 //
 // Nil rows are possible and return already done iterator.
 // It still should be Close'd.
-func newQueryIterator(ctx context.Context, rows *fsql.Rows, onlyRecordIDs bool) types.DocumentsIterator {
+func newQueryIterator(ctx context.Context, rows *fsql.Rows, onlyRecordIDs bool) *queryIterator {
 	iter := &queryIterator{
 		ctx:           ctx,
 		rows:          rows,
@@ -116,13 +146,20 @@ func (iter *queryIterator) Next() (struct{}, *types.Document, error) {
 		iter.close()
 		return unused, nil, lazyerrors.Error(err)
 	}
+	if iter.speed != nil {
+		iter.speed.candidateRows++
+	}
 
 	doc := must.NotFail(types.NewDocument())
 
 	if !iter.onlyRecordIDs {
+		decodeStarted := time.Now()
 		if doc, err = sjson.Unmarshal(b); err != nil {
 			iter.close()
 			return unused, nil, lazyerrors.Error(err)
+		}
+		if iter.speed != nil {
+			iter.speed.decodeDuration += time.Since(decodeStarted)
 		}
 	}
 
@@ -146,6 +183,26 @@ func (iter *queryIterator) close() {
 	if iter.rows != nil {
 		iter.rows.Close()
 		iter.rows = nil
+	}
+
+	if iter.speed != nil && !iter.speed.logged {
+		iter.speed.logged = true
+		// Small indexed lookups are deliberately silent. The thresholds retain
+		// the query shapes that can explain load without making diagnostics the
+		// dominant workload during Meteor polling.
+		if shouldLogQuerySpeed(iter.speed) {
+			iter.speed.logger.Info("DEBUGSPEED sqlite query",
+				slog.String("database", iter.speed.database),
+				slog.String("collection", iter.speed.collection),
+				slog.String("filter_fields", iter.speed.filterFields),
+				slog.String("sort_fields", iter.speed.sortFields),
+				slog.String("index", iter.speed.index),
+				slog.Int64("limit", iter.speed.limit),
+				slog.Int64("candidate_rows", iter.speed.candidateRows),
+				slog.Float64("query_ms", float64(iter.speed.queryDuration.Microseconds())/1000),
+				slog.Float64("decode_ms", float64(iter.speed.decodeDuration.Microseconds())/1000),
+			)
+		}
 	}
 
 	resource.Untrack(iter, iter.token)

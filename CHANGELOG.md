@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **Opt-in SQLite query-shape diagnostics identify expensive pushdown work.**
+  With `DEBUGSPEED=true`, completed SQLite cursors whose SQL execution, SJSON
+  decoding or candidate-row count crosses a bounded threshold log the database,
+  collection, filter/sort field names, selected index, limit, candidate count
+  and separate query/decode timings. Filter values and documents are never
+  logged, while small indexed lookups remain silent so profiling does not become
+  the workload. Positive and negative unit cases pin all three thresholds and
+  the disabled path by @xet7. Thanks to xet7.
+
 ## [v1.62.0](https://github.com/wekan/FerretDB/releases/tag/v1.62.0) (2026-08-25)
 
 ### Other Changes 🤖

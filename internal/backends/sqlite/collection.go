@@ -18,8 +18,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+	"time"
 
 	sqlite3 "modernc.org/sqlite"
 	sqlite3lib "modernc.org/sqlite/lib"
@@ -66,7 +68,8 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	}
 
 	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
-	if index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter); index != "" {
+	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
+	if index != "" {
 		q += fmt.Sprintf(` INDEXED BY %q`, index)
 	}
 
@@ -84,14 +87,37 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		args = append(args, params.Limit)
 	}
 
+	queryStarted := time.Now()
 	rows, err := db.QueryContext(ctx, q, args...)
+	queryDuration := time.Since(queryStarted)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
+	iter := newQueryIterator(ctx, rows, params.OnlyRecordIDs)
+	if os.Getenv("DEBUGSPEED") == "true" {
+		iter = newSpeedQueryIterator(iter, &querySpeed{
+			logger:        c.r.Logger(),
+			database:      c.dbName,
+			collection:    c.name,
+			filterFields:  queryFieldNames(params.Filter),
+			sortFields:    queryFieldNames(params.Sort),
+			index:         index,
+			limit:         params.Limit,
+			queryDuration: queryDuration,
+		})
+	}
+
 	return &backends.QueryResult{
-		Iter: newQueryIterator(ctx, rows, params.OnlyRecordIDs),
+		Iter: iter,
 	}, nil
+}
+
+func queryFieldNames(doc *types.Document) string {
+	if doc == nil {
+		return ""
+	}
+	return strings.Join(doc.Keys(), ",")
 }
 
 // InsertAll implements backends.Collection interface.

@@ -97,6 +97,12 @@ func (r *Registry) Close() {
 	r.p.Close()
 }
 
+// Logger returns the backend logger for bounded operational diagnostics.
+// Callers must never attach document values or credentials to it.
+func (r *Registry) Logger() *slog.Logger {
+	return r.l
+}
+
 // initCollections loads collections metadata from the database during initialization.
 func (r *Registry) initCollections(ctx context.Context, dbName string, db *fsql.DB) error {
 	rows, err := db.QueryContext(ctx, fmt.Sprintf("SELECT name, table_name, settings FROM %q", metadataTableName))
