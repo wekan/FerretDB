@@ -6,6 +6,12 @@
 
 ### Fixed 🐛
 
+- **Positional projection follows predicates on fields inside array elements.**
+  A projection such as `services.resume.loginTokens.$` now identifies its array
+  element from a filter on `services.resume.loginTokens.hashedToken`, matching
+  MongoDB instead of returning error 51246. Positive and no-match unit cases
+  cover the nested predicate path by @xet7. Thanks to xet7.
+
 - **Indexed equality and empty-set queries no longer decode whole SQLite
   collections.** Boolean predicates are now pushed into SQLite, an empty `$in`
   becomes an exact false SQL condition, and compatible single-field expression

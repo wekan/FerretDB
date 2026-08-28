@@ -16,6 +16,7 @@ package common
 
 import (
 	"errors"
+	"strings"
 
 	"github.com/FerretDB/FerretDB/internal/handler/handlererrors"
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -95,6 +96,25 @@ func getPositionalProjection(arr *types.Array, filter *types.Document, positiona
 
 			if err != nil {
 				return nil, lazyerrors.Error(err)
+			}
+
+			if strings.HasPrefix(filterKey, path+".") {
+				positionalPathFound = true
+				elemDoc, ok := elem.(*types.Document)
+				if !ok {
+					break
+				}
+
+				childKey := strings.TrimPrefix(filterKey, path+".")
+				childFilter := must.NotFail(types.NewDocument(childKey, filterVal))
+				matched, err := FilterDocument(elemDoc, childFilter)
+				if err != nil {
+					return nil, lazyerrors.Error(err)
+				}
+				if !matched {
+					break
+				}
+				continue
 			}
 
 			if filterKey != path {
