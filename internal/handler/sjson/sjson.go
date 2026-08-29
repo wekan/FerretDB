@@ -65,6 +65,7 @@ package sjson
 
 import (
 	"bytes"
+	"container/list"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -82,29 +83,68 @@ import (
 )
 
 const (
-	schemaCacheEntries  = 128
+	schemaCacheEntries  = 4096
 	schemaCacheMaxBytes = 32 * 1024
 )
 
-var decodedSchemas = struct {
-	sync.RWMutex
-	m map[[sha256.Size]byte]*schema
-}{m: make(map[[sha256.Size]byte]*schema)}
+type schemaCache struct {
+	sync.Mutex
+	m   map[[sha256.Size]byte]*list.Element
+	lru list.List
+}
+
+var decodedSchemas = schemaCache{m: make(map[[sha256.Size]byte]*list.Element)}
+
+type cachedSchema struct {
+	key [sha256.Size]byte
+	sch *schema
+}
+
+func (c *schemaCache) get(key [sha256.Size]byte) *schema {
+	c.Lock()
+	defer c.Unlock()
+
+	entry := c.m[key]
+	if entry == nil {
+		return nil
+	}
+	c.lru.MoveToFront(entry)
+	return entry.Value.(*cachedSchema).sch
+}
+
+func (c *schemaCache) add(key [sha256.Size]byte, sch *schema, capacity int) *schema {
+	c.Lock()
+	defer c.Unlock()
+
+	if cached := c.m[key]; cached != nil {
+		c.lru.MoveToFront(cached)
+		return cached.Value.(*cachedSchema).sch
+	}
+
+	entry := c.lru.PushFront(&cachedSchema{key: key, sch: sch})
+	c.m[key] = entry
+	if c.lru.Len() > capacity {
+		oldest := c.lru.Back()
+		delete(c.m, oldest.Value.(*cachedSchema).key)
+		c.lru.Remove(oldest)
+	}
+
+	return sch
+}
 
 // decodeSchema reuses immutable parsed schemas for repeated document shapes.
-// Both the raw-size limit and entry cap are deliberately small and hard: SJSON
-// schemas can describe every array element, so caching arbitrary restored input
-// would otherwise exchange CPU pressure for unbounded resident memory.
+// Both the raw-size limit and entry cap are hard bounds: SJSON schemas can
+// describe every array element, so caching arbitrary restored input would
+// otherwise exchange CPU pressure for unbounded resident memory. LRU eviction
+// retains recurring document shapes instead of periodically discarding every
+// hot entry when a scan encounters a new shape.
 func decodeSchema(data []byte) (*schema, error) {
 	cacheable := len(data) <= schemaCacheMaxBytes
 	var key [sha256.Size]byte
 	if cacheable {
 		key = sha256.Sum256(data)
-		decodedSchemas.RLock()
-		cached := decodedSchemas.m[key]
-		decodedSchemas.RUnlock()
-		if cached != nil {
-			return cached, nil
+		if sch := decodedSchemas.get(key); sch != nil {
+			return sch, nil
 		}
 	}
 
@@ -120,12 +160,9 @@ func decodeSchema(data []byte) (*schema, error) {
 	}
 
 	if cacheable {
-		decodedSchemas.Lock()
-		if len(decodedSchemas.m) >= schemaCacheEntries {
-			clear(decodedSchemas.m)
-		}
-		decodedSchemas.m[key] = &sch
-		decodedSchemas.Unlock()
+		// Another decoder may have inserted the same immutable schema while this
+		// goroutine parsed it. Retain the first instance and refresh its recency.
+		return decodedSchemas.add(key, &sch, schemaCacheEntries), nil
 	}
 	return &sch, nil
 }

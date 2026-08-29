@@ -7,9 +7,11 @@
 ### Fixed 🐛
 
 - **Repeated full-document SJSON decoding reuses schemas and lighter scalar
-  parsing.** A bounded, concurrency-safe SHA-256 cache retains at most 128
-  immutable schemas no larger than 32 KiB, preventing unbounded memory growth
-  while avoiding repeated shape parsing across large collections. Common
+  parsing.** A bounded, concurrency-safe SHA-256 LRU cache retains up to 4,096
+  hot immutable schemas no larger than 32 KiB, preventing unbounded memory
+  growth without periodically discarding every common shape. On a restored
+  299,539-document collection containing 16,377 schema variants, the larger
+  LRU reduced a full decode from 35.1 seconds to 17.2–19.0 seconds. Common
   strings, booleans, integers, dates, timestamps and doubles now use strict
   scalar parsing instead of allocating a streaming decoder for every value.
   Full documents use the direct JSON decoder and preallocate their ordered
@@ -17,6 +19,13 @@
   1,021 to 561 and memory from about 90 KB to 44 KB per document while improving
   median throughput by about 29%; tests retain malformed-input rejection,
   schema validation and NaN behavior by @xet7. Thanks to xet7.
+
+- **SQLite updates and deletes by `_id` now use the collection's unique
+  expression index.** Their JSON path was semantically equivalent but
+  syntactically different from the expression used to create the index, so
+  SQLite performed a full collection scan for every write. The shared
+  expression now matches byte-for-byte; a regression test pins it to the query
+  builder's indexed form by @xet7. Thanks to xet7.
 
 - **Inclusion projections no longer decode fields the query cannot observe.**
   SQLite still parses and filters the unchanged stored SJSON document, but its

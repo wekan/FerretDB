@@ -15,6 +15,8 @@
 package sjson
 
 import (
+	"container/list"
+	"crypto/sha256"
 	"encoding/json"
 	"testing"
 
@@ -105,6 +107,26 @@ func TestDecodeSchemaCache(t *testing.T) {
 
 	_, err = decodeSchema([]byte(`{"unknown":true}`))
 	require.ErrorContains(t, err, `unknown field "unknown"`, "validation must still run before a schema can be cached")
+}
+
+func TestSchemaCacheLRU(t *testing.T) {
+	t.Parallel()
+
+	cache := schemaCache{m: make(map[[sha256.Size]byte]*list.Element)}
+	oneKey := sha256.Sum256([]byte("one"))
+	twoKey := sha256.Sum256([]byte("two"))
+	threeKey := sha256.Sum256([]byte("three"))
+	one := new(schema)
+	two := new(schema)
+	three := new(schema)
+
+	assert.Same(t, one, cache.add(oneKey, one, 2))
+	assert.Same(t, two, cache.add(twoKey, two, 2))
+	assert.Same(t, one, cache.get(oneKey), "a hit refreshes recency")
+	assert.Same(t, three, cache.add(threeKey, three, 2))
+	assert.Nil(t, cache.get(twoKey), "the least recently used schema is evicted")
+	assert.Same(t, one, cache.add(oneKey, new(schema), 2), "an existing immutable schema wins an insertion race")
+	assert.Len(t, cache.m, 2, "the configured capacity is a hard bound")
 }
 
 func BenchmarkUnmarshalRepeatedSchema(b *testing.B) {

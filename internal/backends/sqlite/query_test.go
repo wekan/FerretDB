@@ -77,6 +77,14 @@ func TestPrepareSelectClause(t *testing.T) {
 	}
 }
 
+func TestIDColumnMatchesIndexedExpression(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, jsonPathExpr("_id"), metadata.IDColumn)
+	assert.NotEqual(t, metadata.DefaultColumn+"->'$._id'", metadata.IDColumn,
+		"an equivalent JSON path with different syntax cannot use SQLite's expression index")
+}
+
 func TestPushdownSafeString(t *testing.T) {
 	t.Parallel()
 

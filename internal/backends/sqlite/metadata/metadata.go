@@ -27,7 +27,11 @@ const (
 	DefaultColumn = backends.ReservedPrefix + "sjson"
 
 	// IDColumn is a SQLite path expression for _id field.
-	IDColumn = DefaultColumn + "->'$._id'"
+	// Keep this expression byte-for-byte identical to expression indexes made by
+	// Registry.indexesCreate and query.jsonPathExpr. SQLite matches expression
+	// indexes syntactically; the equivalent '$._id' JSON path caused every update
+	// and delete by _id to scan the complete collection.
+	IDColumn = DefaultColumn + `->"_id"`
 
 	// RecordIDColumn is a name for RecordID column to store capped collection record id.
 	RecordIDColumn = backends.ReservedPrefix + "record_id"
