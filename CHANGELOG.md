@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **Repeated full-document SJSON decoding reuses schemas and lighter scalar
+  parsing.** A bounded, concurrency-safe SHA-256 cache retains at most 128
+  immutable schemas no larger than 32 KiB, preventing unbounded memory growth
+  while avoiding repeated shape parsing across large collections. Common
+  strings, booleans, integers, dates, timestamps and doubles now use strict
+  single-value JSON decoding instead of allocating a streaming decoder for
+  every scalar. A representative nested-card benchmark drops allocations from
+  1,021 to 617 per document and improves throughput, while tests retain schema
+  validation and NaN behavior by @xet7. Thanks to xet7.
+
 - **Inclusion projections no longer decode fields the query cannot observe.**
   SQLite still parses and filters the unchanged stored SJSON document, but its
   iterator now recursively decodes only projected top-level fields plus fields

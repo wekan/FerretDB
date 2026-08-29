@@ -65,9 +65,12 @@ package sjson
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
+	"sync"
 	"time"
 
 	"github.com/AlekSi/pointer"
@@ -76,6 +79,55 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
+
+const (
+	schemaCacheEntries  = 128
+	schemaCacheMaxBytes = 32 * 1024
+)
+
+var decodedSchemas = struct {
+	sync.RWMutex
+	m map[[sha256.Size]byte]*schema
+}{m: make(map[[sha256.Size]byte]*schema)}
+
+// decodeSchema reuses immutable parsed schemas for repeated document shapes.
+// Both the raw-size limit and entry cap are deliberately small and hard: SJSON
+// schemas can describe every array element, so caching arbitrary restored input
+// would otherwise exchange CPU pressure for unbounded resident memory.
+func decodeSchema(data []byte) (*schema, error) {
+	cacheable := len(data) <= schemaCacheMaxBytes
+	var key [sha256.Size]byte
+	if cacheable {
+		key = sha256.Sum256(data)
+		decodedSchemas.RLock()
+		cached := decodedSchemas.m[key]
+		decodedSchemas.RUnlock()
+		if cached != nil {
+			return cached, nil
+		}
+	}
+
+	var sch schema
+	r := bytes.NewReader(data)
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&sch); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+	if err := checkConsumed(dec, r); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if cacheable {
+		decodedSchemas.Lock()
+		if len(decodedSchemas.m) >= schemaCacheEntries {
+			clear(decodedSchemas.m)
+		}
+		decodedSchemas.m[key] = &sch
+		decodedSchemas.Unlock()
+	}
+	return &sch, nil
+}
 
 // sjsontype is a type that can be marshaled from/to sjson.
 //
@@ -194,17 +246,9 @@ func Unmarshal(data []byte) (*types.Document, error) {
 		return nil, lazyerrors.Errorf("schema is not set")
 	}
 
-	var sch schema
-	r = bytes.NewReader(jsch)
-	dec = json.NewDecoder(r)
-	dec.DisallowUnknownFields()
-
-	if err := dec.Decode(&sch); err != nil {
-		return nil, lazyerrors.Error(err)
-	}
-
-	if err := checkConsumed(dec, r); err != nil {
-		return nil, lazyerrors.Error(err)
+	sch, err := decodeSchema(jsch)
+	if err != nil {
+		return nil, err
 	}
 
 	delete(v, "$s")
@@ -297,6 +341,57 @@ func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
 
 	if sch == nil {
 		return nil, lazyerrors.Errorf("schema is not set")
+	}
+
+	// Scalar JSON values need no streaming decoder. json.Unmarshal consumes
+	// exactly one complete value and rejects trailing non-whitespace data, while
+	// avoiding a decoder, reader and buffered-state allocation for every field.
+	switch sch.Type {
+	case elemTypeString:
+		var v string
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return v, nil
+	case elemTypeBool:
+		var v bool
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return v, nil
+	case elemTypeInt:
+		var v int32
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return v, nil
+	case elemTypeLong:
+		var v int64
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return v, nil
+	case elemTypeTimestamp:
+		var v uint64
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return types.Timestamp(v), nil
+	case elemTypeDate:
+		var v int64
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return time.UnixMilli(v), nil
+	case elemTypeDouble:
+		if bytes.Equal(data, []byte(`"NaN"`)) {
+			return math.NaN(), nil
+		}
+		var v float64
+		if err := json.Unmarshal(data, &v); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+		return v, nil
 	}
 
 	var res sjsontype

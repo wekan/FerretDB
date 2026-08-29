@@ -92,6 +92,42 @@ func TestUnmarshalFields(t *testing.T) {
 	assert.False(t, actual.Has("nested"), "unobservable nested values must not be recursively decoded")
 }
 
+func TestDecodeSchemaCache(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"p":{"_id":{"t":"string"},"archived":{"t":"bool"}},"$k":["_id","archived"]}`)
+	first, err := decodeSchema(raw)
+	require.NoError(t, err)
+	second, err := decodeSchema(raw)
+	require.NoError(t, err)
+	assert.Same(t, first, second, "a repeated bounded schema must reuse its immutable parse")
+
+	_, err = decodeSchema([]byte(`{"unknown":true}`))
+	require.ErrorContains(t, err, `unknown field "unknown"`, "validation must still run before a schema can be cached")
+}
+
+func BenchmarkUnmarshalRepeatedSchema(b *testing.B) {
+	members := must.NotFail(types.NewArray())
+	for i := 0; i < 20; i++ {
+		members.Append(must.NotFail(types.NewDocument("userId", "user", "active", true, "index", int64(i))))
+	}
+	doc := must.NotFail(types.NewDocument(
+		"_id", "card", "boardId", "board", "archived", false,
+		"title", "Card title", "members", members,
+	))
+	raw, err := Marshal(doc)
+	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(raw)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Unmarshal(raw); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 // TestUnmarshalInvalid checks that in case of invalid data, we return errors and not just ignore issues.
 func TestUnmarshalInvalid(t *testing.T) {
 	t.Parallel()
