@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **Large SQLite result sets now resolve their column layout once per query.**
+  The iterator previously called `database/sql.Rows.Columns`, compared newly
+  returned name slices and rebuilt a variadic scan destination for every row.
+  A 299,539-card scan therefore repeated invariant result metadata work nearly
+  300,000 times, and distinct scans repeated it for every returned key. The
+  iterator now caches one of its three supported layouts on the first row and
+  dispatches directly to the matching scan. Existing capped-record,
+  document-only, distinct and full handler suites cover every layout and error
+  propagation by @xet7. Thanks to xet7.
+
 - **Building wide decoded documents no longer searches all fields already
   appended.** `Document.Set` now uses its existing key-count map to distinguish
   new fields from replacements, retaining replacement, frozen-document and

@@ -42,8 +42,18 @@ type queryIterator struct {
 	m             sync.Mutex
 	onlyRecordIDs bool
 	decodeFields  []string
+	columnLayout  queryColumnLayout
 	speed         *querySpeed
 }
+
+type queryColumnLayout uint8
+
+const (
+	queryColumnsUnknown queryColumnLayout = iota
+	queryColumnsRecordAndDocument
+	queryColumnsRecordOnly
+	queryColumnsDocumentOnly
+)
 
 // querySpeed contains only query SHAPE and timing data. In particular it must
 // never contain filter values: DEBUGSPEED output is intended to be shareable.
@@ -126,28 +136,39 @@ func (iter *queryIterator) Next() (struct{}, *types.Document, error) {
 		return unused, nil, lazyerrors.Error(err)
 	}
 
-	columns, err := iter.rows.Columns()
-	if err != nil {
-		iter.close()
-		return unused, nil, lazyerrors.Error(err)
-	}
-
 	var recordID int64
 	var b []byte
-	var dest []any
+	if iter.columnLayout == queryColumnsUnknown {
+		columns, err := iter.rows.Columns()
+		if err != nil {
+			iter.close()
+			return unused, nil, lazyerrors.Error(err)
+		}
 
-	switch {
-	case slices.Equal(columns, []string{metadata.RecordIDColumn, metadata.DefaultColumn}):
-		dest = []any{&recordID, &b}
-	case slices.Equal(columns, []string{metadata.RecordIDColumn}):
-		dest = []any{&recordID}
-	case slices.Equal(columns, []string{metadata.DefaultColumn}):
-		dest = []any{&b}
-	default:
-		panic(fmt.Sprintf("cannot scan unknown columns: %v", columns))
+		switch {
+		case slices.Equal(columns, []string{metadata.RecordIDColumn, metadata.DefaultColumn}):
+			iter.columnLayout = queryColumnsRecordAndDocument
+		case slices.Equal(columns, []string{metadata.RecordIDColumn}):
+			iter.columnLayout = queryColumnsRecordOnly
+		case slices.Equal(columns, []string{metadata.DefaultColumn}):
+			iter.columnLayout = queryColumnsDocumentOnly
+		default:
+			panic(fmt.Sprintf("cannot scan unknown columns: %v", columns))
+		}
 	}
 
-	if err = iter.rows.Scan(dest...); err != nil {
+	var err error
+	switch iter.columnLayout {
+	case queryColumnsRecordAndDocument:
+		err = iter.rows.Scan(&recordID, &b)
+	case queryColumnsRecordOnly:
+		err = iter.rows.Scan(&recordID)
+	case queryColumnsDocumentOnly:
+		err = iter.rows.Scan(&b)
+	default:
+		panic(fmt.Sprintf("cannot scan unknown column layout: %d", iter.columnLayout))
+	}
+	if err != nil {
 		iter.close()
 		return unused, nil, lazyerrors.Error(err)
 	}
