@@ -13,7 +13,9 @@
   timeout, leaving reactive clients one mutation behind. The filled-batch check
   now follows batch construction and precedes the next wait. Positive ordering
   coverage and a negative guard against the stale pre-query check pin the fix
-  by @xet7. Thanks to xet7.
+  by @xet7. A restored large-dataset run confirms that board creation, reactive
+  list updates and opening the new board now complete reliably; a small query
+  delay remains but no longer blocks the workflow. Thanks to xet7.
 
 - **Top-level `$exists` filters now run inside SQLite.** Missing fields map to
   SQL `NULL`, while an explicitly stored BSON null remains JSON `null`, so both
