@@ -16,13 +16,17 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -88,6 +92,10 @@ func NewRegistry(u string, batchSize int, l *slog.Logger, sp *state.Provider) (*
 			return nil, lazyerrors.Error(err)
 		}
 	}
+	if err = r.upgradeIndexFormats(context.Background(), initDBs); err != nil {
+		r.Close()
+		return nil, lazyerrors.Error(err)
+	}
 
 	return r, nil
 }
@@ -131,19 +139,94 @@ func (r *Registry) initCollections(ctx context.Context, dbName string, db *fsql.
 
 	r.colls[dbName] = colls
 
-	for _, c := range colls {
-		if err = r.upgradeIndexFormat(ctx, db, c); err != nil {
-			return lazyerrors.Error(err)
+	return nil
+}
+
+type indexUpgradeProgress struct {
+	Phase      string    `json:"phase"`
+	Database   string    `json:"database,omitempty"`
+	Collection string    `json:"collection,omitempty"`
+	Index      string    `json:"index,omitempty"`
+	Step       int       `json:"step"`
+	Total      int       `json:"total"`
+	StartedAt  time.Time `json:"startedAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+func (r *Registry) writeIndexUpgradeProgress(progress indexUpgradeProgress) {
+	path := os.Getenv("FERRETDB_INDEX_MIGRATION_STATUS_FILE")
+	if path == "" {
+		return
+	}
+	progress.UpdatedAt = time.Now()
+	b, err := json.Marshal(progress)
+	if err != nil {
+		return
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return
+	}
+	tmp := path + ".tmp"
+	if err = os.WriteFile(tmp, append(b, '\n'), 0o600); err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		r.l.Warn("Failed to write index migration progress", slog.Any("error", err))
+	}
+}
+
+func (r *Registry) upgradeIndexFormats(ctx context.Context, dbs map[string]*fsql.DB) error {
+	total := 0
+	for dbName, colls := range r.colls {
+		if dbs[dbName] == nil {
+			continue
+		}
+		for _, c := range colls {
+			if c.Settings.IndexFormat >= CurrentIndexFormat {
+				continue
+			}
+			for _, index := range c.Settings.Indexes {
+				if coveringDistinctIndex(index) {
+					total++
+				}
+			}
 		}
 	}
+	progress := &indexUpgradeProgress{Phase: "running", Total: total, StartedAt: time.Now()}
+	r.writeIndexUpgradeProgress(*progress)
 
+	dbNames := maps.Keys(r.colls)
+	slices.Sort(dbNames)
+	for _, dbName := range dbNames {
+		if dbs[dbName] == nil {
+			continue
+		}
+		collNames := maps.Keys(r.colls[dbName])
+		slices.Sort(collNames)
+		for _, collName := range collNames {
+			if err := r.upgradeIndexFormat(ctx, dbName, dbs[dbName], r.colls[dbName][collName], progress); err != nil {
+				progress.Phase = "error"
+				r.writeIndexUpgradeProgress(*progress)
+				return lazyerrors.Error(err)
+			}
+		}
+	}
+	progress.Phase = "complete"
+	progress.Database, progress.Collection, progress.Index = "", "", ""
+	r.writeIndexUpgradeProgress(*progress)
 	return nil
 }
 
 // upgradeIndexFormat rebuilds eligible indexes once so distinct can obtain a
 // value and its BSON schema from the index alone. The schema is appended after
 // the logical key, retaining the original value prefix for ordinary lookups.
-func (r *Registry) upgradeIndexFormat(ctx context.Context, db *fsql.DB, c *Collection) error {
+func (r *Registry) upgradeIndexFormat(
+	ctx context.Context,
+	dbName string,
+	db *fsql.DB,
+	c *Collection,
+	progress *indexUpgradeProgress,
+) error {
 	if c.Settings.IndexFormat >= CurrentIndexFormat {
 		return nil
 	}
@@ -157,6 +240,10 @@ func (r *Registry) upgradeIndexFormat(ctx context.Context, db *fsql.DB, c *Colle
 			if !coveringDistinctIndex(index) {
 				continue
 			}
+			progress.Database = dbName
+			progress.Collection = c.Name
+			progress.Index = index.Name
+			r.writeIndexUpgradeProgress(*progress)
 
 			name := c.TableName + "_" + index.Name
 			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP INDEX IF EXISTS %q`, name)); err != nil {
@@ -165,6 +252,8 @@ func (r *Registry) upgradeIndexFormat(ctx context.Context, db *fsql.DB, c *Colle
 			if _, err := tx.ExecContext(ctx, indexCreateSQL(c.TableName, index)); err != nil {
 				return lazyerrors.Error(err)
 			}
+			progress.Step++
+			r.writeIndexUpgradeProgress(*progress)
 		}
 
 		c.Settings.IndexFormat = CurrentIndexFormat

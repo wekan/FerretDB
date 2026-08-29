@@ -16,7 +16,10 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -28,6 +31,30 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil"
 	"github.com/FerretDB/FerretDB/internal/util/testutil/teststress"
 )
+
+func TestIndexUpgradeProgressFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "progress", "index-migration.json")
+	t.Setenv("FERRETDB_INDEX_MIGRATION_STATUS_FILE", path)
+	r := &Registry{l: testutil.Logger(t)}
+	want := indexUpgradeProgress{
+		Phase: "running", Database: "db", Collection: "cards", Index: "listId_1", Step: 2, Total: 20,
+	}
+	r.writeIndexUpgradeProgress(want)
+
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var got indexUpgradeProgress
+	require.NoError(t, json.Unmarshal(b, &got))
+	require.Equal(t, want.Phase, got.Phase)
+	require.Equal(t, want.Collection, got.Collection)
+	require.Equal(t, want.Index, got.Index)
+	require.Equal(t, want.Step, got.Step)
+	require.Equal(t, want.Total, got.Total)
+	require.False(t, got.UpdatedAt.IsZero())
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), info.Mode().Perm())
+}
 
 // testCollection creates, tests, and drops a unique collection in the existing database.
 func testCollection(t *testing.T, ctx context.Context, r *Registry, db *fsql.DB, dbName, collectionName string) {
@@ -665,7 +692,9 @@ func TestIndexesCreateDrop(t *testing.T) {
 		_, err = db.ExecContext(ctx, legacy)
 		require.NoError(t, err)
 		collection.Settings.IndexFormat = 0
-		require.NoError(t, r.upgradeIndexFormat(ctx, db, collection))
+		progress := &indexUpgradeProgress{Total: 2}
+		require.NoError(t, r.upgradeIndexFormat(ctx, dbName, db, collection, progress))
+		require.Equal(t, 2, progress.Step)
 
 		row = db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", indexName)
 		require.NoError(t, row.Scan(&sql))

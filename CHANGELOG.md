@@ -15,14 +15,19 @@
   without visiting every document row.
   Existing eligible indexes are rebuilt transactionally once at startup and a
   persisted format marker prevents repeat work; unique and dotted indexes
-  remain unchanged. On the restored 299,539-card `distinct(listId)`
+  remain unchanged. When `FERRETDB_INDEX_MIGRATION_STATUS_FILE` is set, startup
+  also publishes the current database, collection and index plus completed and
+  total step counts through an atomically replaced, owner-only JSON file. This
+  lets a supervisor report real progress without parsing logs or exposing
+  document values. On the restored 299,539-card `distinct(listId)`
   workload, SQLite reports a covering scan and forced result construction falls
   from 2.96 seconds to 45 milliseconds (about 98.5%). The compound format also
   makes the filtered `distinct(swimlaneId, archived)` SQL a covering scan that
   completes in 176 milliseconds; its live non-covering stage previously took
   about 12.2 seconds. Positive tests cover new and migrated single/compound
   indexes, covering query plans and smallest complete index selection; negative
-  coverage retains the former SQL for unique and dotted indexes by @xet7.
+  coverage retains the former SQL for unique and dotted indexes, and verifies
+  progress fields and file permissions by @xet7.
   Thanks to xet7.
 
 - **Large SQLite result sets now resolve their column layout once per query.**
