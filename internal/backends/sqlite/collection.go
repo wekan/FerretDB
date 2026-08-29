@@ -67,18 +67,15 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		}, nil
 	}
 
-	q := prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs)
 	distinctPushdown := params.DistinctField != "" && len(params.DecodeFields) != 0 &&
 		!params.OnlyRecordIDs && !meta.Capped()
-	if distinctPushdown {
-		q = prepareDistinctSelectClause(meta.TableName, params.Comment, params.DecodeFields)
-	}
 	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
 	if index == "" && distinctPushdown {
 		index = preferredDistinctIndex(meta.TableName, meta.Settings.Indexes, params.DistinctField)
 	}
+	indexClause := ""
 	if index != "" {
-		q += fmt.Sprintf(` INDEXED BY %q`, index)
+		indexClause = fmt.Sprintf(` INDEXED BY %q`, index)
 	}
 
 	// Push the filter's top-level equality conditions down to
@@ -95,12 +92,18 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		}
 	}
 
-	q += whereClause
-	q += prepareOrderByClause(params.Sort)
+	suffix := indexClause + whereClause + prepareOrderByClause(params.Sort)
 
 	if params.Limit != 0 {
-		q += ` LIMIT ?`
+		suffix += ` LIMIT ?`
 		args = append(args, params.Limit)
+	}
+
+	q := ""
+	if distinctPushdown {
+		q = prepareDistinctSelectClause(meta.TableName, params.Comment, params.DecodeFields, suffix)
+	} else {
+		q = prepareSelectClause(meta.TableName, params.Comment, meta.Capped(), params.OnlyRecordIDs) + suffix
 	}
 
 	queryStarted := time.Now()

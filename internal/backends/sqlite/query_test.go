@@ -85,6 +85,23 @@ func TestIDColumnMatchesIndexedExpression(t *testing.T) {
 		"an equivalent JSON path with different syntax cannot use SQLite's expression index")
 }
 
+func TestPrepareDistinctSelectClauseDeduplicatesBeforeSJSON(t *testing.T) {
+	t.Parallel()
+
+	q := prepareDistinctSelectClause("cards", "shape", []string{"listId", "archived"},
+		` INDEXED BY "cards_listId" WHERE json_type(_ferretdb_sjson->"listId") IS NOT NULL`)
+
+	assert.Contains(t, q, `SELECT /* shape */ json_object(`)
+	assert.Contains(t, q, `FROM (SELECT DISTINCT `)
+	assert.Contains(t, q, `_ferretdb_sjson->'$."$s"'->'p'->'listId' AS "s0"`)
+	assert.Contains(t, q, `_ferretdb_sjson->"listId" AS "v0"`)
+	assert.Contains(t, q, `'listId',json("v0")`, "outer SJSON must restore SQLite's JSON subtype")
+	assert.Contains(t, q, `FROM "cards" INDEXED BY "cards_listId" WHERE `,
+		"index and filter belong to the raw inner scan")
+	assert.NotContains(t, q, `SELECT DISTINCT /* shape */ json_object(`,
+		"constructed SJSON must not be SQLite's DISTINCT sort key")
+}
+
 func TestPushdownSafeString(t *testing.T) {
 	t.Parallel()
 

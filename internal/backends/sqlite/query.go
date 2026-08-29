@@ -50,10 +50,11 @@ func prepareSelectClause(table, comment string, capped, onlyRecordIDs bool) stri
 }
 
 // prepareDistinctSelectClause returns one minimal SJSON document for each
-// distinct combination of fields consumed by the command. Keeping filter fields
-// in the document lets the handler re-apply MongoDB semantics, while SQLite no
-// longer sends unrelated complete documents through the Go decoder.
-func prepareDistinctSelectClause(table, comment string, fields []string) string {
+// distinct combination of fields consumed by the command. The inner query
+// deduplicates raw schema/value pairs; only the unique rows pay for json_object
+// construction. Keeping filter fields in the document lets the handler re-apply
+// MongoDB semantics without receiving unrelated complete documents.
+func prepareDistinctSelectClause(table, comment string, fields []string, suffix string) string {
 	if comment != "" {
 		comment = strings.ReplaceAll(comment, "/*", "/ *")
 		comment = strings.ReplaceAll(comment, "*/", "* /")
@@ -63,20 +64,29 @@ func prepareDistinctSelectClause(table, comment string, fields []string) string 
 	propertyArgs := make([]string, 0, len(fields)*2)
 	keyArgs := make([]string, 0, len(fields))
 	valueArgs := make([]string, 0, len(fields)*2)
-	for _, field := range fields {
+	innerArgs := make([]string, 0, len(fields)*2)
+	for i, field := range fields {
 		literal := `'` + strings.ReplaceAll(field, `'`, `''`) + `'`
 		expr := jsonPathExpr(field)
 		schemaExpr := metadata.DefaultColumn + `->'$."$s"'->'p'->` + literal
-		propertyArgs = append(propertyArgs, literal, schemaExpr)
+		schemaAlias := fmt.Sprintf(`"s%d"`, i)
+		valueAlias := fmt.Sprintf(`"v%d"`, i)
+		// SQLite drops JSON's internal subtype at a subquery boundary. json(alias)
+		// restores it so json_object embeds the value instead of quoting its text.
+		propertyArgs = append(propertyArgs, literal, `json(`+schemaAlias+`)`)
 		keyArgs = append(keyArgs, literal)
-		valueArgs = append(valueArgs, literal, expr)
+		valueArgs = append(valueArgs, literal, `json(`+valueAlias+`)`)
+		innerArgs = append(innerArgs, schemaExpr+` AS `+schemaAlias, expr+` AS `+valueAlias)
 	}
 
 	schema := `json_object('p',json_object(` + strings.Join(propertyArgs, `,`) +
 		`),'$k',json_array(` + strings.Join(keyArgs, `,`) + `))`
 	doc := `json_object('$s',` + schema + `,` + strings.Join(valueArgs, `,`) + `)`
 
-	return fmt.Sprintf(`SELECT DISTINCT %s %s AS %s FROM %q`, comment, doc, metadata.DefaultColumn, table)
+	return fmt.Sprintf(
+		`SELECT %s %s AS %s FROM (SELECT DISTINCT %s FROM %q%s)`,
+		comment, doc, metadata.DefaultColumn, strings.Join(innerArgs, `,`), table, suffix,
+	)
 }
 
 // pushdownSafeString reports whether Go's encoding/json (used by sjson when the

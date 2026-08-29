@@ -6,6 +6,17 @@
 
 ### Fixed 🐛
 
+- **Top-level SQLite `distinct` now constructs SJSON only after raw values are
+  deduplicated.** The inner indexed scan collapses schema/value pairs, preserving
+  BSON type distinctions and filter-field combinations, and the outer query
+  wraps only those unique rows as minimal documents. SQLite's JSON subtype is
+  explicitly restored across the subquery boundary so strings, objects and
+  arrays are embedded rather than quoted. On the restored 299,539-card
+  `distinct(listId)` workload, forced result construction drops from 3.60 to
+  2.94 seconds while returning the same 41,875 values. SQL-shape and end-to-end
+  tests cover the inner index/filter placement, JSON subtype, filtering,
+  missing keys and duplicate collapsing by @xet7. Thanks to xet7.
+
 - **Large `distinct` results no longer perform quadratic BSON
   deduplication.** The handler previously called linear `Array.Contains` for
   every value even after SQLite had already collapsed most duplicates, making
