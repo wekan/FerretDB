@@ -18,6 +18,7 @@ import (
 	"container/list"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -140,6 +141,24 @@ func BenchmarkUnmarshalRepeatedSchema(b *testing.B) {
 	))
 	raw, err := Marshal(doc)
 	require.NoError(b, err)
+
+	b.ReportAllocs()
+	b.SetBytes(int64(len(raw)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Unmarshal(raw); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkUnmarshalWideDocument(b *testing.B) {
+	pairs := make([]any, 0, 80)
+	for i := 0; i < 40; i++ {
+		pairs = append(pairs, fmt.Sprintf("field%02d", i), int64(i))
+	}
+	doc := must.NotFail(types.NewDocument(pairs...))
+	raw := must.NotFail(Marshal(doc))
 
 	b.ReportAllocs()
 	b.SetBytes(int64(len(raw)))

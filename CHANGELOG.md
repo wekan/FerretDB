@@ -6,6 +6,17 @@
 
 ### Fixed 🐛
 
+- **Building wide decoded documents no longer searches all fields already
+  appended.** `Document.Set` now uses its existing key-count map to distinguish
+  new fields from replacements, retaining replacement, frozen-document and
+  duplicate-key behavior while making schema-ordered construction linear. The
+  restored 299,539-card collection averages 31.3 fields per document. A
+  representative 40-field SJSON benchmark improves median decode time by about
+  8% without changing its 100 allocations or roughly 10.5 KB allocation size.
+  Existing document mutation tests cover insertion, replacement, frozen and
+  duplicate cases; the full type, handler and SQLite suites pass by @xet7.
+  Thanks to xet7.
+
 - **Nested SJSON documents and arrays no longer allocate streaming JSON
   decoders.** Complete-value unmarshalling preserves strict trailing-input and
   historical truncated-input errors while avoiding a reader, decoder and read

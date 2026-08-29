@@ -324,15 +324,19 @@ func (d *Document) Set(key string, value any) {
 	assertType(value)
 	d.checkFrozen()
 
-	if d.isKeyDuplicate(key) {
+	keyCount := d.keys[key]
+	if keyCount > 1 {
 		panic(fmt.Sprintf("types.Document.Set: key is duplicated: %s", key))
 	}
 
-	for i, f := range d.fields {
-		if f.key == key {
-			d.fields[i].value = value
-			return
+	if keyCount == 1 {
+		for i, f := range d.fields {
+			if f.key == key {
+				d.fields[i].value = value
+				return
+			}
 		}
+		panic(fmt.Sprintf("types.Document.Set: key map contains missing field: %s", key))
 	}
 
 	if d.keys == nil {
