@@ -68,7 +68,7 @@ func prepareDistinctSelectClause(table, comment string, fields []string, suffix 
 	for i, field := range fields {
 		literal := `'` + strings.ReplaceAll(field, `'`, `''`) + `'`
 		expr := jsonPathExpr(field)
-		schemaExpr := metadata.DefaultColumn + `->'$."$s"'->'p'->` + literal
+		schemaExpr := metadata.SchemaPathExpr(field)
 		schemaAlias := fmt.Sprintf(`"s%d"`, i)
 		valueAlias := fmt.Sprintf(`"v%d"`, i)
 		// SQLite drops JSON's internal subtype at a subquery boundary. json(alias)

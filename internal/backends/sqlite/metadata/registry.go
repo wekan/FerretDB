@@ -125,10 +125,90 @@ func (r *Registry) initCollections(ctx context.Context, dbName string, db *fsql.
 	if err = rows.Err(); err != nil {
 		return lazyerrors.Error(err)
 	}
+	if err = rows.Close(); err != nil {
+		return lazyerrors.Error(err)
+	}
 
 	r.colls[dbName] = colls
 
+	for _, c := range colls {
+		if err = r.upgradeIndexFormat(ctx, db, c); err != nil {
+			return lazyerrors.Error(err)
+		}
+	}
+
 	return nil
+}
+
+// upgradeIndexFormat rebuilds eligible indexes once so distinct can obtain a
+// value and its BSON schema from the index alone. The schema is appended after
+// the logical key, retaining the original value prefix for ordinary lookups.
+func (r *Registry) upgradeIndexFormat(ctx context.Context, db *fsql.DB, c *Collection) error {
+	if c.Settings.IndexFormat >= CurrentIndexFormat {
+		return nil
+	}
+
+	r.l.InfoContext(ctx, "Upgrading SQLite indexes for covering distinct scans",
+		slog.String("collection", c.Name),
+	)
+
+	err := db.InTransaction(ctx, func(tx *fsql.Tx) error {
+		for _, index := range c.Settings.Indexes {
+			if !coveringDistinctIndex(index) {
+				continue
+			}
+
+			name := c.TableName + "_" + index.Name
+			if _, err := tx.ExecContext(ctx, fmt.Sprintf(`DROP INDEX IF EXISTS %q`, name)); err != nil {
+				return lazyerrors.Error(err)
+			}
+			if _, err := tx.ExecContext(ctx, indexCreateSQL(c.TableName, index)); err != nil {
+				return lazyerrors.Error(err)
+			}
+		}
+
+		c.Settings.IndexFormat = CurrentIndexFormat
+		q := fmt.Sprintf("UPDATE %q SET settings = ? WHERE table_name = ?", metadataTableName)
+		if _, err := tx.ExecContext(ctx, q, c.Settings, c.TableName); err != nil {
+			return lazyerrors.Error(err)
+		}
+		return nil
+	})
+
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	return nil
+}
+
+func coveringDistinctIndex(index IndexInfo) bool {
+	return !index.Unique && len(index.Key) == 1 && !strings.Contains(index.Key[0].Field, ".")
+}
+
+func indexCreateSQL(table string, index IndexInfo) string {
+	q := "CREATE "
+	if index.Unique {
+		q += "UNIQUE "
+	}
+	q += "INDEX IF NOT EXISTS %q ON %q (%s)"
+
+	columns := make([]string, len(index.Key))
+	for i, key := range index.Key {
+		fields := strings.Split(key.Field, ".")
+		for j, f := range fields {
+			fields[j] = fmt.Sprintf("%q", f)
+		}
+
+		columns[i] = fmt.Sprintf("%s->%s", DefaultColumn, strings.Join(fields, "->"))
+		if key.Descending {
+			columns[i] += " DESC"
+		}
+	}
+	if coveringDistinctIndex(index) {
+		columns = append(columns, SchemaPathExpr(index.Key[0].Field))
+	}
+
+	return fmt.Sprintf(q, table+"_"+index.Name, table, strings.Join(columns, ", "))
 }
 
 // DatabaseList returns a sorted list of existing databases.
@@ -327,6 +407,7 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 			UUID:            uuid.NewString(),
 			CappedSize:      params.CappedSize,
 			CappedDocuments: params.CappedDocuments,
+			IndexFormat:     CurrentIndexFormat,
 		},
 	}
 
@@ -500,37 +581,11 @@ func (r *Registry) indexesCreate(ctx context.Context, dbName, collectionName str
 			continue
 		}
 
-		q := "CREATE "
-
-		if index.Unique {
-			q += "UNIQUE "
-		}
-
 		// IF NOT EXISTS so adopting an ORPHANED table (see
 		// collectionCreate) does not fail on an index that already exists on it —
 		// which otherwise rolled back and DROPPED the orphan (losing its data) and
 		// re-raised the error that crash-looped the client.
-		q += "INDEX IF NOT EXISTS %q ON %q (%s)"
-
-		columns := make([]string, len(index.Key))
-		for i, key := range index.Key {
-			fields := strings.Split(key.Field, ".")
-			for j, f := range fields {
-				fields[j] = fmt.Sprintf("%q", f)
-			}
-
-			columns[i] = fmt.Sprintf("%s->%s", DefaultColumn, strings.Join(fields, "->"))
-			if key.Descending {
-				columns[i] += " DESC"
-			}
-		}
-
-		q = fmt.Sprintf(
-			q,
-			c.TableName+"_"+index.Name,
-			c.TableName,
-			strings.Join(columns, ", "),
-		)
+		q := indexCreateSQL(c.TableName, index)
 
 		if _, err := db.ExecContext(ctx, q); err != nil {
 			_ = r.indexesDrop(ctx, dbName, collectionName, created)

@@ -15,7 +15,11 @@
 // Package metadata provides access to databases and collections information.
 package metadata
 
-import "github.com/FerretDB/FerretDB/internal/backends"
+import (
+	"strings"
+
+	"github.com/FerretDB/FerretDB/internal/backends"
+)
 
 // Collection will probably have a method for getting column name / SQLite path expression for the given document field
 // once we implement field extraction.
@@ -23,6 +27,10 @@ import "github.com/FerretDB/FerretDB/internal/backends"
 // TODO https://github.com/FerretDB/FerretDB/issues/226
 
 const (
+	// CurrentIndexFormat appends the SJSON schema expression to eligible
+	// single-field indexes, making BSON-aware distinct scans covering.
+	CurrentIndexFormat = 1
+
 	// DefaultColumn is a column name for all fields.
 	DefaultColumn = backends.ReservedPrefix + "sjson"
 
@@ -36,6 +44,13 @@ const (
 	// RecordIDColumn is a name for RecordID column to store capped collection record id.
 	RecordIDColumn = backends.ReservedPrefix + "record_id"
 )
+
+// SchemaPathExpr returns the SJSON schema expression for a top-level field.
+// Keep it byte-for-byte identical in index definitions and distinct SELECTs so
+// SQLite recognizes that the result is covered by the expression index.
+func SchemaPathExpr(field string) string {
+	return DefaultColumn + `->'$."$s"'->'p'->'` + strings.ReplaceAll(field, `'`, `''`) + `'`
+}
 
 // Collection represents collection metadata.
 //

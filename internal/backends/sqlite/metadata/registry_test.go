@@ -606,6 +606,11 @@ func TestIndexesCreateDrop(t *testing.T) {
 			Descending: true,
 		}},
 	}, {
+		Name: "covering_index",
+		Key: []IndexKeyPair{{
+			Field: "listId",
+		}},
+	}, {
 		Name: "index_unique",
 		Key: []IndexKeyPair{{
 			Field:      "foo",
@@ -624,6 +629,49 @@ func TestIndexesCreateDrop(t *testing.T) {
 	require.NoError(t, err)
 
 	collection := r.CollectionGet(ctx, dbName, collectionName)
+
+	t.Run("CoveringDistinctIndex", func(t *testing.T) {
+		indexName := collection.TableName + "_covering_index"
+		row := db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", indexName)
+
+		var sql string
+		require.NoError(t, row.Scan(&sql))
+		expected := fmt.Sprintf(
+			`CREATE INDEX "%s" ON "%s" (_ferretdb_sjson->"listId", %s)`,
+			indexName, collection.TableName, SchemaPathExpr("listId"),
+		)
+		require.Equal(t, expected, sql)
+
+		planQ := fmt.Sprintf(
+			`EXPLAIN QUERY PLAN SELECT %s, %s->"listId" FROM %q INDEXED BY %q`,
+			SchemaPathExpr("listId"), DefaultColumn, collection.TableName, indexName,
+		)
+		planRows, err := db.QueryContext(ctx, planQ)
+		require.NoError(t, err)
+		defer planRows.Close()
+		var detail string
+		for planRows.Next() {
+			var id, parent, unused int
+			require.NoError(t, planRows.Scan(&id, &parent, &unused, &detail))
+		}
+		require.NoError(t, planRows.Err())
+		require.Contains(t, detail, "USING COVERING INDEX "+indexName)
+
+		_, err = db.ExecContext(ctx, fmt.Sprintf(`DROP INDEX %q`, indexName))
+		require.NoError(t, err)
+		legacy := fmt.Sprintf(
+			`CREATE INDEX %q ON %q (%s->"listId")`, indexName, collection.TableName, DefaultColumn,
+		)
+		_, err = db.ExecContext(ctx, legacy)
+		require.NoError(t, err)
+		collection.Settings.IndexFormat = 0
+		require.NoError(t, r.upgradeIndexFormat(ctx, db, collection))
+
+		row = db.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", indexName)
+		require.NoError(t, row.Scan(&sql))
+		require.Equal(t, expected, sql, "legacy index must be rebuilt in the covering format")
+		require.Equal(t, CurrentIndexFormat, collection.Settings.IndexFormat)
+	})
 
 	t.Run("NonUniqueIndex", func(t *testing.T) {
 		indexName := collection.TableName + "_index_non_unique"
@@ -690,11 +738,11 @@ func TestIndexesCreateDrop(t *testing.T) {
 		require.NoError(t, err)
 
 		collection = r.CollectionGet(ctx, dbName, collectionName)
-		require.Equal(t, 4, len(collection.Settings.Indexes))
+		require.Equal(t, 5, len(collection.Settings.Indexes))
 	})
 
 	t.Run("DropIndexes", func(t *testing.T) {
-		toDrop := []string{"index_non_unique", "index_unique", "nested_index"}
+		toDrop := []string{"covering_index", "index_non_unique", "index_unique", "nested_index"}
 		err = r.IndexesDrop(ctx, dbName, collectionName, toDrop)
 		require.NoError(t, err)
 
