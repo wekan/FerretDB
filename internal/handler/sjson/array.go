@@ -34,15 +34,11 @@ func (a *arrayType) UnmarshalJSONWithSchema(data []byte, schemas []*elem) error 
 		panic("null data")
 	}
 
-	r := bytes.NewReader(data)
-	dec := json.NewDecoder(r)
-
 	var rawMessages []json.RawMessage
-	if err := dec.Decode(&rawMessages); err != nil {
-		return lazyerrors.Error(err)
-	}
-
-	if err := checkConsumed(dec, r); err != nil {
+	// json.Unmarshal rejects trailing non-whitespace input. Nested arrays are
+	// extremely common, so avoid allocating a Reader, Decoder and decoder buffer
+	// for every one while recursively decoding a result set.
+	if err := unmarshalComposite(data, &rawMessages); err != nil {
 		return lazyerrors.Error(err)
 	}
 

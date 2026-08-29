@@ -194,6 +194,16 @@ func checkConsumed(dec *json.Decoder, r *bytes.Reader) error {
 	return nil
 }
 
+// unmarshalComposite decodes a complete JSON value without the allocations of
+// json.Decoder while retaining Decoder's historical truncated-input error.
+func unmarshalComposite(data []byte, v any) error {
+	err := json.Unmarshal(data, v)
+	if err != nil && err.Error() == "unexpected end of JSON input" {
+		return io.ErrUnexpectedEOF
+	}
+	return err
+}
+
 // fromSJSON converts sjsontype value to matching built-in or types' package value.
 func fromSJSON(v sjsontype) any {
 	switch v := v.(type) {

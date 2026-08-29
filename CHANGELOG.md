@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **Nested SJSON documents and arrays no longer allocate streaming JSON
+  decoders.** Complete-value unmarshalling preserves strict trailing-input and
+  historical truncated-input errors while avoiding a reader, decoder and read
+  buffer for every composite value recursively decoded from a result. The
+  representative nested-card benchmark drops from 561 to 431 allocations and
+  from about 44 KB to 31 KB per document, with median decode time improving
+  from about 179 to 141 microseconds. Existing malformed-input tests and the
+  SJSON, SQLite and command-handler suites cover compatibility by @xet7. Thanks
+  to xet7.
+
 - **Top-level SQLite `distinct` now constructs SJSON only after raw values are
   deduplicated.** The inner indexed scan collapses schema/value pairs, preserving
   BSON type distinctions and filter-field combinations, and the outer query
