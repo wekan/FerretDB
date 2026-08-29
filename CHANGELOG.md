@@ -6,6 +6,17 @@
 
 ### Fixed 🐛
 
+- **Large `distinct` results no longer perform quadratic BSON
+  deduplication.** The handler previously called linear `Array.Contains` for
+  every value even after SQLite had already collapsed most duplicates, making
+  45,640 unique IDs consume about 15–17 seconds of CPU. Values are now gathered,
+  sorted once as already required by the command, and compacted by comparing
+  adjacent BSON values; the field path is also parsed once per command instead
+  of once per document. The representative 45,640-value compaction benchmark
+  completes in about 5–18 milliseconds. Regression tests cover stable ordering,
+  cross-width numeric equality and duplicate strings, nulls, documents and
+  nested arrays by @xet7. Thanks to xet7.
+
 - **Numeric `$type` checks combined with a negated range no longer decode whole
   SQLite collections.** The unchanged corruption-check selector
   `{sort: {$type: "number"}, $nor: [{sort: {$gte: low, $lte: high}}]}` now

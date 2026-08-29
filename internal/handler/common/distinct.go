@@ -25,6 +25,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
 // DistinctParams contains `distinct` command parameters supported by at least one handler.
@@ -93,7 +94,11 @@ func GetDistinctParams(document *types.Document, l *slog.Logger) (*DistinctParam
 // If the key is found in the document, and the value is an array, each element of the array is added to the result.
 // Otherwise, the value itself is added to the result.
 func FilterDistinctValues(iter types.DocumentsIterator, key string) (*types.Array, error) {
-	distinct := types.MakeArray(0)
+	values := types.MakeArray(0)
+	path, err := types.NewPathFromString(key)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 
 	defer iter.Close()
 
@@ -103,11 +108,6 @@ func FilterDistinctValues(iter types.DocumentsIterator, key string) (*types.Arra
 			break
 		}
 
-		if err != nil {
-			return nil, lazyerrors.Error(err)
-		}
-
-		path, err := types.NewPathFromString(key)
 		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
@@ -131,20 +131,36 @@ func FilterDistinctValues(iter types.DocumentsIterator, key string) (*types.Arra
 						return nil, lazyerrors.Error(err)
 					}
 
-					if !distinct.Contains(el) {
-						distinct.Append(el)
-					}
+					values.Append(el)
 				}
 
 			default:
-				if !distinct.Contains(v) {
-					distinct.Append(v)
-				}
+				values.Append(v)
 			}
 		}
 	}
 
-	SortArray(distinct, types.Ascending)
+	return sortAndDeduplicateDistinctValues(values), nil
 
-	return distinct, nil
+}
+
+// sortAndDeduplicateDistinctValues replaces the former incremental
+// Array.Contains pass. That pass compared every new value with all preceding
+// values and made a large already-distinct result quadratic. Sorting is already
+// required by the command; equal BSON values become adjacent and need one
+// comparison each during the compaction pass.
+func sortAndDeduplicateDistinctValues(values *types.Array) *types.Array {
+	SortArray(values, types.Ascending)
+	distinct := types.MakeArray(values.Len())
+
+	var previous any
+	for i := 0; i < values.Len(); i++ {
+		value := must.NotFail(values.Get(i))
+		if i == 0 || types.Compare(previous, value) != types.Equal {
+			distinct.Append(value)
+			previous = value
+		}
+	}
+
+	return distinct
 }
