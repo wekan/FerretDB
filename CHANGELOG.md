@@ -6,6 +6,18 @@
 
 ### Fixed 🐛
 
+- **Numeric `$type` checks combined with a negated range no longer decode whole
+  SQLite collections.** The unchanged corruption-check selector
+  `{sort: {$type: "number"}, $nor: [{sort: {$gte: low, $lte: high}}]}` now
+  pushes its safe negated-range superset into SQLite. Finite numeric scalars and
+  missing fields are pruned there, while string-encoded NaN and ambiguous
+  strings, objects and arrays remain for the authoritative MongoDB-compatible
+  Go filter. Across five restored ordered collections containing about 747,000
+  documents, the check returns zero candidates in 1.9 seconds instead of
+  spending about 30 seconds decoding every document. Positive tests retain NaN
+  and array candidates and prune finite values; negative tests keep unsupported
+  `$nor` shapes in Go by @xet7. Thanks to xet7.
+
 - **Repeated full-document SJSON decoding reuses schemas and lighter scalar
   parsing.** A bounded, concurrency-safe SHA-256 LRU cache retains up to 4,096
   hot immutable schemas no larger than 32 KiB, preventing unbounded memory

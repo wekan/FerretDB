@@ -15,6 +15,7 @@
 package sqlite
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -137,6 +138,53 @@ func TestQueryDistinctFieldPushdown(t *testing.T) {
 		assert.False(t, doc.Has("payload"), "unconsumed fields must not cross the SQLite iterator")
 		assert.Equal(t, false, must.NotFail(doc.Get("archived")))
 	}
+}
+
+func TestQueryNumericTypeNorRangePushdown(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	docs := []*types.Document{
+		must.NotFail(types.NewDocument("_id", "nan", "sort", math.NaN())),
+		must.NotFail(types.NewDocument("_id", "finite-double", "sort", float64(1.5))),
+		must.NotFail(types.NewDocument("_id", "finite-int", "sort", int32(2))),
+		must.NotFail(types.NewDocument("_id", "string", "sort", "NaN")),
+		must.NotFail(types.NewDocument("_id", "missing")),
+		must.NotFail(types.NewDocument("_id", "array", "sort", must.NotFail(types.NewArray(int32(3))))),
+	}
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: docs})
+	require.NoError(t, err)
+
+	max := 1.7976931348623157e308
+	filter := must.NotFail(types.NewDocument(
+		"sort", must.NotFail(types.NewDocument("$type", "number")),
+		"$nor", must.NotFail(types.NewArray(must.NotFail(types.NewDocument(
+			"sort", must.NotFail(types.NewDocument("$gte", -max, "$lte", max)),
+		)))),
+	))
+	res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+	require.NoError(t, err)
+	actual, err := iterator.ConsumeValues[struct{}, *types.Document](res.Iter)
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(actual))
+	for _, doc := range actual {
+		ids = append(ids, must.NotFail(doc.Get("_id")).(string))
+	}
+	assert.ElementsMatch(t, []string{"nan", "string", "array"}, ids,
+		"non-finite numbers and safe string/array supersets remain; finite scalars and missing fields are pruned")
 }
 
 // TestQueryOrPushdown verifies end-to-end that a top-level $or is pushed down

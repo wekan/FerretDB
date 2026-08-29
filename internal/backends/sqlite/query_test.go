@@ -278,6 +278,45 @@ func TestPrepareWhereClause(t *testing.T) {
 				must.NotFail(types.NewDocument("permission", "public")),
 			)))),
 		},
+		"NumericTypeNorRangePushed": {
+			filter: must.NotFail(types.NewDocument(
+				"sort", must.NotFail(types.NewDocument("$type", "number")),
+				"$nor", must.NotFail(types.NewArray(must.NotFail(types.NewDocument(
+					"sort", must.NotFail(types.NewDocument(
+						"$gte", -1.7976931348623157e308,
+						"$lte", 1.7976931348623157e308,
+					)),
+				)))),
+			)),
+			expectWhere: ` WHERE (_ferretdb_sjson->>"sort" IS NOT NULL AND NOT (` +
+				`(_ferretdb_sjson->>"sort" >= ? AND _ferretdb_sjson->>"sort" <= ?)))`,
+			expectArgs: []any{-1.7976931348623157e308, 1.7976931348623157e308},
+		},
+		"NumericNorWithoutTypeStaysInGo": {
+			filter: must.NotFail(types.NewDocument(
+				"sort", must.NotFail(types.NewDocument("$type", "double")),
+				"$nor", must.NotFail(types.NewArray(must.NotFail(types.NewDocument(
+					"sort", must.NotFail(types.NewDocument("$gte", int64(0))),
+				)))),
+			)),
+		},
+		"NumericNorWithMultipleBranchesStaysInGo": {
+			filter: must.NotFail(types.NewDocument(
+				"sort", must.NotFail(types.NewDocument("$type", "number")),
+				"$nor", must.NotFail(types.NewArray(
+					must.NotFail(types.NewDocument("sort", must.NotFail(types.NewDocument("$gte", int64(0))))),
+					must.NotFail(types.NewDocument("other", true)),
+				)),
+			)),
+		},
+		"NumericNorWithPartiallyPushableBranchStaysInGo": {
+			filter: must.NotFail(types.NewDocument(
+				"sort", must.NotFail(types.NewDocument("$type", "number")),
+				"$nor", must.NotFail(types.NewArray(must.NotFail(types.NewDocument(
+					"sort", must.NotFail(types.NewDocument("$gte", int64(0), "$ne", int64(1))),
+				)))),
+			)),
+		},
 
 		"IDString": {
 			// _id can never be an array, so plain equality — matching the

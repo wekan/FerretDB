@@ -153,6 +153,10 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 
 	var conds []string
 	var args []any
+	if cond, condArgs, ok := numericTypeNorRangeCondition(filter); ok {
+		conds = append(conds, cond)
+		args = append(args, condArgs...)
+	}
 
 	for _, k := range filter.Keys() {
 		if k == "" {
@@ -210,6 +214,72 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 	}
 
 	return ` WHERE ` + strings.Join(conds, ` AND `), args
+}
+
+// numericTypeNorRangeCondition pushes the corruption-check shape
+//
+//	{field: {$type: "number"}, $nor: [{field: {$gte: low, $lte: high}}]}
+//
+// into SQLite. The negated numeric range is enough for a safe superset: a
+// string-encoded NaN and all strings/objects/arrays remain candidates, finite
+// JSON numbers are pruned, and missing/null values cannot satisfy $type number.
+// The Go filter remains authoritative for BSON types and array elements. Other
+// $nor shapes stay in Go.
+func numericTypeNorRangeCondition(filter *types.Document) (string, []any, bool) {
+	norAny, err := filter.Get("$nor")
+	if err != nil {
+		return "", nil, false
+	}
+	nor, ok := norAny.(*types.Array)
+	if !ok || nor.Len() != 1 {
+		return "", nil, false
+	}
+	branch, ok := must.NotFail(nor.Get(0)).(*types.Document)
+	if !ok || branch.Len() != 1 {
+		return "", nil, false
+	}
+	field := branch.Keys()[0]
+	if field == "" || strings.HasPrefix(field, "$") || strings.ContainsRune(field, '.') {
+		return "", nil, false
+	}
+
+	topAny, err := filter.Get(field)
+	if err != nil {
+		return "", nil, false
+	}
+	top, ok := topAny.(*types.Document)
+	if !ok {
+		return "", nil, false
+	}
+	typeValue, err := top.Get("$type")
+	if err != nil || typeValue != "number" {
+		return "", nil, false
+	}
+
+	rangeDoc, ok := must.NotFail(branch.Get(field)).(*types.Document)
+	if !ok || rangeDoc.Len() == 0 {
+		return "", nil, false
+	}
+	// Negating a partially pushed AND would create a subset and lose matches:
+	// NOT(range AND unsupported) is wider than NOT(range). Therefore every
+	// operator in this $nor branch must be a supported numeric range operator.
+	for _, key := range rangeDoc.Keys() {
+		switch key {
+		case "$gt", "$gte", "$lt", "$lte":
+			if _, ok := numericBound(must.NotFail(rangeDoc.Get(key))); !ok {
+				return "", nil, false
+			}
+		default:
+			return "", nil, false
+		}
+	}
+	scalarExpr := fmt.Sprintf(`%s->>%s`, metadata.DefaultColumn, quoteJSONLabel(field))
+	rangeCond, args, ok := rangeConditions(scalarExpr, rangeDoc)
+	if !ok {
+		return "", nil, false
+	}
+
+	return fmt.Sprintf(`(%[1]s IS NOT NULL AND NOT (%[2]s))`, scalarExpr, rangeCond), args, true
 }
 
 // pushdownAndCondition pushes every usable branch of a top-level $and. Omitting
