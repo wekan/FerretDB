@@ -147,6 +147,19 @@ func TestPreferredCompoundIndex(t *testing.T) {
 	})
 }
 
+func TestPreferredDistinctIndex(t *testing.T) {
+	t.Parallel()
+
+	indexes := []metadata.IndexInfo{
+		{Name: "boardId_1", Key: []metadata.IndexKeyPair{{Field: "boardId"}}},
+		{Name: "swimlaneId_1_sort_1", Key: []metadata.IndexKeyPair{{Field: "swimlaneId"}, {Field: "sort"}}},
+		{Name: "hidden_1", Key: []metadata.IndexKeyPair{{Field: "hidden"}}, Hidden: true},
+	}
+	assert.Equal(t, "cards_swimlaneId_1_sort_1", preferredDistinctIndex("cards", indexes, "swimlaneId"))
+	assert.Empty(t, preferredDistinctIndex("cards", indexes, "missing"))
+	assert.Empty(t, preferredDistinctIndex("cards", indexes, "hidden"))
+}
+
 func TestPrepareWhereClause(t *testing.T) {
 	t.Parallel()
 

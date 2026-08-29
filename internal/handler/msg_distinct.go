@@ -69,6 +69,7 @@ func (h *Handler) MsgDistinct(connCtx context.Context, msg *wire.OpMsg) (*wire.O
 	defer closer.Close()
 
 	var qp backends.QueryParams
+	qp.Operation = "distinct"
 	if !h.DisablePushdown {
 		qp.Filter = params.Filter
 	}

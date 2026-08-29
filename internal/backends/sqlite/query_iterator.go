@@ -51,6 +51,7 @@ type querySpeed struct {
 	logger         *slog.Logger
 	database       string
 	collection     string
+	operation      string
 	filterFields   string
 	sortFields     string
 	index          string
@@ -203,6 +204,7 @@ func (iter *queryIterator) close() {
 			iter.speed.logger.Info("DEBUGSPEED sqlite query",
 				slog.String("database", iter.speed.database),
 				slog.String("collection", iter.speed.collection),
+				slog.String("operation", iter.speed.operation),
 				slog.String("filter_fields", iter.speed.filterFields),
 				slog.String("sort_fields", iter.speed.sortFields),
 				slog.String("index", iter.speed.index),

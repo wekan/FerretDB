@@ -85,6 +85,8 @@ type QueryParams struct {
 	// DistinctField asks capable backends to collapse a top-level distinct key
 	// before returning candidates. The handler still filters and deduplicates.
 	DistinctField string
+	// Operation is a value-free command name used by opt-in query-shape logs.
+	Operation string
 
 	OnlyRecordIDs bool
 	Comment       string

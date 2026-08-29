@@ -294,6 +294,18 @@ func preferredCompoundIndex(
 	return bestName
 }
 
+// preferredDistinctIndex returns an existing index ordered by the distinct key.
+// SQLite can stream equal keys together instead of sorting the entire table.
+func preferredDistinctIndex(table string, indexes []metadata.IndexInfo, field string) string {
+	for _, index := range indexes {
+		if index.Hidden || len(index.Key) == 0 || index.Key[0].Field != field {
+			continue
+		}
+		return table + "_" + index.Name
+	}
+	return ""
+}
+
 func collectIndexedFields(filter *types.Document, fields map[string]struct{}) {
 	for _, key := range filter.Keys() {
 		if key == "$and" {

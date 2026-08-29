@@ -13,7 +13,9 @@
   constructs minimal SJSON from only that key and its filter fields and applies
   `DISTINCT` before rows cross into Go. Duplicate values, unrelated large
   payloads and documents missing the key therefore never reach recursive
-  decoding; nested keys retain the bounded decoder fallback. Small projections
+  decoding. When a declared index starts with the distinct key, SQLite is forced
+  to stream that access path rather than sort an unindexed table scan; nested
+  keys retain the bounded decoder fallback. Small projections
   such as `_id` likewise avoid full recursive collection scans. The decoder always
   retains `_id`, including when its inclusion is implicit or it is removed only
   by the final projection stage, preventing partial documents from terminating
@@ -21,6 +23,12 @@
   cover SQL distinct collapsing, filtering and missing-key behavior, distinct
   nested paths, both `_id` forms, nested query-field collection, missing fields,
   stored field order and skipped nested values by @xet7. Thanks to xet7.
+
+- **DEBUGSPEED query shapes identify their originating command.** Slow SQLite
+  diagnostics now distinguish `find`, `distinct`, `count` and `aggregate`
+  without logging arguments or values, so two selectors with the same field
+  names no longer lead performance work into the wrong handler. Existing
+  privacy and small-query thresholds remain unchanged by @xet7. Thanks to xet7.
 
 - **Tailable OpLog cursors wake on writes instead of polling SQLite.** The
   OpLog decorator now broadcasts each successful append to every `awaitData`

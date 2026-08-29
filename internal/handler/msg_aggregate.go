@@ -280,7 +280,7 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 		filter, sort := aggregations.GetPushdownQuery(aggregationStages)
 
 		// only documents stages or no stages - fetch documents from the DB and apply stages to them
-		qp := new(backends.QueryParams)
+		qp := &backends.QueryParams{Operation: "aggregate"}
 
 		if !h.DisablePushdown {
 			qp.Filter = filter
@@ -464,7 +464,7 @@ func fetchAllDocuments(ctx context.Context, db backends.Database, cName string) 
 		return nil, lazyerrors.Error(err)
 	}
 
-	queryRes, err := c.Query(ctx, new(backends.QueryParams))
+	queryRes, err := c.Query(ctx, &backends.QueryParams{Operation: "aggregate"})
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

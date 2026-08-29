@@ -65,6 +65,7 @@ func (h *Handler) MsgCount(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMs
 	}
 
 	var qp backends.QueryParams
+	qp.Operation = "count"
 	if !h.DisablePushdown {
 		qp.Filter = params.Filter
 	}

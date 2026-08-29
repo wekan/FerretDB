@@ -74,6 +74,9 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		q = prepareDistinctSelectClause(meta.TableName, params.Comment, params.DecodeFields)
 	}
 	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
+	if index == "" && distinctPushdown {
+		index = preferredDistinctIndex(meta.TableName, meta.Settings.Indexes, params.DistinctField)
+	}
 	if index != "" {
 		q += fmt.Sprintf(` INDEXED BY %q`, index)
 	}
@@ -113,6 +116,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 			logger:        c.r.Logger(),
 			database:      c.dbName,
 			collection:    c.name,
+			operation:     params.Operation,
 			filterFields:  queryFieldNames(params.Filter),
 			sortFields:    queryFieldNames(params.Sort),
 			index:         index,
