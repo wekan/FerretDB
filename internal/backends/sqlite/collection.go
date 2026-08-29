@@ -69,7 +69,17 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 
 	distinctPushdown := params.DistinctField != "" && len(params.DecodeFields) != 0 &&
 		!params.OnlyRecordIDs && !meta.Capped()
-	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
+	index := ""
+	if numericIndex, field := preferredNumericRangeIndex(meta.TableName, meta.Settings.Indexes, params.Filter); field != "" {
+		q := fmt.Sprintf(`CREATE INDEX IF NOT EXISTS %q ON %q (%s)`, numericIndex, meta.TableName,
+			fmt.Sprintf(`%s->>%s`, metadata.DefaultColumn, quoteJSONLabel(field)))
+		if _, err := db.ExecContext(ctx, q); err == nil {
+			index = numericIndex
+		}
+	}
+	if index == "" {
+		index = preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
+	}
 	if index == "" && distinctPushdown {
 		index = preferredDistinctIndex(meta.TableName, meta.Settings.Indexes, params.DistinctField, params.DecodeFields)
 	}

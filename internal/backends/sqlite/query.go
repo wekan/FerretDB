@@ -16,6 +16,7 @@ package sqlite
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math"
 	"strings"
 	"time"
@@ -163,7 +164,7 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 
 	var conds []string
 	var args []any
-	if cond, condArgs, ok := numericTypeNorRangeCondition(filter); ok {
+	if cond, condArgs, _, ok := numericTypeNorRangeCondition(filter); ok {
 		conds = append(conds, cond)
 		args = append(args, condArgs...)
 	}
@@ -235,40 +236,40 @@ func prepareWhereClause(filter *types.Document) (string, []any) {
 // JSON numbers are pruned, and missing/null values cannot satisfy $type number.
 // The Go filter remains authoritative for BSON types and array elements. Other
 // $nor shapes stay in Go.
-func numericTypeNorRangeCondition(filter *types.Document) (string, []any, bool) {
+func numericTypeNorRangeCondition(filter *types.Document) (string, []any, string, bool) {
 	norAny, err := filter.Get("$nor")
 	if err != nil {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	nor, ok := norAny.(*types.Array)
 	if !ok || nor.Len() != 1 {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	branch, ok := must.NotFail(nor.Get(0)).(*types.Document)
 	if !ok || branch.Len() != 1 {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	field := branch.Keys()[0]
 	if field == "" || strings.HasPrefix(field, "$") || strings.ContainsRune(field, '.') {
-		return "", nil, false
+		return "", nil, "", false
 	}
 
 	topAny, err := filter.Get(field)
 	if err != nil {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	top, ok := topAny.(*types.Document)
 	if !ok {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	typeValue, err := top.Get("$type")
 	if err != nil || typeValue != "number" {
-		return "", nil, false
+		return "", nil, "", false
 	}
 
 	rangeDoc, ok := must.NotFail(branch.Get(field)).(*types.Document)
 	if !ok || rangeDoc.Len() == 0 {
-		return "", nil, false
+		return "", nil, "", false
 	}
 	// Negating a partially pushed AND would create a subset and lose matches:
 	// NOT(range AND unsupported) is wider than NOT(range). Therefore every
@@ -277,19 +278,49 @@ func numericTypeNorRangeCondition(filter *types.Document) (string, []any, bool) 
 		switch key {
 		case "$gt", "$gte", "$lt", "$lte":
 			if _, ok := numericBound(must.NotFail(rangeDoc.Get(key))); !ok {
-				return "", nil, false
+				return "", nil, "", false
 			}
 		default:
-			return "", nil, false
+			return "", nil, "", false
 		}
 	}
 	scalarExpr := fmt.Sprintf(`%s->>%s`, metadata.DefaultColumn, quoteJSONLabel(field))
 	rangeCond, args, ok := rangeConditions(scalarExpr, rangeDoc)
 	if !ok {
-		return "", nil, false
+		return "", nil, "", false
 	}
 
-	return fmt.Sprintf(`(%[1]s IS NOT NULL AND NOT (%[2]s))`, scalarExpr, rangeCond), args, true
+	return fmt.Sprintf(`(%[1]s IS NOT NULL AND NOT (%[2]s))`, scalarExpr, rangeCond), args, field, true
+}
+
+// preferredNumericRangeIndex returns a private physical index for a numeric
+// corruption-check field when that field is already part of a client-declared
+// index. A non-leading compound key cannot accelerate a field-only range in
+// SQLite, while scanning its extracted scalar expression is much cheaper than
+// parsing every complete JSON document. The hash keeps arbitrary client field
+// names out of SQLite identifiers.
+func preferredNumericRangeIndex(
+	table string,
+	indexes []metadata.IndexInfo,
+	filter *types.Document,
+) (string, string) {
+	_, _, field, ok := numericTypeNorRangeCondition(filter)
+	if !ok {
+		return "", ""
+	}
+	for _, index := range indexes {
+		if index.Hidden {
+			continue
+		}
+		for _, key := range index.Key {
+			if key.Field == field {
+				h := fnv.New64a()
+				_, _ = h.Write([]byte(field))
+				return fmt.Sprintf(`%s__ferretdb_numeric_%x`, table, h.Sum64()), field
+			}
+		}
+	}
+	return "", ""
 }
 
 // pushdownAndCondition pushes every usable branch of a top-level $and. Omitting

@@ -172,6 +172,32 @@ func TestPreferredCompoundIndex(t *testing.T) {
 	})
 }
 
+func TestPreferredNumericRangeIndex(t *testing.T) {
+	t.Parallel()
+	filter := must.NotFail(types.NewDocument(
+		"sort", must.NotFail(types.NewDocument("$type", "number")),
+		"$nor", must.NotFail(types.NewArray(must.NotFail(types.NewDocument(
+			"sort", must.NotFail(types.NewDocument("$gte", int64(-10), "$lte", int64(10))),
+		)))),
+	))
+	indexes := []metadata.IndexInfo{{
+		Name: "boardId_1_sort_1",
+		Key:  []metadata.IndexKeyPair{{Field: "boardId"}, {Field: "sort"}},
+	}}
+
+	name, field := preferredNumericRangeIndex("cards", indexes, filter)
+	assert.Equal(t, "sort", field)
+	assert.Contains(t, name, "cards__ferretdb_numeric_")
+
+	name, field = preferredNumericRangeIndex("cards", nil, filter)
+	assert.Empty(t, name, "undeclared fields must not create private indexes")
+	assert.Empty(t, field)
+	indexes[0].Hidden = true
+	name, field = preferredNumericRangeIndex("cards", indexes, filter)
+	assert.Empty(t, name, "hidden indexes must not authorize a private access path")
+	assert.Empty(t, field)
+}
+
 func TestPreferredDistinctIndex(t *testing.T) {
 	t.Parallel()
 

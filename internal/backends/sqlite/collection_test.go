@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/iterator"
 	"github.com/FerretDB/FerretDB/internal/util/must"
@@ -146,15 +147,19 @@ func TestQueryNumericTypeNorRangePushdown(t *testing.T) {
 	ctx := testutil.Ctx(t)
 	sp, err := state.NewProvider("")
 	require.NoError(t, err)
-	b, err := NewBackend(&NewBackendParams{
-		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
-	})
+	r, err := metadata.NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
 	require.NoError(t, err)
-	t.Cleanup(b.Close)
-	db, err := b.Database(testutil.DatabaseName(t))
+	t.Cleanup(r.Close)
+	dbName, collectionName := testutil.DatabaseName(t), testutil.CollectionName(t)
+	sqlDB, err := r.DatabaseGetOrCreate(ctx, dbName)
 	require.NoError(t, err)
-	coll, err := db.Collection(testutil.CollectionName(t))
+	_, err = r.CollectionCreate(ctx, &metadata.CollectionCreateParams{DBName: dbName, Name: collectionName})
 	require.NoError(t, err)
+	require.NoError(t, r.IndexesCreate(ctx, dbName, collectionName, []metadata.IndexInfo{{
+		Name: "boardId_1_sort_1",
+		Key:  []metadata.IndexKeyPair{{Field: "boardId"}, {Field: "sort"}},
+	}}))
+	coll := newCollection(r, dbName, collectionName)
 
 	docs := []*types.Document{
 		must.NotFail(types.NewDocument("_id", "nan", "sort", math.NaN())),
@@ -185,6 +190,12 @@ func TestQueryNumericTypeNorRangePushdown(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"nan", "string", "array"}, ids,
 		"non-finite numbers and safe string/array supersets remain; finite scalars and missing fields are pruned")
+	indexName, _ := preferredNumericRangeIndex(r.CollectionGet(ctx, dbName, collectionName).TableName,
+		r.CollectionGet(ctx, dbName, collectionName).Settings.Indexes, filter)
+	var physicalIndex string
+	require.NoError(t, sqlDB.QueryRowContext(ctx,
+		"SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", indexName).Scan(&physicalIndex))
+	assert.Equal(t, indexName, physicalIndex, "the eligible query creates its private scalar access path")
 }
 
 // TestQueryOrPushdown verifies end-to-end that a top-level $or is pushed down

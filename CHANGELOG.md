@@ -6,6 +6,17 @@
 
 ### Fixed 🐛
 
+- **Numeric corruption checks now create a private scalar access path when the
+  checked field is already part of a declared index.** SQLite cannot seek a
+  non-leading compound key, so a field-only `$type: "number"` plus negated
+  finite-range check previously parsed every complete document. On the restored
+  299,539-card collection, the representative `sort` check falls from 1.31
+  seconds to 17 milliseconds after a 1.26-second one-time index build. The
+  Mongo-visible index definition and query remain unchanged. Positive tests pin
+  eligible non-leading fields; negative tests refuse undeclared and hidden
+  fields, bounding private index creation to client-approved schema by @xet7.
+  Thanks to xet7.
+
 - **SQLite indexes now cover BSON-aware filtered `distinct` scans.** Their
   original value expressions remain the first physical keys, preserving normal
   equality/range lookup behavior and Mongo-visible definitions, while each
