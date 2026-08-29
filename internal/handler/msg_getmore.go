@@ -371,12 +371,15 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 			return
 		}
 
-		if resBatch.Len() != 0 {
-			return
-		}
-
 		resBatch, err = h.makeNextBatch(c, params.batchSize)
 		if err != nil {
+			return
+		}
+		if resBatch.Len() != 0 {
+			// Return the documents found by this notification immediately. Waiting at
+			// the top of the next iteration first makes every tailable cursor one
+			// notification behind: a lone write remains invisible until a second
+			// write or the getMore timeout wakes the cursor.
 			return
 		}
 

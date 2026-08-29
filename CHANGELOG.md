@@ -6,6 +6,15 @@
 
 ### Fixed 🐛
 
+- **A notified tailable cursor now returns its populated batch immediately.**
+  `awaitData` previously filled the response after an OpLog write, looped, and
+  waited for another notification before checking that batch. A lone insert
+  could therefore remain invisible until a second write or the `getMore`
+  timeout, leaving reactive clients one mutation behind. The filled-batch check
+  now follows batch construction and precedes the next wait. Positive ordering
+  coverage and a negative guard against the stale pre-query check pin the fix
+  by @xet7. Thanks to xet7.
+
 - **Top-level `$exists` filters now run inside SQLite.** Missing fields map to
   SQL `NULL`, while an explicitly stored BSON null remains JSON `null`, so both
   `$exists: false` and `$exists: true` can be pushed down exactly while the

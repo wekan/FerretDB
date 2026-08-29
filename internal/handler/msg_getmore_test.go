@@ -15,11 +15,39 @@
 package handler
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 )
+
+// TestAwaitDataReturnsFilledBatchBeforeWaitingAgain pins the ordering that a
+// tailable cursor needs. A notification wakes the query; when that query fills
+// the batch, awaitData must return it before entering another notification
+// wait. Keeping the old pre-query check made every cursor one write behind.
+func TestAwaitDataReturnsFilledBatchBeforeWaitingAgain(t *testing.T) {
+	t.Parallel()
+
+	source, err := os.ReadFile("msg_getmore.go")
+	assert.NoError(t, err)
+
+	awaitDataSource := string(source)
+	start := strings.Index(awaitDataSource, "func (h *Handler) awaitData(")
+	end := strings.Index(awaitDataSource[start:], "func tailableAwaitPollInterval(")
+	assert.Greater(t, start, -1)
+	assert.Greater(t, end, -1)
+	awaitDataSource = awaitDataSource[start : start+end]
+
+	fill := strings.Index(awaitDataSource, "resBatch, err = h.makeNextBatch")
+	returnFilled := strings.Index(awaitDataSource, "if resBatch.Len() != 0")
+	assert.Greater(t, fill, -1, "awaitData must fill the response batch")
+	assert.Greater(t, returnFilled, fill,
+		"the filled-batch check must follow makeNextBatch, before the loop waits again")
+	assert.Equal(t, 1, strings.Count(awaitDataSource, "if resBatch.Len() != 0"),
+		"a stale pre-query batch check must not hide the ordering regression")
+}
 
 // TestTailableAwaitPollInterval covers the awaitData poll interval used when a
 // tailable+awaitData cursor has no new data. The default must be much calmer than the
