@@ -29,7 +29,7 @@ import (
 const (
 	// CurrentIndexFormat appends the SJSON schema expression to eligible
 	// single-field indexes, making BSON-aware distinct scans covering.
-	CurrentIndexFormat = 1
+	CurrentIndexFormat = 2
 
 	// DefaultColumn is a column name for all fields.
 	DefaultColumn = backends.ReservedPrefix + "sjson"

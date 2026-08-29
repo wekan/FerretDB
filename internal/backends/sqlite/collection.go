@@ -71,7 +71,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		!params.OnlyRecordIDs && !meta.Capped()
 	index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
 	if index == "" && distinctPushdown {
-		index = preferredDistinctIndex(meta.TableName, meta.Settings.Indexes, params.DistinctField)
+		index = preferredDistinctIndex(meta.TableName, meta.Settings.Indexes, params.DistinctField, params.DecodeFields)
 	}
 	indexClause := ""
 	if index != "" {

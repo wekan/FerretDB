@@ -182,7 +182,15 @@ func (r *Registry) upgradeIndexFormat(ctx context.Context, db *fsql.DB, c *Colle
 }
 
 func coveringDistinctIndex(index IndexInfo) bool {
-	return !index.Unique && len(index.Key) == 1 && !strings.Contains(index.Key[0].Field, ".")
+	if index.Unique || len(index.Key) == 0 {
+		return false
+	}
+	for _, key := range index.Key {
+		if strings.Contains(key.Field, ".") {
+			return false
+		}
+	}
+	return true
 }
 
 func indexCreateSQL(table string, index IndexInfo) string {
@@ -205,7 +213,9 @@ func indexCreateSQL(table string, index IndexInfo) string {
 		}
 	}
 	if coveringDistinctIndex(index) {
-		columns = append(columns, SchemaPathExpr(index.Key[0].Field))
+		for _, key := range index.Key {
+			columns = append(columns, SchemaPathExpr(key.Field))
+		}
 	}
 
 	return fmt.Sprintf(q, table+"_"+index.Name, table, strings.Join(columns, ", "))

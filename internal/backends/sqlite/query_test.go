@@ -178,11 +178,17 @@ func TestPreferredDistinctIndex(t *testing.T) {
 	indexes := []metadata.IndexInfo{
 		{Name: "boardId_1", Key: []metadata.IndexKeyPair{{Field: "boardId"}}},
 		{Name: "swimlaneId_1_sort_1", Key: []metadata.IndexKeyPair{{Field: "swimlaneId"}, {Field: "sort"}}},
+		{Name: "boardId_1_archived_1_swimlaneId_1", Key: []metadata.IndexKeyPair{
+			{Field: "boardId"}, {Field: "archived"}, {Field: "swimlaneId"},
+		}},
 		{Name: "hidden_1", Key: []metadata.IndexKeyPair{{Field: "hidden"}}, Hidden: true},
 	}
-	assert.Equal(t, "cards_swimlaneId_1_sort_1", preferredDistinctIndex("cards", indexes, "swimlaneId"))
-	assert.Empty(t, preferredDistinctIndex("cards", indexes, "missing"))
-	assert.Empty(t, preferredDistinctIndex("cards", indexes, "hidden"))
+	assert.Equal(t, "cards_swimlaneId_1_sort_1",
+		preferredDistinctIndex("cards", indexes, "swimlaneId", []string{"swimlaneId"}))
+	assert.Equal(t, "cards_boardId_1_archived_1_swimlaneId_1",
+		preferredDistinctIndex("cards", indexes, "swimlaneId", []string{"archived", "swimlaneId"}))
+	assert.Empty(t, preferredDistinctIndex("cards", indexes, "missing", []string{"missing"}))
+	assert.Empty(t, preferredDistinctIndex("cards", indexes, "hidden", []string{"hidden"}))
 }
 
 func TestPrepareWhereClause(t *testing.T) {

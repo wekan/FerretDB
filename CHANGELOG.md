@@ -6,18 +6,24 @@
 
 ### Fixed 🐛
 
-- **Single-field SQLite indexes now cover BSON-aware `distinct` scans.** Their
-  original value expression remains the first physical key, preserving normal
-  equality/range lookup behavior and the Mongo-visible index definition, while
-  the field's SJSON schema is appended as an internal key. SQLite can therefore
-  deduplicate both value and BSON type without visiting every document row.
+- **SQLite indexes now cover BSON-aware filtered `distinct` scans.** Their
+  original value expressions remain the first physical keys, preserving normal
+  equality/range lookup behavior and Mongo-visible definitions, while each
+  top-level field's SJSON schema is appended as an internal key. The planner
+  selects the narrowest index containing the distinct key and every decoded
+  filter field, so SQLite can deduplicate values, BSON types and filter inputs
+  without visiting every document row.
   Existing eligible indexes are rebuilt transactionally once at startup and a
-  persisted format marker prevents repeat work; unique, compound and dotted
-  indexes remain unchanged. On the restored 299,539-card `distinct(listId)`
+  persisted format marker prevents repeat work; unique and dotted indexes
+  remain unchanged. On the restored 299,539-card `distinct(listId)`
   workload, SQLite reports a covering scan and forced result construction falls
-  from 2.96 seconds to 45 milliseconds (about 98.5%). Positive tests cover new
-  and migrated indexes and the covering query plan; negative coverage retains
-  the former SQL for unique and dotted indexes by @xet7. Thanks to xet7.
+  from 2.96 seconds to 45 milliseconds (about 98.5%). The compound format also
+  makes the filtered `distinct(swimlaneId, archived)` SQL a covering scan that
+  completes in 176 milliseconds; its live non-covering stage previously took
+  about 12.2 seconds. Positive tests cover new and migrated single/compound
+  indexes, covering query plans and smallest complete index selection; negative
+  coverage retains the former SQL for unique and dotted indexes by @xet7.
+  Thanks to xet7.
 
 - **Large SQLite result sets now resolve their column layout once per query.**
   The iterator previously called `database/sql.Rows.Columns`, compared newly

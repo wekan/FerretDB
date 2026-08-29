@@ -376,14 +376,43 @@ func preferredCompoundIndex(
 
 // preferredDistinctIndex returns an existing index ordered by the distinct key.
 // SQLite can stream equal keys together instead of sorting the entire table.
-func preferredDistinctIndex(table string, indexes []metadata.IndexInfo, field string) string {
+func preferredDistinctIndex(table string, indexes []metadata.IndexInfo, field string, decodeFields []string) string {
+	needed := make(map[string]struct{}, len(decodeFields))
+	for _, neededField := range decodeFields {
+		needed[neededField] = struct{}{}
+	}
+	best := ""
+	bestWidth := int(^uint(0) >> 1)
 	for _, index := range indexes {
-		if index.Hidden || len(index.Key) == 0 || index.Key[0].Field != field {
+		if index.Hidden || !coveringIndexFields(index.Key, needed) {
 			continue
 		}
-		return table + "_" + index.Name
+		containsDistinct := false
+		for _, key := range index.Key {
+			containsDistinct = containsDistinct || key.Field == field
+		}
+		if containsDistinct && len(index.Key) < bestWidth {
+			best = table + "_" + index.Name
+			bestWidth = len(index.Key)
+		}
 	}
-	return ""
+	return best
+}
+
+func coveringIndexFields(keys []metadata.IndexKeyPair, needed map[string]struct{}) bool {
+	covered := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		if strings.Contains(key.Field, ".") {
+			return false
+		}
+		covered[key.Field] = struct{}{}
+	}
+	for field := range needed {
+		if _, ok := covered[field]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 func collectIndexedFields(filter *types.Document, fields map[string]struct{}) {

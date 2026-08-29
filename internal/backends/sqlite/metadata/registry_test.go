@@ -682,8 +682,8 @@ func TestIndexesCreateDrop(t *testing.T) {
 		require.NoError(t, row.Scan(&sql))
 
 		expected := fmt.Sprintf(
-			`CREATE INDEX "%s" ON "%s" (_ferretdb_sjson->"f1", _ferretdb_sjson->"f2" DESC)`,
-			indexName, collection.TableName,
+			`CREATE INDEX "%s" ON "%s" (_ferretdb_sjson->"f1", _ferretdb_sjson->"f2" DESC, %s, %s)`,
+			indexName, collection.TableName, SchemaPathExpr("f1"), SchemaPathExpr("f2"),
 		)
 		require.Equal(t, expected, sql)
 	})
