@@ -341,6 +341,23 @@ func TestPrepareWhereClause(t *testing.T) {
 				`(_ferretdb_sjson->>"sort" >= ? AND _ferretdb_sjson->>"sort" <= ?)))`,
 			expectArgs: []any{-1.7976931348623157e308, 1.7976931348623157e308},
 		},
+		"ExistsFalsePushed": {
+			filter: must.NotFail(types.NewDocument(
+				"archived", must.NotFail(types.NewDocument("$exists", false)),
+			)),
+			expectWhere: ` WHERE _ferretdb_sjson->"archived" IS NULL`,
+		},
+		"ExistsTruePushed": {
+			filter: must.NotFail(types.NewDocument(
+				"archived", must.NotFail(types.NewDocument("$exists", true)),
+			)),
+			expectWhere: ` WHERE _ferretdb_sjson->"archived" IS NOT NULL`,
+		},
+		"ExistsNonBooleanStaysInGo": {
+			filter: must.NotFail(types.NewDocument(
+				"archived", must.NotFail(types.NewDocument("$exists", "false")),
+			)),
+		},
 		"NumericNorWithoutTypeStaysInGo": {
 			filter: must.NotFail(types.NewDocument(
 				"sort", must.NotFail(types.NewDocument("$type", "double")),

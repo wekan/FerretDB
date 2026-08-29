@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **Top-level `$exists` filters now run inside SQLite.** Missing fields map to
+  SQL `NULL`, while an explicitly stored BSON null remains JSON `null`, so both
+  `$exists: false` and `$exists: true` can be pushed down exactly while the
+  Mongo-compatible filter remains authoritative. A startup existence probe on
+  the restored 299,539-card collection previously decoded every full document
+  for 20.6 seconds merely to return no match; its equivalent pushed-down scan
+  completes in 20 milliseconds without building another index. Positive tests
+  distinguish missing, explicit null and present false values; negative tests
+  keep non-boolean `$exists` operands out of SQL by @xet7. Thanks to xet7.
+
 - **Numeric corruption checks now create a private scalar access path when the
   checked field is already part of a declared index.** SQLite cannot seek a
   non-leading compound key, so a field-only `$type: "number"` plus negated

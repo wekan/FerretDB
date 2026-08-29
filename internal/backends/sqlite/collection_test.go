@@ -198,6 +198,47 @@ func TestQueryNumericTypeNorRangePushdown(t *testing.T) {
 	assert.Equal(t, indexName, physicalIndex, "the eligible query creates its private scalar access path")
 }
 
+func TestQueryExistsPushdown(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: []*types.Document{
+		must.NotFail(types.NewDocument("_id", "missing")),
+		must.NotFail(types.NewDocument("_id", "null", "archived", types.Null)),
+		must.NotFail(types.NewDocument("_id", "false", "archived", false)),
+	}})
+	require.NoError(t, err)
+
+	queryIDs := func(exists bool) []string {
+		filter := must.NotFail(types.NewDocument(
+			"archived", must.NotFail(types.NewDocument("$exists", exists)),
+		))
+		res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+		require.NoError(t, err)
+		docs, err := iterator.ConsumeValues[struct{}, *types.Document](res.Iter)
+		require.NoError(t, err)
+		ids := make([]string, 0, len(docs))
+		for _, doc := range docs {
+			ids = append(ids, must.NotFail(doc.Get("_id")).(string))
+		}
+		return ids
+	}
+
+	assert.Equal(t, []string{"missing"}, queryIDs(false), "explicit null exists and must not match $exists:false")
+	assert.ElementsMatch(t, []string{"null", "false"}, queryIDs(true))
+}
+
 // TestQueryOrPushdown verifies end-to-end that a top-level $or is pushed down
 // CORRECTLY, which for an OR means one thing above all: NOTHING THAT MATCHES IS
 // LOST. Every other pushdown narrows, and the Go filter removes whatever extra

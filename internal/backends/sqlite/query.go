@@ -550,10 +550,11 @@ func pushdownOrCondition(v any) (string, []any, bool) {
 // SUPERSET of the documents matching {key: v}, or ok=false when v cannot be
 // pushed down (the Go filter then stays the sole authority for that field).
 //
-// Handled: scalar string/ObjectID equality, {$in: [...safe...]} (an $in list
-// filter), document-form {$elemMatch: {...}}, and {$regex: literal} (a substring filter). Everything else —
-// ranges ($gt/$lte/…, unsafe on JSON-text ordering), $ne, non-ASCII or
-// non-literal regex, unsafe values — stays in Go.
+// Handled: scalar string/ObjectID equality, {$exists: bool}, {$in: [...safe...]}
+// (an $in list filter), document-form {$elemMatch: {...}}, and {$regex: literal}
+// (a substring filter). Everything else — ranges ($gt/$lte/…, unsafe on
+// JSON-text ordering), $ne, non-ASCII or non-literal regex, unsafe values —
+// stays in Go.
 func pushdownFieldCondition(expr, key string, v any) (string, []any, bool) {
 	switch val := v.(type) {
 	case string:
@@ -660,6 +661,16 @@ func regexCondition(expr, pattern, options string) (string, []any, bool) {
 // a SUPERSET of any ONE of them is a valid superset of the whole expression —
 // coexisting operators ($ne, $nin, $options, …) do not make this unsafe.
 func operatorCondition(expr, key string, doc *types.Document) (string, []any, bool) {
+	if existsAny, err := doc.Get("$exists"); err == nil {
+		if exists, ok := existsAny.(bool); ok {
+			if exists {
+				return expr + ` IS NOT NULL`, nil, true
+			}
+
+			return expr + ` IS NULL`, nil, true
+		}
+	}
+
 	if elemAny, err := doc.Get("$elemMatch"); err == nil {
 		if elemDoc, ok := elemAny.(*types.Document); ok {
 			if cond, condArgs, ok := elemMatchCondition(expr, elemDoc); ok {
