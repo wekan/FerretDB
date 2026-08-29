@@ -530,7 +530,8 @@ func TestDebugError(t *testing.T) {
 		db := collection.Database()
 
 		err := db.RunCommand(ctx, bson.D{{"debugError", bson.D{{"NaN", math.NaN()}}}}).Err()
-		require.ErrorContains(t, err, "wrong type")
+		require.ErrorContains(t, err, `required parameter "debugError" has type`)
+		require.ErrorContains(t, err, "(expected string)")
 	})
 
 	t.Run("LazyError", func(t *testing.T) {

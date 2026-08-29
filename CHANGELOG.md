@@ -233,6 +233,14 @@
   the workload. Positive and negative unit cases pin all three thresholds and
   the disabled path by @xet7. Thanks to xet7.
 
+### Other Changes 🤖
+
+- **The debug-command validation integration test follows the current typed
+  parameter error.** It now pins both the rejected parameter and its expected
+  string type instead of looking for the obsolete generic phrase `wrong type`,
+  keeping the sequential all-tests workflow green without weakening the
+  validation check by @xet7. Thanks to xet7.
+
 ## [v1.62.0](https://github.com/wekan/FerretDB/releases/tag/v1.62.0) (2026-08-25)
 
 ### Other Changes 🤖
