@@ -70,6 +70,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"sync"
 	"time"
 
@@ -228,15 +229,10 @@ func toSJSON(v any) sjsontype {
 // It decodes document's schema from the `$s` field and uses it to decode the data of the document.
 func Unmarshal(data []byte) (*types.Document, error) {
 	var v map[string]json.RawMessage
-	r := bytes.NewReader(data)
-	dec := json.NewDecoder(r)
-
-	err := dec.Decode(&v)
-	if err != nil {
-		return nil, lazyerrors.Error(err)
-	}
-
-	if err = checkConsumed(dec, r); err != nil {
+	// Unmarshal already rejects trailing non-whitespace input. Using it directly
+	// avoids allocating a Reader, Decoder and its read buffer for every document
+	// returned by a large query.
+	if err := json.Unmarshal(data, &v); err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
@@ -261,7 +257,7 @@ func Unmarshal(data []byte) (*types.Document, error) {
 		)
 	}
 
-	d := must.NotFail(types.NewDocument())
+	d := types.MakeDocument(len(sch.Keys))
 
 	for _, key := range sch.Keys {
 		b, ok := v[key]
@@ -335,6 +331,7 @@ func UnmarshalFields(data []byte, fields []string) (*types.Document, error) {
 
 // unmarshalSingleValue decodes the given sjson-encoded data element by the given schema.
 func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
+	data = bytes.TrimSpace(data)
 	if bytes.Equal(data, []byte("null")) {
 		return fromSJSON(new(nullType)), nil
 	}
@@ -354,32 +351,35 @@ func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
 		}
 		return v, nil
 	case elemTypeBool:
-		var v bool
-		if err := json.Unmarshal(data, &v); err != nil {
-			return nil, lazyerrors.Error(err)
+		switch string(data) {
+		case "true":
+			return true, nil
+		case "false":
+			return false, nil
+		default:
+			return nil, lazyerrors.Errorf("invalid bool %q", data)
 		}
-		return v, nil
 	case elemTypeInt:
-		var v int32
-		if err := json.Unmarshal(data, &v); err != nil {
+		v, err := strconv.ParseInt(string(data), 10, 32)
+		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
-		return v, nil
+		return int32(v), nil
 	case elemTypeLong:
-		var v int64
-		if err := json.Unmarshal(data, &v); err != nil {
+		v, err := strconv.ParseInt(string(data), 10, 64)
+		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
 		return v, nil
 	case elemTypeTimestamp:
-		var v uint64
-		if err := json.Unmarshal(data, &v); err != nil {
+		v, err := strconv.ParseUint(string(data), 10, 64)
+		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
 		return types.Timestamp(v), nil
 	case elemTypeDate:
-		var v int64
-		if err := json.Unmarshal(data, &v); err != nil {
+		v, err := strconv.ParseInt(string(data), 10, 64)
+		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
 		return time.UnixMilli(v), nil
@@ -387,8 +387,8 @@ func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
 		if bytes.Equal(data, []byte(`"NaN"`)) {
 			return math.NaN(), nil
 		}
-		var v float64
-		if err := json.Unmarshal(data, &v); err != nil {
+		v, err := strconv.ParseFloat(string(data), 64)
+		if err != nil {
 			return nil, lazyerrors.Error(err)
 		}
 		return v, nil

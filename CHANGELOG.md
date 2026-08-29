@@ -11,10 +11,12 @@
   immutable schemas no larger than 32 KiB, preventing unbounded memory growth
   while avoiding repeated shape parsing across large collections. Common
   strings, booleans, integers, dates, timestamps and doubles now use strict
-  single-value JSON decoding instead of allocating a streaming decoder for
-  every scalar. A representative nested-card benchmark drops allocations from
-  1,021 to 617 per document and improves throughput, while tests retain schema
-  validation and NaN behavior by @xet7. Thanks to xet7.
+  scalar parsing instead of allocating a streaming decoder for every value.
+  Full documents use the direct JSON decoder and preallocate their ordered
+  field storage. A representative nested-card benchmark drops allocations from
+  1,021 to 561 and memory from about 90 KB to 44 KB per document while improving
+  median throughput by about 29%; tests retain malformed-input rejection,
+  schema validation and NaN behavior by @xet7. Thanks to xet7.
 
 - **Inclusion projections no longer decode fields the query cannot observe.**
   SQLite still parses and filters the unchanged stored SJSON document, but its

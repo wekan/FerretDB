@@ -15,6 +15,7 @@
 package sjson
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -128,6 +129,28 @@ func BenchmarkUnmarshalRepeatedSchema(b *testing.B) {
 	}
 }
 
+func TestUnmarshalScalarFastPathRejectsWrongTypes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		typeName elemType
+		value    string
+	}{
+		"BoolString":        {elemTypeBool, `"true"`},
+		"FractionalInt":     {elemTypeInt, `1.5`},
+		"NegativeTimestamp": {elemTypeTimestamp, `-1`},
+		"StringDate":        {elemTypeDate, `"1"`},
+		"BoolDouble":        {elemTypeDouble, `true`},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := unmarshalSingleValue(json.RawMessage(tc.value), &elem{Type: tc.typeName})
+			require.Error(t, err)
+		})
+	}
+}
+
 // TestUnmarshalInvalid checks that in case of invalid data, we return errors and not just ignore issues.
 func TestUnmarshalInvalid(t *testing.T) {
 	t.Parallel()
@@ -146,7 +169,7 @@ func TestUnmarshalInvalid(t *testing.T) {
 		},
 		"ExtraData": {
 			json:     `{"$s":{"p": {"foo": {"t": "string"}},"$k": ["foo"]}, "foo": "bar"}foo`,
-			expected: `3 bytes remains in the decoder: foo`,
+			expected: `invalid character 'f' after top-level value`,
 		},
 		"NoSchema": {
 			json:     `{"foo": "bar"}`,
