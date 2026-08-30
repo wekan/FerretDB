@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **`$pull` now treats a document operand as a condition on each array
+  document.** It previously required exact document equality, so a condition
+  such as `{_id: id}` could not remove an element that also contained a value.
+  This left a client's deselected custom field attached and made it immediately
+  reappear. Positive and negative unit tests cover matching one field in a
+  wider document, while database compatibility tests compare matching and
+  non-matching conditions with MongoDB by @xet7. Thanks to Heart1010 and xet7.
+
 ## [v1.63.0](https://github.com/wekan/FerretDB/releases/tag/v1.63.0) (2026-08-29)
 
 ### Fixed 🐛

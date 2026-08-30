@@ -373,6 +373,17 @@ func TestUpdateArrayCompatPull(t *testing.T) {
 		"StringDuplicates": {
 			update: bson.D{{"$pull", bson.D{{"v", "b"}}}},
 		},
+		"DocumentCondition": {
+			filter:    bson.D{{"_id", "array-documents-two-fields"}},
+			update:    bson.D{{"$pull", bson.D{{"v", bson.D{{"field", int32(42)}}}}}},
+			providers: []shareddata.Provider{shareddata.ArrayAndDocuments},
+		},
+		"DocumentConditionNoMatch": {
+			filter:     bson.D{{"_id", "array-documents-two-fields"}},
+			update:     bson.D{{"$pull", bson.D{{"v", bson.D{{"field", int32(99)}}}}}},
+			providers:  []shareddata.Provider{shareddata.ArrayAndDocuments},
+			resultType: emptyResult,
+		},
 		"FieldNotExist": {
 			update:     bson.D{{"$pull", bson.D{{"non-existent-field", int32(42)}}}},
 			resultType: emptyResult,

@@ -707,7 +707,17 @@ func processPullArrayUpdateExpression(command string, doc *types.Document, key s
 	for i := array.Len() - 1; i >= 0; i-- {
 		elem := must.NotFail(array.Get(i))
 
-		if types.Compare(elem, pullVal) == types.Equal {
+		matches := types.Compare(elem, pullVal) == types.Equal
+		if elemDoc, ok := elem.(*types.Document); ok {
+			if pullDoc, ok := pullVal.(*types.Document); ok {
+				matches, err = FilterDocument(elemDoc, pullDoc)
+				if err != nil {
+					return false, lazyerrors.Error(err)
+				}
+			}
+		}
+
+		if matches {
 			array.Remove(i)
 			changed = true
 		}
