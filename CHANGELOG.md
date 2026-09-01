@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
-## [v1.65.0](https://github.com/wekan/FerretDB/releases/tag/v1.65.0) (2026-09-01)
+## Upcoming FerretDB release
 
 ### Fixed 🐛
 
@@ -15,6 +15,10 @@
   negative query-builder test prevents the unsafe pushdown and the existing
   scalar OR test retains the optimized path by @xet7. Thanks to jeremy-arsia and
   xet7.
+
+## [v1.65.0](https://github.com/wekan/FerretDB/releases/tag/v1.65.0) (2026-09-01)
+
+### Fixed 🐛
 
 - **Sorted queries with an effectively unlimited result limit no longer reserve
   memory for every possible result before reading the first document.** The
