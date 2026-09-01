@@ -279,14 +279,13 @@ func TestPrepareWhereClause(t *testing.T) {
 				"archived", false,
 				"$or", must.NotFail(types.NewArray(
 					must.NotFail(types.NewDocument("permission", "public")),
-					must.NotFail(types.NewDocument("members.userId", "u1")),
+					must.NotFail(types.NewDocument("owner", "u1")),
 				)),
 			)),
 			expectWhere: ` WHERE ` + arrayArm("archived") + ` AND (` +
 				`(` + arrayArm("permission") + `)` +
 				` OR ` +
-				`(` + fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`,
-				metadata.DefaultColumn+`->"members"->"userId"`) + `)` +
+				`(` + arrayArm("owner") + `)` +
 				`)`,
 			expectArgs: []any{`false`, `"public"`, `"u1"`},
 		},
@@ -308,6 +307,12 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
 				must.NotFail(types.NewDocument("permission", "public")),
 				must.NotFail(types.NewDocument("$and", must.NotFail(types.NewArray()))),
+			)))),
+		},
+		"OrNotPushedDownWithDottedArrayPaths": {
+			filter: must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+				must.NotFail(types.NewDocument("services.resume.loginTokens.hashedToken", "wanted")),
+				must.NotFail(types.NewDocument("services.resume.loginTokens.token", "legacy")),
 			)))),
 		},
 		"OrNotPushedDownWhenABranchIsEmpty": {

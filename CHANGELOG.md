@@ -6,6 +6,16 @@
 
 ### Fixed 🐛
 
+- **Logical OR filters no longer lose matches when a dotted path crosses an
+  array of documents.** SQLite's direct dotted JSON accessor follows nested
+  documents but not MongoDB's implicit traversal through arrays, so pushing
+  such an OR into SQL could discard a matching row before the authoritative Go
+  filter saw it. OR filters containing dotted paths now remain in Go. Positive
+  collection coverage reproduces a nested session-token lookup, while a
+  negative query-builder test prevents the unsafe pushdown and the existing
+  scalar OR test retains the optimized path by @xet7. Thanks to jeremy-arsia and
+  xet7.
+
 - **Sorted queries with an effectively unlimited result limit no longer reserve
   memory for every possible result before reading the first document.** The
   bounded top-k heap now starts with a small capacity and grows only for rows

@@ -514,6 +514,13 @@ func pushdownOrCondition(v any) (string, []any, bool) {
 			if k == "" || strings.HasPrefix(k, "$") {
 				return "", nil, false
 			}
+			// A direct dotted JSON accessor only follows documents. Mongo dotted
+			// matching also traverses arrays of documents, so using that accessor
+			// inside an OR could discard a matching row before the Go filter sees
+			// it. Keep the entire OR in Go when any branch has a dotted path.
+			if strings.ContainsRune(k, '.') {
+				return "", nil, false
+			}
 
 			bv := must.NotFail(branch.Get(k))
 			expr := jsonPathExpr(k)
@@ -522,11 +529,7 @@ func pushdownOrCondition(v any) (string, []any, bool) {
 			var condArgs []any
 			var condOK bool
 
-			if strings.ContainsRune(k, '.') {
-				cond, condArgs, condOK = pushdownDottedFieldCondition(expr, bv)
-			} else {
-				cond, condArgs, condOK = pushdownFieldCondition(expr, k, bv)
-			}
+			cond, condArgs, condOK = pushdownFieldCondition(expr, k, bv)
 
 			if !condOK {
 				return "", nil, false

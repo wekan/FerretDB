@@ -311,6 +311,46 @@ func TestQueryOrPushdown(t *testing.T) {
 	assert.True(t, explainRes.FilterPushdown, "the $or must be reported as pushed down")
 }
 
+func TestQueryOrWithDottedArrayPaths(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	tokens := must.NotFail(types.NewArray(must.NotFail(types.NewDocument("hashedToken", "wanted"))))
+	resume := must.NotFail(types.NewDocument("loginTokens", tokens))
+	services := must.NotFail(types.NewDocument("resume", resume))
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: []*types.Document{
+		must.NotFail(types.NewDocument("_id", "matching", "services", services)),
+		must.NotFail(types.NewDocument("_id", "other")),
+	}})
+	require.NoError(t, err)
+
+	filter := must.NotFail(types.NewDocument("$or", must.NotFail(types.NewArray(
+		must.NotFail(types.NewDocument("services.resume.loginTokens.hashedToken", "wanted")),
+		must.NotFail(types.NewDocument("services.resume.loginTokens.token", "missing")),
+	))))
+	res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+	require.NoError(t, err)
+	docs, err := iterator.ConsumeValues[struct{}, *types.Document](res.Iter)
+	require.NoError(t, err)
+	require.Len(t, docs, 2, "an unpushed OR must leave every candidate for the authoritative filter")
+
+	explainRes, err := coll.Explain(ctx, &backends.ExplainParams{Filter: filter})
+	require.NoError(t, err)
+	assert.False(t, explainRes.FilterPushdown)
+}
+
 // TestQueryElemMatchPushdown verifies that all pushed predicates are applied to
 // one array element. A document with the requested values split across two
 // elements must not pass the SQLite WHERE clause.
