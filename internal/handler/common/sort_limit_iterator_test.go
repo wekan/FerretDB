@@ -6,6 +6,7 @@
 package common
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -41,4 +42,26 @@ func TestSortLimitIterator(t *testing.T) {
 		must.NotFail(actual[1].Get("_id")).(string),
 		must.NotFail(actual[2].Get("_id")).(string),
 	})
+}
+
+func TestSortLimitIteratorEffectivelyUnlimited(t *testing.T) {
+	t.Parallel()
+
+	docs := []*types.Document{
+		must.NotFail(types.NewDocument("_id", "two", "sort", int32(2))),
+		must.NotFail(types.NewDocument("_id", "one", "sort", int32(1))),
+	}
+	sortDoc := must.NotFail(types.NewDocument("sort", int32(1)))
+	closer := iterator.NewMultiCloser()
+	defer closer.Close()
+	source := iterator.Values(iterator.ForSlice(docs))
+	closer.Add(source)
+
+	limited, err := SortLimitIterator(source, closer, sortDoc, math.MaxInt32)
+	require.NoError(t, err)
+	actual, err := iterator.ConsumeValues(limited)
+	require.NoError(t, err)
+	require.Len(t, actual, 2)
+	require.Equal(t, "one", must.NotFail(actual[0].Get("_id")))
+	require.Equal(t, "two", must.NotFail(actual[1].Get("_id")))
 }

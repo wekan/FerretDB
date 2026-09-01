@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Sorted queries with an effectively unlimited result limit no longer reserve
+  memory for every possible result before reading the first document.** The
+  bounded top-k heap now starts with a small capacity and grows only for rows
+  that actually exist, preventing ordinary client queries from attempting a
+  multi-gigabyte allocation and taking down the database. Positive coverage
+  verifies correct ordering with the wire protocol's maximum default limit,
+  while the existing finite-limit test retains bounded top-k behavior by
+  @xet7. Thanks to jeremy-arsia, Heart1010 and xet7.
+
 ## [v1.64.0](https://github.com/wekan/FerretDB/releases/tag/v1.64.0) (2026-08-30)
 
 ### Fixed 🐛

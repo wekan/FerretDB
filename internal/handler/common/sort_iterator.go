@@ -24,6 +24,11 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 )
 
+// sortLimitInitialCapacity keeps an effectively unlimited wire-protocol limit
+// from becoming a multi-gigabyte allocation before the first document is read.
+// The slice still grows normally when the result set actually contains more.
+const sortLimitInitialCapacity int64 = 1024
+
 // SortIterator returns an iterator of sorted documents.
 // It will be added to the given closer.
 //
@@ -62,7 +67,8 @@ func SortLimitIterator(iter types.DocumentsIterator, closer *iterator.MultiClose
 		return nil, lazyerrors.Error(err)
 	}
 
-	h := &documentsMaxHeap{sorts: sorts, docs: make([]*types.Document, 0, keep)}
+	capacity := min(keep, sortLimitInitialCapacity)
+	h := &documentsMaxHeap{sorts: sorts, docs: make([]*types.Document, 0, capacity)}
 	heap.Init(h)
 	for {
 		_, doc, nextErr := iter.Next()
