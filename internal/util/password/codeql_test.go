@@ -29,14 +29,14 @@ func TestSCRAMSHA1CodeQLSuppression(t *testing.T) {
 	require.NoError(t, err)
 
 	lines := strings.Split(string(b), "\n")
-	for i, line := range lines {
+	for _, line := range lines {
 		if !strings.Contains(line, "md5.Sum") {
 			continue
 		}
 
+		require.Contains(t, line, "codeql[go/weak-sensitive-data-hashing]")
 		require.Contains(t, line, "lgtm[go/weak-sensitive-data-hashing]")
-		require.Greater(t, i, 0)
-		require.Equal(t, "\t// codeql[go/weak-sensitive-data-hashing]", lines[i-1])
+		require.Equal(t, 1, strings.Count(string(b), "md5.Sum"))
 
 		return
 	}

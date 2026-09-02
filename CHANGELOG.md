@@ -6,6 +6,15 @@
 
 ### Fixed 🐛
 
+- **The mandatory SCRAM-SHA-1 digest carries its CodeQL exception on the exact
+  reported line.** MongoDB's legacy authentication protocol requires the MD5
+  password-preparation step before PBKDF2-SHA-1, so replacing it would reject
+  compatible credentials rather than strengthen them. The current `codeql`
+  and legacy `lgtm` query-specific annotations now both share the digest line,
+  and source coverage prevents either annotation or the single digest operation
+  from drifting. MongoDB-generated SCRAM vectors continue to pass by @xet7.
+  Thanks to GitHub CodeQL and xet7.
+
 - **FerretDB v1 now supports the maintained wire library and Go 1.27.** The
   wire 0.1.7 migration replaces removed document iteration, message-section
   decoding and indented logging APIs while retaining MongoDB document
