@@ -260,11 +260,9 @@ func ToDocument(d wirebson.AnyDocument) (*types.Document, error) {
 		return nil, lazyerrors.Error(err)
 	}
 
-	fields := doc.FieldNames()
-	pairs := make([]any, 0, len(fields)*2)
+	pairs := make([]any, 0, doc.Len()*2)
 
-	for i := range fields {
-		f, v := doc.GetByIndex(i)
+	for f, v := range doc.All() {
 
 		if v, err = convertToTypes(v); err != nil {
 			return nil, lazyerrors.Error(err)

@@ -38,7 +38,7 @@ permissions:
   actions: write   # dispatch docker.yml after the release is published
 
 env:
-  GO_VERSION: '1.25.12'
+  GO_VERSION: '1.27.0'
 
 jobs:
   # Build the per-arch binaries (all platforms) and publish the GitHub Release.

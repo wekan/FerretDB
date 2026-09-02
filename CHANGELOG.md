@@ -2,6 +2,33 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **FerretDB v1 now supports the maintained wire library and Go 1.27.** The
+  wire 0.1.7 migration replaces removed document iteration, message-section
+  decoding and indented logging APIs while retaining MongoDB document
+  sequences and IEEE-754 NaN values. The test-event decoder accepts Go 1.27's
+  `OutputType` and `FailedBuild` fields without relaxing its rejection of
+  unknown JSON fields, and an integer diagnostic uses its correct format verb.
+  The complete unit, vet and SQLite/TLS integration pipeline passes with the
+  new toolchain by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **Runtime, integration, tooling and database-image dependencies are
+  current.** [PR #18](https://github.com/wekan/FerretDB/pull/18),
+  [PR #19](https://github.com/wekan/FerretDB/pull/19),
+  [PR #20](https://github.com/wekan/FerretDB/pull/20) and
+  [PR #21](https://github.com/wekan/FerretDB/pull/21) update OpenTelemetry,
+  the SAP HANA driver, the wire library, test and development tools, Citus and
+  MongoDB with their resolved indirect dependencies. Root, integration,
+  release and container builds now consistently use Go 1.27.0. All module
+  checksums verify, the tools tests pass with the race detector, and a binary
+  containing the SQLite, PostgreSQL, MySQL and HANA handlers builds
+  successfully by @xet7. Thanks to dependabot and xet7.
+
 ## [v1.66.0](https://github.com/wekan/FerretDB/releases/tag/v1.66.0) (2026-09-01)
 
 ### Fixed 🐛

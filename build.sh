@@ -25,7 +25,7 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-GO_VERSION="1.25.12"
+GO_VERSION="1.27.0"
 LOCAL_GOROOT="$ROOT/.goroot"
 STATE_DIR="$ROOT/state"
 SQLITE_TEST_DIR="$ROOT/tmp/sqlite-tests"

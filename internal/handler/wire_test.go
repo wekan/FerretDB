@@ -15,6 +15,7 @@
 package handler
 
 import (
+	"encoding/binary"
 	"math"
 	"testing"
 
@@ -25,9 +26,61 @@ import (
 	"github.com/FerretDB/FerretDB/internal/types"
 )
 
-func TestWireAcceptsNaNInDocumentSequence(t *testing.T) {
-	require.False(t, wire.CheckNaNs)
+func opMsgWithSequence(t *testing.T, command *types.Document, identifier string, docs ...*types.Document) *wire.OpMsg {
+	t.Helper()
 
+	wireCommand, err := bson.FromDocument(command)
+	require.NoError(t, err)
+	msg, err := wire.NewOpMsg(wireCommand)
+	require.NoError(t, err)
+	body, err := msg.MarshalBinary()
+	require.NoError(t, err)
+
+	section := make([]byte, 5, 64)
+	section[0] = 1
+	section = append(section, identifier...)
+	section = append(section, 0)
+
+	for _, doc := range docs {
+		wireDoc, docErr := bson.FromDocument(doc)
+		require.NoError(t, docErr)
+		raw, encodeErr := wireDoc.Encode()
+		require.NoError(t, encodeErr)
+		section = append(section, raw...)
+	}
+
+	binary.LittleEndian.PutUint32(section[1:5], uint32(len(section)-1))
+	body = append(body, section...)
+
+	var decoded wire.OpMsg
+	require.NoError(t, decoded.UnmarshalBinaryNocopy(body))
+
+	return &decoded
+}
+
+func TestOpMsgDocumentSequence(t *testing.T) {
+	first, err := types.NewDocument("n", int32(1))
+	require.NoError(t, err)
+	second, err := types.NewDocument("n", int32(2))
+	require.NoError(t, err)
+	command, err := types.NewDocument("insert", "values", "$db", "test")
+	require.NoError(t, err)
+
+	actual, err := opMsgDocument(opMsgWithSequence(t, command, "documents", first, second))
+	require.NoError(t, err)
+	value, err := actual.Get("documents")
+	require.NoError(t, err)
+	docs, ok := value.(*types.Array)
+	require.True(t, ok)
+	require.Equal(t, 2, docs.Len())
+
+	unsupported, err := types.NewDocument("find", "values", "$db", "test")
+	require.NoError(t, err)
+	_, err = opMsgDocument(opMsgWithSequence(t, unsupported, "documents", first))
+	require.ErrorContains(t, err, `unsupported document sequence for command "find"`)
+}
+
+func TestWireAcceptsNaNInDocumentSequence(t *testing.T) {
 	inserted, err := types.NewDocument("value", math.NaN())
 	require.NoError(t, err)
 	docs, err := types.NewArray(inserted)

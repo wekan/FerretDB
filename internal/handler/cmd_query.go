@@ -35,7 +35,12 @@ import (
 //
 // The passed context is canceled when the client connection is closed.
 func (h *Handler) CmdQuery(connCtx context.Context, query *wire.OpQuery) (*wire.OpReply, error) {
-	q, err := bson.ToDocument(query.Query())
+	wireDoc, err := query.Query()
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	q, err := bson.ToDocument(wireDoc)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

@@ -41,7 +41,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/observability"
 )
 
-// testEvent represents a single even emitted by `go test -json`.
+// testEvent represents a single event emitted by `go test -json`.
 //
 // See https://pkg.go.dev/cmd/test2json#hdr-Output_Format.
 type testEvent struct {
@@ -50,6 +50,8 @@ type testEvent struct {
 	Package        string    `json:"Package"`
 	Test           string    `json:"Test"`
 	Output         string    `json:"Output"`
+	OutputType     string    `json:"OutputType"`
+	FailedBuild    string    `json:"FailedBuild"`
 	ElapsedSeconds float64   `json:"Elapsed"`
 }
 

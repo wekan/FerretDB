@@ -314,11 +314,11 @@ func (c *conn) run(ctx context.Context) (err error) {
 			var resBodyString, proxyBodyString string
 
 			if resBody != nil {
-				resBodyString = resBody.StringBlock()
+				resBodyString = resBody.StringIndent()
 			}
 
 			if proxyBody != nil {
-				proxyBodyString = proxyBody.StringBlock()
+				proxyBodyString = proxyBody.StringIndent()
 			}
 
 			var diffBody string
@@ -410,7 +410,7 @@ func (c *conn) route(connCtx context.Context, reqHeader *wire.MsgHeader, reqBody
 		resHeader.OpCode = wire.OpCodeMsg
 
 		// decoded successfully already in [run] [wire.ReadMessage] [UnmarshalBinaryNocopy] [check]
-		doc := must.NotFail(msg.RawSection0().Decode())
+		doc := must.NotFail(msg.Section0())
 
 		document, err = bson.ToDocument(doc)
 

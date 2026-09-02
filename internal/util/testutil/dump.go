@@ -38,7 +38,7 @@ func dump[T types.Type](tb testtb.TB, o T) string {
 	v, err := bson.From(o)
 	require.NoError(tb, err)
 
-	return wirebson.LogMessageBlock(v)
+	return wirebson.LogMessageIndent(v)
 }
 
 // dumpSlice returns string representation for debugging.
@@ -55,7 +55,7 @@ func dumpSlice[T types.Type](tb testtb.TB, s []T) string {
 		require.NoError(tb, err)
 	}
 
-	return wirebson.LogMessageBlock(arr)
+	return wirebson.LogMessageIndent(arr)
 }
 
 // MustParseDumpFile panics if fails to parse file input to byte array.

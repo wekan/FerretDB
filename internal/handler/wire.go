@@ -16,6 +16,7 @@ package handler
 
 import (
 	"github.com/FerretDB/wire"
+	"github.com/FerretDB/wire/wirebson"
 
 	"github.com/FerretDB/FerretDB/internal/bson"
 	"github.com/FerretDB/FerretDB/internal/types"
@@ -23,41 +24,53 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
-// init permits IEEE-754 NaN, which MongoDB accepts as a BSON double. The SJSON
-// storage codec preserves it with a JSON-safe string.
-func init() {
-	wire.CheckNaNs = false
-}
-
 // opMsgDocument gets a raw document from section 0 and converts to [*types.Document].
-// Then it iterates raw documents from sections 1 if any, appends them
-// to the response using the section identifier as the key.
+// Then it decodes raw documents from sections 1, if any, and appends them
+// under the sequence field defined by the write command.
 func opMsgDocument(msg *wire.OpMsg) (*types.Document, error) {
-	res, err := bson.ToDocument(msg.RawSection0())
+	doc, _, sequence, err := msg.Sections()
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
-	for _, section := range msg.Sections() {
-		if section.Kind == 0 {
-			continue
-		}
-
-		docs := section.Documents()
-		a := types.MakeArray(len(docs))
-
-		for _, d := range docs {
-			var doc *types.Document
-
-			if doc, err = bson.ToDocument(d); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-
-			a.Append(doc)
-		}
-
-		res.Set(section.Identifier, a)
+	res, err := bson.ToDocument(doc)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
 	}
+
+	if len(sequence) == 0 {
+		return res, nil
+	}
+
+	var identifier string
+	switch res.Command() {
+	case "insert":
+		identifier = "documents"
+	case "update":
+		identifier = "updates"
+	case "delete":
+		identifier = "deletes"
+	default:
+		return nil, lazyerrors.Errorf("unsupported document sequence for command %q", res.Command())
+	}
+
+	a := types.MakeArray(0)
+	for len(sequence) > 0 {
+		length, findErr := wirebson.FindRaw(sequence)
+		if findErr != nil {
+			return nil, lazyerrors.Error(findErr)
+		}
+
+		var sequenceDoc *types.Document
+		if sequenceDoc, err = bson.ToDocument(wirebson.RawDocument(sequence[:length])); err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
+		a.Append(sequenceDoc)
+		sequence = sequence[length:]
+	}
+
+	res.Set(identifier, a)
 
 	return res, nil
 }
