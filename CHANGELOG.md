@@ -17,6 +17,14 @@
 
 ### Other Changes 🤖
 
+- **The MongoDB v2 driver and tools gRPC library receive follow-up updates.**
+  [PR #22](https://github.com/wekan/FerretDB/pull/22) updates gRPC in the tools
+  module from 1.83.0 to 1.83.1, and
+  [PR #23](https://github.com/wekan/FerretDB/pull/23) updates the indirect
+  MongoDB v2 driver in the runtime module from 2.2.2 to 2.4.2. Module checksums
+  verify and the complete unit, vet and SQLite/TLS integration pipeline passes
+  by @xet7. Thanks to dependabot and xet7.
+
 - **Runtime, integration, tooling and database-image dependencies are
   current.** [PR #18](https://github.com/wekan/FerretDB/pull/18),
   [PR #19](https://github.com/wekan/FerretDB/pull/19),
