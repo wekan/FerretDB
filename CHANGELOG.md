@@ -2,7 +2,7 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
-## Upcoming FerretDB release
+## [v1.67.0](https://github.com/wekan/FerretDB/releases/tag/v1.67.0) (2026-09-02)
 
 ### Fixed 🐛
 
