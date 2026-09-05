@@ -12,7 +12,9 @@
   database and returns a failing exit status for corruption, a missing file or
   a failed check. WeKan startup recovery can therefore use the exact SQLite
   implementation bundled with FerretDB on every supported CPU instead of
-  depending on a separately installed CLI by @xet7. Thanks to xet7.
+  depending on a separately installed CLI. The implementation and its tests are
+  excluded from `ferretdb_no_sqlite` builds, which retain no SQLite driver
+  dependency by @xet7. Thanks to xet7.
 
 ## [v1.67.0](https://github.com/wekan/FerretDB/releases/tag/v1.67.0) (2026-09-02)
 

@@ -1,3 +1,5 @@
+//go:build !ferretdb_no_sqlite
+
 package main
 
 import (
