@@ -56,6 +56,9 @@ var cli struct {
 	// We hide `run` command to show only `ping` in the help message.
 	Run  struct{} `cmd:"" default:"1"                             hidden:""`
 	Ping struct{} `cmd:"" help:"Ping existing FerretDB instance."`
+	CheckSQLite struct {
+		Path string `arg:"" required:"" help:"SQLite database file to check read-only." type:"path"`
+	} `cmd:"" name:"check-sqlite" help:"Run SQLite PRAGMA quick_check and exit."`
 
 	Version     bool   `default:"false"           help:"Print version to stdout and exit." env:"-"`
 	Handler     string `default:"postgresql"      help:"${help_handler}"`
@@ -236,6 +239,11 @@ func main() {
 		defer stop()
 
 		if !ready.Probe(ctx) {
+			os.Exit(1)
+		}
+	case "check-sqlite <path>":
+		if err := checkSQLite(cli.CheckSQLite.Path); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 

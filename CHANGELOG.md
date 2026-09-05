@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **The FerretDB binary can verify an existing SQLite database without starting
+  a network service.** `ferretdb check-sqlite <path>` opens the file read-only
+  and immutable, runs `PRAGMA quick_check(1)`, prints `ok` only for a healthy
+  database and returns a failing exit status for corruption, a missing file or
+  a failed check. WeKan startup recovery can therefore use the exact SQLite
+  implementation bundled with FerretDB on every supported CPU instead of
+  depending on a separately installed CLI by @xet7. Thanks to xet7.
+
 ## [v1.67.0](https://github.com/wekan/FerretDB/releases/tag/v1.67.0) (2026-09-02)
 
 ### Fixed 🐛
