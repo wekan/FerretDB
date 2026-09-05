@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **New and changed passwords can no longer create weak SCRAM-SHA-1
+  credentials.** `createUser` and password-bearing `updateUser` now default to
+  SCRAM-SHA-256 and reject an explicit SCRAM-SHA-1 mechanism. The MD5 password
+  preparation and its ineffective CodeQL suppression are removed completely,
+  resolving CodeQL alert 46 (CWE-327, CWE-328 and CWE-916). Authentication can
+  still read existing SCRAM-SHA-1 credentials, allowing operators to migrate
+  legacy accounts by changing their passwords. Integration coverage verifies
+  SHA-256 creation and updates and both SHA-1 rejection paths by @xet7. Thanks
+  to GitHub CodeQL and xet7.
+
 ## [v1.68.0](https://github.com/wekan/FerretDB/releases/tag/v1.68.0) (2026-09-05)
 
 ### New Features 🎉

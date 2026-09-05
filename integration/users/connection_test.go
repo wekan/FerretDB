@@ -62,36 +62,11 @@ func TestAuthentication(t *testing.T) {
 			topologyError:       true,
 			errorMessage:        `unable to authenticate using mechanism "PLAIN"`,
 		},
-		"ScramSHA1": {
-			username:            "scramsha1",
-			password:            "password",
-			mechanisms:          bson.A{"SCRAM-SHA-1"},
-			connectionMechanism: "SCRAM-SHA-1",
-		},
 		"ScramSHA256": {
 			username:            "scramsha256",
 			password:            "password",
 			mechanisms:          bson.A{"SCRAM-SHA-256"},
 			connectionMechanism: "SCRAM-SHA-256",
-		},
-		"MultipleScramSHA1": {
-			username:            "scramsha1multi",
-			password:            "password",
-			mechanisms:          bson.A{"SCRAM-SHA-1", "SCRAM-SHA-256"},
-			connectionMechanism: "SCRAM-SHA-1",
-		},
-		"MultipleScramSHA256": {
-			username:            "scramsha256multi",
-			password:            "password",
-			mechanisms:          bson.A{"SCRAM-SHA-1", "SCRAM-SHA-256"},
-			connectionMechanism: "SCRAM-SHA-256",
-		},
-		"ScramSHA1Updated": {
-			username:            "scramsha1updated",
-			password:            "pass123",
-			updatePassword:      "anotherpassword",
-			mechanisms:          bson.A{"SCRAM-SHA-1"},
-			connectionMechanism: "SCRAM-SHA-1",
 		},
 		"ScramSHA256Updated": {
 			username:            "scramsha256updated",
@@ -138,7 +113,7 @@ func TestAuthentication(t *testing.T) {
 			if !tc.userNotFound {
 				mechanisms := tc.mechanisms
 				if mechanisms == nil {
-					mechanisms = bson.A{"SCRAM-SHA-1", "SCRAM-SHA-256"}
+					mechanisms = bson.A{"SCRAM-SHA-256"}
 				}
 
 				// root role is only available in admin database, a role with sufficient privilege is used

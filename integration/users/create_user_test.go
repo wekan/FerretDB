@@ -166,15 +166,17 @@ func TestCreateUser(t *testing.T) {
 				Message: "Unknown auth mechanism 'PLAIN'",
 			},
 		},
-		"SuccessWithSCRAMSHA1": {
+		"FailWithSCRAMSHA1": {
 			payload: bson.D{
 				{"createUser", "success_user_with_scram_sha_1"},
 				{"roles", bson.A{}},
 				{"pwd", "password"},
 				{"mechanisms", bson.A{"SCRAM-SHA-1"}},
 			},
-			expected: bson.D{
-				{"ok", float64(1)},
+			err: &mongo.CommandError{
+				Code:    2,
+				Name:    "BadValue",
+				Message: "Unknown auth mechanism 'SCRAM-SHA-1'",
 			},
 		},
 		"SuccessWithSCRAMSHA256": {

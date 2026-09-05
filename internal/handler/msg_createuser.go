@@ -110,7 +110,7 @@ func (h *Handler) MsgCreateUser(connCtx context.Context, msg *wire.OpMsg) (*wire
 
 	common.Ignored(document, h.L, "writeConcern", "authenticationRestrictions", "comment")
 
-	defMechanisms := must.NotFail(types.NewArray("SCRAM-SHA-1", "SCRAM-SHA-256"))
+	defMechanisms := must.NotFail(types.NewArray("SCRAM-SHA-256"))
 
 	mechanisms, err := common.GetOptionalParam(document, "mechanisms", defMechanisms)
 	if err != nil {
@@ -140,7 +140,7 @@ func (h *Handler) MsgCreateUser(connCtx context.Context, msg *wire.OpMsg) (*wire
 		}
 
 		switch v {
-		case "SCRAM-SHA-1", "SCRAM-SHA-256":
+		case "SCRAM-SHA-256":
 			// do nothing
 		default:
 			return nil, handlererrors.NewCommandErrorMsg(

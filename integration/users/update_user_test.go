@@ -213,6 +213,23 @@ func TestUpdateUser(t *testing.T) {
 				{"roles", bson.A{}},
 			},
 		},
+		"PasswordChangeWithSCRAMSHA1": {
+			createPayload: bson.D{
+				{"createUser", "a_user_with_legacy_scram"},
+				{"roles", bson.A{}},
+				{"pwd", "password"},
+			},
+			updatePayload: bson.D{
+				{"updateUser", "a_user_with_legacy_scram"},
+				{"pwd", "anewpassword"},
+				{"mechanisms", bson.A{"SCRAM-SHA-1"}},
+			},
+			err: &mongo.CommandError{
+				Code:    2,
+				Name:    "BadValue",
+				Message: "Unknown auth mechanism 'SCRAM-SHA-1'",
+			},
+		},
 		"PasswordChangeWithBadAuthMechanism": {
 			createPayload: bson.D{
 				{"createUser", "a_user_with_mechanism_bad"},

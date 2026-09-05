@@ -73,12 +73,6 @@ func TestHelloWithSupportedMechs(t *testing.T) {
 			{"pwd", "hello_password"},
 		},
 		{
-			{"createUser", "hello_user_scram1"},
-			{"roles", bson.A{}},
-			{"pwd", "hello_password"},
-			{"mechanisms", bson.A{"SCRAM-SHA-1"}},
-		},
-		{
 			{"createUser", "hello_user_scram256"},
 			{"roles", bson.A{}},
 			{"pwd", "hello_password"},
@@ -105,11 +99,7 @@ func TestHelloWithSupportedMechs(t *testing.T) {
 		},
 		"HelloUser": {
 			user:  db.Name() + ".hello_user",
-			mechs: must.NotFail(types.NewArray("SCRAM-SHA-1", "SCRAM-SHA-256")),
-		},
-		"HelloUserSCRAM1": {
-			user:  db.Name() + ".hello_user_scram1",
-			mechs: must.NotFail(types.NewArray("SCRAM-SHA-1")),
+			mechs: must.NotFail(types.NewArray("SCRAM-SHA-256")),
 		},
 		"HelloUserSCRAM256": {
 			user:  db.Name() + ".hello_user_scram256",

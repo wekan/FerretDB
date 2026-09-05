@@ -44,7 +44,7 @@ type CreateUserParams struct {
 func CreateUser(ctx context.Context, b backends.Backend, params *CreateUserParams) error {
 	must.NotBeZero(params)
 
-	credentials, err := MakeCredentials(params.Username, params.Password, params.Mechanisms)
+	credentials, err := MakeCredentials(params.Password, params.Mechanisms)
 	if err != nil {
 		return err
 	}
@@ -71,11 +71,11 @@ func CreateUser(ctx context.Context, b backends.Backend, params *CreateUserParam
 
 // MakeCredentials creates a document with credentials for the chosen mechanisms.
 // The mechanisms array must be validated by the caller.
-func MakeCredentials(username string, userPassword password.Password, mechanisms *types.Array) (*types.Document, error) {
+func MakeCredentials(userPassword password.Password, mechanisms *types.Array) (*types.Document, error) {
 	credentials := types.MakeDocument(0)
 
 	if mechanisms == nil {
-		mechanisms = must.NotFail(types.NewArray("SCRAM-SHA-1", "SCRAM-SHA-256"))
+		mechanisms = must.NotFail(types.NewArray("SCRAM-SHA-256"))
 	}
 
 	iter := mechanisms.Iterator()
@@ -97,16 +97,6 @@ func MakeCredentials(username string, userPassword password.Password, mechanisms
 		var hashDoc *types.Document
 
 		switch v {
-		case "SCRAM-SHA-1":
-			if hash, err = password.SCRAMSHA1VariationHash(username, userPassword); err != nil {
-				return nil, err
-			}
-
-			if hashDoc, err = bson.ToDocument(hash); err != nil {
-				return nil, lazyerrors.Error(err)
-			}
-
-			credentials.Set("SCRAM-SHA-1", hashDoc)
 		case "SCRAM-SHA-256":
 			if hash, err = password.SCRAMSHA256Hash(userPassword); err != nil {
 				return nil, err
