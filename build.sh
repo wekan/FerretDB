@@ -445,7 +445,7 @@ act_test_all() {
   [ "${PIPESTATUS[0]}" -eq 0 ] || failed="$failed unit"
 
   info "=== 2/3 vet ===          -> $logdir/ferretdb-vet.log"
-  act_lint 2>&1 | tee "$logdir/ferretdb-vet.log"
+  { "$ROOT/.github/scripts/test-vet.sh" && act_lint; } 2>&1 | tee "$logdir/ferretdb-vet.log"
   [ "${PIPESTATUS[0]}" -eq 0 ] || failed="$failed vet"
 
   info "=== 3/3 integration tests (SQLite, sequential) === -> $logdir/ferretdb-integration.log"
