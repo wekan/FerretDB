@@ -490,10 +490,19 @@ act_lint() {
   # FerretDB. tmp/ is gitignored scratch, so it is filtered out of the package
   # list rather than vetted.
   info "go vet -composites=false ./... ..."
-  vet_pkgs() { go list ./... 2>/dev/null | grep -v "/tmp/" || true; }
-  # shellcheck disable=SC2046
-  go vet -composites=false $(vet_pkgs) || true
-  ( cd integration && go vet -composites=false $(vet_pkgs) || true )
+  vet_module() {
+    local packages
+    packages="$(go list ./...)" || return 1
+    packages="$(printf '%s\n' "$packages" | grep -v "/tmp/")"
+    [ -n "$packages" ] || { err "No packages found for vet."; return 1; }
+    # Package import paths cannot contain shell whitespace or glob characters.
+    # shellcheck disable=SC2086
+    go vet -composites=false $packages
+  }
+  local failed=0
+  vet_module || failed=1
+  ( cd integration && vet_module ) || failed=1
+  [ "$failed" -eq 0 ] || { err "go vet failed."; return 1; }
   info "vet done (install golangci-lint separately for full linting)."
 }
 

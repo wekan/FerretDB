@@ -2,6 +2,16 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Vet failures now fail the test runner.** Check package discovery and both
+  modules' vet results instead of discarding their errors. Keep scratch packages
+  excluded, and still check the integration module when the main module fails.
+  The shell regression exercises successful vet, failures in each module,
+  failed package discovery and an empty package list by @xet7. Thanks to xet7.
+
 ## [v1.78.0](https://github.com/wekan/FerretDB/releases/tag/v1.78.0) (2026-09-09)
 
 ### Fixed 🐛
