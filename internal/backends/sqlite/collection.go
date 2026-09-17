@@ -93,6 +93,15 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	// only a bare {_id: X} filter was pushed down, so every other query decoded
 	// the WHOLE collection in Go on every Meteor poll.
 	whereClause, args := prepareWhereClause(params.Filter)
+	if meta.Capped() && params.StartRecordID != 0 {
+		if whereClause == "" {
+			whereClause = " WHERE "
+		} else {
+			whereClause += " AND "
+		}
+		whereClause += metadata.RecordIDColumn + " >= ?"
+		args = append(args, params.StartRecordID)
+	}
 	if distinctPushdown {
 		exists := `json_type(` + jsonPathExpr(params.DistinctField) + `) IS NOT NULL`
 		if whereClause == "" {

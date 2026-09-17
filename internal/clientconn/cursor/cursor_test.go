@@ -192,3 +192,65 @@ func TestCursor(t *testing.T) {
 		})
 	})
 }
+
+// A retry that times out while skipping old records must not rewind the cursor.
+func TestResetPreservesCheckpoint(t *testing.T) {
+	for _, typ := range []Type{Tailable, TailableAwait} {
+		for _, scanError := range []error{iterator.ErrIteratorDone, context.DeadlineExceeded} {
+			t.Run(typ.String()+"/"+scanError.Error(), func(t *testing.T) {
+				r := NewRegistry(testutil.Logger(t))
+				t.Cleanup(r.Close)
+				docs := make([]*types.Document, 3)
+				for i := range docs {
+					docs[i] = must.NotFail(types.NewDocument("v", int32(i)))
+					docs[i].SetRecordID(int64(i + 101))
+				}
+				c := r.NewCursor(testutil.Ctx(t), iterator.Values(iterator.ForSlice(docs[:2])), &NewParams{Type: typ})
+				_, err := iterator.ConsumeValues(c)
+				require.NoError(t, err)
+				failed := &interruptedScan{doc: docs[0], err: scanError}
+				require.ErrorIs(t, c.Reset(failed), scanError)
+				assert.True(t, failed.closed, "failed scan releases its iterator")
+				_, _, err = c.Next()
+				require.ErrorIs(t, err, iterator.ErrIteratorDone, "failed scan exposes no old records")
+				assert.Equal(t, int64(102), c.lastRecordID, "skipped records were already delivered")
+				require.NoError(t, c.Reset(iterator.Values(iterator.ForSlice(docs))))
+				actual, err := iterator.ConsumeValues(c)
+				require.NoError(t, err)
+				assert.Equal(t, docs[2:], actual, "retry must deliver only new records")
+			})
+		}
+	}
+}
+
+type interruptedScan struct {
+	doc    *types.Document
+	err    error
+	closed bool
+}
+
+func (i *interruptedScan) Next() (struct{}, *types.Document, error) {
+	if i.doc != nil {
+		doc := i.doc
+		i.doc = nil
+		return struct{}{}, doc, nil
+	}
+	return struct{}{}, nil, i.err
+}
+
+func (i *interruptedScan) Close() { i.doc = nil; i.closed = true }
+
+func TestFailedBatchPreservesCheckpoint(t *testing.T) {
+	r := NewRegistry(testutil.Logger(t))
+	t.Cleanup(r.Close)
+	doc := must.NotFail(types.NewDocument("v", int32(1)))
+	doc.SetRecordID(101)
+	c := r.NewCursor(testutil.Ctx(t), &interruptedScan{doc: doc, err: context.DeadlineExceeded}, &NewParams{Type: TailableAwait})
+	_, err := c.ReadBatch(2)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Zero(t, c.LastRecordID(), "an unsent batch must be retried")
+	require.NoError(t, c.Reset(iterator.Values(iterator.ForSlice([]*types.Document{doc}))))
+	got, err := c.ReadBatch(2)
+	require.NoError(t, err)
+	assert.Equal(t, []*types.Document{doc}, got)
+}

@@ -220,7 +220,9 @@ func (h *Handler) MsgGetMore(connCtx context.Context, msg *wire.OpMsg) (*wire.Op
 
 			var queryRes *backends.QueryResult
 
-			queryRes, err = data.coll.Query(connCtx, data.qp)
+			qp := *data.qp
+			qp.StartRecordID = c.LastRecordID()
+			queryRes, err = data.coll.Query(connCtx, &qp)
 			if err != nil {
 				return nil, lazyerrors.Error(err)
 			}
@@ -275,7 +277,7 @@ func (h *Handler) MsgGetMore(connCtx context.Context, msg *wire.OpMsg) (*wire.Op
 
 // makeNextBatch returns the next batch of documents from the cursor.
 func (h *Handler) makeNextBatch(c *cursor.Cursor, batchSize int64) (*types.Array, error) {
-	docs, err := iterator.ConsumeValuesN(c, int(batchSize))
+	docs, err := c.ReadBatch(int(batchSize))
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -340,22 +342,17 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 	}()
 
 	for {
+		// Query the backlog before waiting. A full batch can leave documents
+		// behind even when no further write will generate a notification.
 		if data.notifier != nil {
-			select {
-			case <-ctx.Done():
-				err = ctx.Err()
-				return
-			case <-data.notification:
-			}
-
-			// Snapshot the next generation before querying. A write racing with
-			// the query closes this channel, so the next loop cannot miss it.
 			data.notification = data.notifier.Notifications()
 		}
 
 		var queryRes *backends.QueryResult
 
-		queryRes, err = data.coll.Query(ctx, data.qp)
+		qp := *data.qp
+		qp.StartRecordID = c.LastRecordID()
+		queryRes, err = data.coll.Query(ctx, &qp)
 		if err != nil {
 			return
 		}
@@ -393,6 +390,13 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 		// soon as ctx's deadline passes), so new-data latency stays within that budget.
 		if data.notifier == nil {
 			ctxutil.Sleep(ctx, tailableAwaitPollInterval())
+		} else {
+			select {
+			case <-ctx.Done():
+				err = ctx.Err()
+				return
+			case <-data.notification:
+			}
 		}
 	}
 }

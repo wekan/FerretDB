@@ -322,9 +322,9 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 	// Limit pushdown is not applied if:
 	//  - pushdown is disabled;
 	//  - `filter` is set, it must fetch all documents to filter them in memory;
-	//  - `sort` is set, it must fetch all documents and sort them in memory;
+	//  - a non-natural `sort` is set and must run in memory;
 	//  - `skip` is non-zero value, skip pushdown is not supported yet.
-	if !h.DisablePushdown && params.Filter.Len() == 0 && params.Sort.Len() == 0 && params.Skip == 0 {
+	if !h.DisablePushdown && params.Filter.Len() == 0 && (params.Sort.Len() == 0 || qp.Sort.Len() != 0) && params.Skip == 0 {
 		qp.Limit = params.Limit
 	}
 
@@ -373,11 +373,18 @@ func (h *Handler) makeFindIter(iter types.DocumentsIterator, closer *iterator.Mu
 
 	iter = common.FilterIterator(iter, closer, params.Filter)
 
+	// The backend already applies natural order on capped collections. Keep
+	// that stream lazy: reading the newest matching log entry must not decode
+	// and sort the entire log before applying limit=1.
+	sortDoc := params.Sort
+	if !h.DisablePushdown && sortDoc.Len() == 1 && sortDoc.Keys()[0] == "$natural" {
+		sortDoc = nil
+	}
 	var err error
-	if params.Sort.Len() != 0 && params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit {
-		iter, err = common.SortLimitIterator(iter, closer, params.Sort, params.Skip+params.Limit)
+	if sortDoc.Len() != 0 && params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit {
+		iter, err = common.SortLimitIterator(iter, closer, sortDoc, params.Skip+params.Limit)
 	} else {
-		iter, err = common.SortIterator(iter, closer, params.Sort)
+		iter, err = common.SortIterator(iter, closer, sortDoc)
 	}
 	if err != nil {
 		closer.Close()

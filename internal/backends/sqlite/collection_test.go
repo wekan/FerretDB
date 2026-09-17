@@ -83,6 +83,18 @@ func TestCappedCollectionInsertAllQueryExplain(t *testing.T) {
 			assert.NotZero(t, doc.RecordID())
 		}
 
+		for _, filter := range []*types.Document{nil, must.NotFail(types.NewDocument("_id", must.NotFail(insertDocs[2].Get("_id"))))} {
+			res, err := cappedColl.Query(ctx, &backends.QueryParams{Sort: sort, Filter: filter, StartRecordID: docs[1].RecordID()})
+			require.NoError(t, err)
+			remaining, err := iterator.ConsumeValues(res.Iter)
+			require.NoError(t, err)
+			if filter == nil {
+				testutil.AssertEqualSlices(t, insertDocs[1:], remaining)
+			} else {
+				testutil.AssertEqualSlices(t, insertDocs[2:], remaining)
+			}
+		}
+
 		explainRes, err := cappedColl.Explain(ctx, &backends.ExplainParams{Sort: sort})
 		require.NoError(t, err)
 		assert.True(t, explainRes.SortPushdown)

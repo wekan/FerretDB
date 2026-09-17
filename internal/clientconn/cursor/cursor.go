@@ -107,33 +107,52 @@ func (c *Cursor) Reset(iter types.DocumentsIterator) error {
 	}
 
 	c.m.Lock()
+	defer c.m.Unlock()
 
 	c.l.Debug("Resetting cursor")
+	if c.iter != nil {
+		c.iter.Close()
+		c.iter = nil
+	}
+
+	// Skipping previously delivered records must not change the checkpoint.
+	// A getMore deadline can interrupt this scan; advancing via c.Next would
+	// rewind lastRecordID and replay old records on the next retry.
+	if c.lastRecordID != 0 {
+		for {
+			_, doc, err := iter.Next()
+			if err != nil {
+				iter.Close()
+				return lazyerrors.Error(err)
+			}
+			if doc.RecordID() == c.lastRecordID {
+				break
+			}
+		}
+	}
+
 	c.iter = iter
-	recordID := c.lastRecordID
+	return nil
+}
 
-	c.m.Unlock()
+// LastRecordID returns the checkpoint for a subsequent tailable query.
+func (c *Cursor) LastRecordID() int64 {
+	c.m.Lock()
+	defer c.m.Unlock()
+	return c.lastRecordID
+}
 
-	// Nothing has been returned from this cursor yet — its first batch was empty (an
-	// idle tail). There is no position to skip to, so iterate the new iterator from the
-	// beginning. Without this, the loop below would scan the whole iterator looking for
-	// record id 0, never find it, exhaust the iterator and return an error — which is
-	// why a tailable cursor with an empty first batch could not be kept open and resumed
-	// with getMore, forcing clients to re-issue find instead.
-	if recordID == 0 {
-		return nil
+// ReadBatch returns up to n documents, preserving the tailable checkpoint if
+// the batch fails before it can be sent to the client.
+func (c *Cursor) ReadBatch(n int) ([]*types.Document, error) {
+	checkpoint := c.LastRecordID()
+	docs, err := iterator.ConsumeValuesN(c, n)
+	if err != nil && c.Type != Normal {
+		c.m.Lock()
+		c.lastRecordID = checkpoint
+		c.m.Unlock()
 	}
-
-	for {
-		_, doc, err := c.Next()
-		if err != nil {
-			return lazyerrors.Error(err)
-		}
-
-		if doc.RecordID() == recordID {
-			return nil
-		}
-	}
+	return docs, err
 }
 
 // Next implements types.DocumentsIterator interface.

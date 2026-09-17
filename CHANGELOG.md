@@ -6,6 +6,21 @@
 
 ### Fixed 🐛
 
+- **Keep oplog retries ordered and drain large write batches promptly.** A
+  tailable cursor no longer rewinds its delivered-record checkpoint when a
+  rescan times out, or advances it for a failed response batch. Query unread
+  records before waiting for another notification, and seek from the checkpoint
+  on SQLite. Read naturally ordered capped collections incrementally instead
+  of sorting the entire log again for a newest-entry lookup. This addresses
+  duplicate-insert callbacks and slow session resumes reproduced while
+  investigating wekan/wekan#6701. Regression tests cover interrupted scans,
+  failed batches, pending records without new writes, lazy natural-order reads,
+  and SQLite checkpoint queries; cursor/handler/SQLite tests pass with the race
+  detector. A browser test resumes an LDAP account before and after removing
+  1,600 directory records. The reporter's database is still unconfirmed, so
+  that issue remains open by @xet7. Thanks to Nissulya and xet7.
+
+
 - **Vet failures now fail the test runner.** Check package discovery and both
   modules' vet results instead of discarding their errors. Keep scratch packages
   excluded, and still check the integration module when the main module fails.

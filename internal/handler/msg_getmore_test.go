@@ -15,12 +15,21 @@
 package handler
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/clientconn/cursor"
+	"github.com/FerretDB/FerretDB/internal/handler/common"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/iterator"
+	"github.com/FerretDB/FerretDB/internal/util/must"
+	"github.com/FerretDB/FerretDB/internal/util/testutil"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAwaitDataReturnsFilledBatchBeforeWaitingAgain pins the ordering that a
@@ -88,3 +97,41 @@ func TestTailableAwaitPollInterval(t *testing.T) {
 		})
 	}
 }
+
+func TestAwaitDataDrainsBacklogWithoutAnotherWrite(t *testing.T) {
+	docs := []*types.Document{must.NotFail(types.NewDocument("_id", int32(1))), must.NotFail(types.NewDocument("_id", int32(2)))}
+	for i, doc := range docs {
+		doc.SetRecordID(int64(i + 101))
+	}
+	r := cursor.NewRegistry(testutil.Logger(t))
+	t.Cleanup(r.Close)
+	ctx := testutil.Ctx(t)
+	c := r.NewCursor(ctx, iterator.Values(iterator.ForSlice(docs)), &cursor.NewParams{
+		Type: cursor.TailableAwait,
+		Data: &findCursorData{coll: &backlogCollection{docs: docs}, qp: &backends.QueryParams{}, findParams: &common.FindParams{}, notifier: idleNotifier{make(chan struct{})}},
+	})
+	first, err := c.ReadBatch(1)
+	require.NoError(t, err)
+	require.Len(t, first, 1)
+	c.Close() // the request's query iterator closes after sending its full batch
+	h := &Handler{NewOpts: &NewOpts{L: testutil.Logger(t)}}
+	batch, err := h.awaitData(ctx, &awaitDataParams{cursor: c, batchSize: 1, maxTimeMS: 20})
+	require.NoError(t, err)
+	require.Equal(t, 1, batch.Len(), "already written records need no new notification")
+	batch, err = h.awaitData(ctx, &awaitDataParams{cursor: c, batchSize: 1, maxTimeMS: 20})
+	require.NoError(t, err)
+	assert.Zero(t, batch.Len(), "an idle tail returns an empty batch")
+}
+
+type backlogCollection struct {
+	backends.Collection
+	docs []*types.Document
+}
+
+func (c *backlogCollection) Query(context.Context, *backends.QueryParams) (*backends.QueryResult, error) {
+	return &backends.QueryResult{Iter: iterator.Values(iterator.ForSlice(c.docs))}, nil
+}
+
+type idleNotifier struct{ ch chan struct{} }
+
+func (n idleNotifier) Notifications() <-chan struct{} { return n.ch }

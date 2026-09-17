@@ -75,9 +75,13 @@ func CollectionContract(c Collection) Collection {
 
 // QueryParams represents the parameters of Collection.Query method.
 type QueryParams struct {
-	Filter *types.Document
-	Sort   *types.Document
-	Limit  int64
+	// StartRecordID is an inclusive lower bound for a forward tailable cursor
+	// on a capped collection. Backends may ignore it; Cursor.Reset still seeks
+	// the checkpoint before returning new documents.
+	StartRecordID int64
+	Filter        *types.Document
+	Sort          *types.Document
+	Limit         int64
 	// DecodeFields lets document backends avoid recursively decoding fields that
 	// the handler's inclusion projection, filter and sort cannot observe. Other
 	// backends may ignore it and return complete documents.
