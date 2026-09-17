@@ -28,6 +28,14 @@
   failed package discovery and an empty package list, and is included in
   `test-all` before vet runs by @xet7. Thanks to xet7.
 
+### Other Changes 🤖
+
+- **Synchronize integration dependencies with the main module.** Record the
+  transitive versions selected by the main module's dependency updates so the
+  integration tests no longer rewrite their module files. Unit, vet and SQLite
+  integration tests pass; SQLite, PostgreSQL, MySQL and MariaDB return identical
+  results for all 103 query-conformance cases by @xet7. Thanks to xet7.
+
 ## [v1.78.0](https://github.com/wekan/FerretDB/releases/tag/v1.78.0) (2026-09-09)
 
 ### Fixed 🐛
