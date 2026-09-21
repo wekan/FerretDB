@@ -76,7 +76,7 @@ USER ferretdb:ferretdb
 # Verify the target loader, shared libraries, launcher and JS bundle before any
 # registry receives an image. These commands need no database or network service.
 RUN /ferretdb --version \
-    && /opt/mongosh/bin/node --version \
+    && /opt/mongosh/bin/node --version | grep -E '^v26\.' \
     && /opt/mongosh/bin/node -e "if (1 + 1 !== 2) process.exit(1)" \
     && /opt/mongosh/mongosh --version
 

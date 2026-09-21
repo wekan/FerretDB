@@ -18,6 +18,7 @@ if [[ -z "$version" ]]; then
     ')"
 fi
 [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Node version' >&2; exit 1; }
+[[ "$version" == v26.* ]] || { echo 'mongosh requires Node.js 26' >&2; exit 1; }
 archive="node-$version-linux-ppc64le.tar.xz"
 base="https://nodejs.org/dist/$version"
 curl --fail --location --retry 3 "$base/SHASUMS256.txt" -o "$stage/SHASUMS256.txt"
