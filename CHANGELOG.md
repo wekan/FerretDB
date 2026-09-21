@@ -2,6 +2,15 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Require Node.js 26 in the packaged mongosh runtime.** Release images and
+  the PPC64LE runtime helper now reject an older Node.js major. The companion
+  mongosh packages use npm 12.0.2; runtime helper tests pass. Platform images
+  will be built by GitHub workflows by @xet7. Thanks to xet7.
+
 ## [v1.79.0](https://github.com/wekan/FerretDB/releases/tag/v1.79.0) (2026-09-17)
 
 ### Fixed 🐛
