@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Identify known dependency telemetry keyword false positives.** Report exact
+  documented OpenTelemetry and tool dependency matches as informational rather
+  than new warnings. New modules, versions, checksums and file locations remain
+  unclassified, and source/binary risk checks remain active. Positive and
+  negative offline tests verify classification and blocking risk findings
+  by @xet7. Thanks to xet7.
+
 ## [v1.84.0](https://github.com/wekan/FerretDB/releases/tag/v1.84.0) (2026-09-23)
 
 ### Fixed 🐛

@@ -61,3 +61,11 @@ Actions creates the prepared tag; missing builds stamp the requested version.
 Complete binary/checksum pairs are skipped; incomplete pairs are replaced
 together. The missing workflow also dispatches absent Docker publication or
 retries a failed matching Docker workflow, preserving a successful matching run.
+
+FerretDB records exact known dependency keyword lines, with an explanation, in
+`dependency-review.json` under `knownKeywordMatches`. These are informational
+false positives for default outbound reporting, not a claim that optional
+tracing code is absent. A new module, version, checksum or file location is not
+covered by an existing line entry and still produces a warning. These entries
+never suppress the independent source or binary risk checks. Go tool telemetry
+configuration is separate; a metadata allowance does not disable any tool.
