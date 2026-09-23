@@ -30,6 +30,13 @@ image: wekanteam/ferretdb:latest
 image: quay.io/wekan/ferretdb:latest
 ```
 
+The Docker release workflow attempts Docker Hub, Quay.io and GHCR independently.
+Each registry login has two attempts with a two-minute timeout per attempt. An
+unavailable registry, invalid credentials or a failed push does not prevent the
+remaining registries from receiving the version tag and `latest`. After all
+attempts, the workflow reports how many registries succeeded and fails if any
+failed; images already published remain available.
+
 # Roadmap
 
 [ROADMAP](ROADMAP.md)

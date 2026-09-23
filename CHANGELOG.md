@@ -2,6 +2,24 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Restore PowerPC Docker release builds.** Install `libatomic1` in the runtime
+  image so the official PowerPC Node binary can load `libatomic.so.1`. Keep the
+  matching Node version, JavaScript and mongosh smoke checks. Build the PowerPC
+  image locally under emulation and verify container startup and a successful
+  mongosh database ping by @xet7. Thanks to xet7.
+
+- **Publish Docker images to available registries despite another registry's
+  failure.** Isolate authentication and build/push attempts for Docker Hub,
+  Quay.io and GHCR. Retry logins with a timeout and continue after unavailable
+  registries or invalid credentials. Report partial failures after all attempts
+  while retaining successful publications. Add mocked regression coverage for
+  healthy, offline, transient and failed pushes, invalid credentials and release
+  versions; retain telemetry checks before publication by @xet7. Thanks to xet7.
+
 ## [v1.82.0](https://github.com/wekan/FerretDB/releases/tag/v1.82.0) (2026-09-23)
 
 ### Fixed 🐛

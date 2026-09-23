@@ -72,7 +72,9 @@ printf '%s' "$TEST_BINARY_CONTENT" > "$out"
             self.assertNotIn('go test ./internal/util/telemetry', text)
         text = (ROOT / '.github/workflows/docker.yml').read_text()
         self.assertLess(text.index('check-telemetry.py --kind ferretdb'),
-                        text.index('docker buildx build'))
+                        text.index('run: bash build/ferretdb/publish-docker.sh'))
+        publish = (ROOT / 'build/ferretdb/publish-docker.sh').read_text()
+        self.assertIn('docker buildx build', publish)
         docker = (ROOT / 'Dockerfile').read_text()
         self.assertLess(docker.index('check-telemetry.py --source'), docker.index('go build -mod'))
         self.assertLess(docker.index('go test -mod=readonly'), docker.index('export GOOS='))

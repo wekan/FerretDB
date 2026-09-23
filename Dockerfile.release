@@ -49,9 +49,10 @@ RUN set -eux; \
 FROM debian:trixie-slim AS final
 
 # Node packages are linked against newer glibc and libstdc++ than bookworm.
+# Official PowerPC Node also requires libatomic.so.1 (libatomic1).
 # Unlike the native pick stage, this runs on the target CPU (QEMU in CI).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 \
+    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY build/ferretdb/passwd /etc/passwd
