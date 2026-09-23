@@ -141,6 +141,10 @@ act_telemetry_check() {
   go_env || return 1
   info "Generating version info (build/version) ..."
   ( cd build/version && go run -mod=readonly generate.go ) || { err "gen-version failed"; return 1; }
+  if [ -n "${FERRETDB_RELEASE_VERSION:-}" ]; then
+    bash "$ROOT/build/ferretdb/validate-version.sh" "$FERRETDB_RELEASE_VERSION" || return 1
+    printf '%s\n' "$FERRETDB_RELEASE_VERSION" > build/version/version.txt
+  fi
   go test -mod=readonly -count=1 ./internal/util/telemetry || {
     err "::error::Telemetry behavior tests failed; refusing to build."
     return 1
@@ -646,86 +650,10 @@ act_release_docker() {
   trigger_workflow docker.yml "$version"
 }
 
-# "Release FerretDB": the one-command full release. Renames "## Upcoming FerretDB
-# release" to the next version (auto, with the correct tag link), commits everything,
-# tags vX.Y.Z and pushes the branch + tag, and THEN kicks off the GitHub Actions
-# release — it runs "Release via GitHub Actions" (release-all.yml: build every per-arch
-# binary + publish the GitHub Release), which in turn runs "Docker via GitHub Actions"
-# (docker.yml: multi-arch image -> Docker Hub, Quay.io, GHCR). Exits when done (or if
-# CHANGELOG isn't ready / the tag already exists).
+# Compatibility alias for the audited full-release launcher. It commits and
+# pushes the prepared notes; Actions creates the tag, builds and publishes.
 act_release_ferretdb() {
-  printf "Did you add your changes under '## Upcoming FerretDB release' in CHANGELOG.md (y/n) ? "
-  read -r ans
-  case "${ans:-}" in
-    [yY]*) ;;
-    *) printf '%s\n' "Please first update CHANGELOG.md . Thanks !"; exit 0 ;;
-  esac
-
-  # Determine the version to release — NO version number needed. The wekan-fork
-  # releases are the "## [vX.Y.Z](https://github.com/wekan/FerretDB/releases/tag/vX.Y.Z)"
-  # headings (upstream FerretDB's own pre-fork entries link to FerretDB/FerretDB and are
-  # skipped). Newest first:
-  local newest second
-  newest="$(grep -oE '^## \[v[0-9]+\.[0-9]+\.[0-9]+\]\(https://github.com/wekan/FerretDB' CHANGELOG.md \
-            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed -n 1p)"
-  second="$(grep -oE '^## \[v[0-9]+\.[0-9]+\.[0-9]+\]\(https://github.com/wekan/FerretDB' CHANGELOG.md \
-            | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | sed -n 2p)"
-  if [ -z "$newest" ]; then
-    err "No released '## [vX.Y.Z](.../wekan/FerretDB/...)' heading found in CHANGELOG.md. Aborting."
-    exit 1
-  fi
-
-  # Reject a mistaken v2 heading before renaming, committing or tagging anything.
-  bash "$ROOT/build/ferretdb/validate-version.sh" "$newest" || return 1
-
-  local version
-  if grep -qE '^## Upcoming FerretDB release' CHANGELOG.md; then
-    # Always increment the v1 minor by exactly one and reset patch to .0.
-    # v1.99.0 -> v1.100.0: FerretDB v2 is different software.
-    version="$(bash "$ROOT/build/ferretdb/next-version.sh" "$newest")" || return 1
-    local date link
-    date="$(date +%F)"
-    link="https://github.com/wekan/FerretDB/releases/tag/${version}"
-    info "Renaming '## Upcoming FerretDB release' -> ## [${version}](${link}) (${date})"
-    local _tmp; _tmp="$(mktemp)"
-    sed "s|^## Upcoming FerretDB release.*|## [${version}](${link}) (${date})|" CHANGELOG.md > "$_tmp" && mv "$_tmp" CHANGELOG.md
-  else
-    # No Upcoming section: the newest heading is already the prepared release. Sanity-
-    # check it is the expected +1 increment of the previous release.
-    version="$newest"
-    if [ -n "$second" ]; then
-      local expected
-      expected="$(bash "$ROOT/build/ferretdb/next-version.sh" "$second")" || return 1
-      if [ "$version" != "$expected" ]; then
-        info "Note: newest CHANGELOG version $version is not the +1 increment ($expected) of the previous $second; proceeding anyway."
-      fi
-    fi
-    info "No Upcoming section; using newest CHANGELOG version $version."
-  fi
-
-  if git rev-parse -q --verify "refs/tags/$version" >/dev/null 2>&1; then
-    err "Tag $version already exists — nothing to release. Aborting."
-    exit 1
-  fi
-
-  info "Releasing $version"
-  if ! git diff --quiet || ! git diff --cached --quiet; then
-    git add --all
-    git commit -m "$version"
-    git push
-  fi
-  git tag -a "$version" -m "$version"
-  git push origin "$version"
-  git push
-
-  # Then kick off the whole GitHub Actions release, so one command does everything:
-  # this runs "Release via GitHub Actions" (release-all.yml — builds every per-arch
-  # binary and publishes the GitHub Release), which in turn dispatches "Docker via
-  # GitHub Actions" (docker.yml — builds and pushes the multi-arch image to Docker Hub,
-  # Quay.io and GHCR). Nothing is built locally.
-  info "Starting the GitHub Actions release (release-all.yml, which then triggers docker.yml) for $version ..."
-  act_release "$version"
-  exit 0
+  bash "$ROOT/releases/release-all.sh" "$@"
 }
 
 # ---- menu ----------------------------------------------------------------
@@ -752,7 +680,8 @@ menu() {
                                     binaries + publish GitHub Release w/ notes)
  14) Docker via GitHub Actions    (trigger docker.yml: multi-arch image from the
                                     release binaries -> Docker Hub, Quay.io, GHCR)
- 15) Release FerretDB             (rename Upcoming -> version, commit + tag + push,
+ 17) Release All Missing         (audit, commit, push and complete release)
+ 15) Release All                 (audit, rename Upcoming, commit + push,
                                     then run 13 Release + 14 Docker via GitHub Actions)
   g) Show / install Go toolchain
   0) Exit
@@ -778,6 +707,7 @@ EOF
       13) act_release ;;
       14) act_release_docker ;;
       15) act_release_ferretdb ;;
+      17) bash "$ROOT/releases/release-all-missing.sh" ;;
       g|G) act_goenv ;;
       0|q|Q) info "Bye."; exit 0 ;;
       *) warn "Unknown option: $choice" ;;
@@ -804,7 +734,8 @@ case "${1:-}" in
   dist-par)   act_dist par ;;
   release)    shift; act_release "${1:-}" ;;
   docker-release) shift; act_release_docker "${1:-}" ;;
-  release-ferretdb) act_release_ferretdb ;;
+  release-ferretdb|release-all) shift; act_release_ferretdb "$@" ;;
+  release-all-missing) shift; bash "$ROOT/releases/release-all-missing.sh" "$@" ;;
   test)       act_test par ;;
   test-seq)   act_test seq ;;
   test-all)   act_test_all ;;

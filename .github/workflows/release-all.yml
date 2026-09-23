@@ -44,6 +44,10 @@ permissions:
 env:
   GO_VERSION: '1.27.0'
 
+concurrency:
+  group: ferretdb-release-${{ inputs.version || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   # Build the per-arch binaries (all platforms) and publish the GitHub Release.
   release:
@@ -56,6 +60,10 @@ jobs:
           # Full history + tags so build/version's `git describe` stamps a real
           # v1.x version into the binaries (they panic at startup otherwise).
           fetch-depth: 0
+
+      - name: Check dependency risk indicators before release work
+        shell: bash
+        run: python3 releases/remote-release.py --audit
 
       - uses: actions/setup-go@v7
         with:
@@ -73,6 +81,12 @@ jobs:
           V="$INPUT_VERSION"
           [ -n "$V" ] || V="$(git describe --tags --always)"
           bash build/ferretdb/validate-version.sh "$V"
+          if ! git rev-parse -q --verify "refs/tags/$V" >/dev/null; then
+            git config user.name 'Lauri Ojansivu'
+            git config user.email 'x@xet7.org'
+            git tag -a "$V" -m "$V"
+            git push origin "refs/tags/$V"
+          fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
@@ -88,7 +102,7 @@ jobs:
           python3 build/ferretdb/check-telemetry.py --source .
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
-          ./build.sh dist-seq
+          FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       # A checksum beside every binary, in the "<sum>  <file>" format
       # sha256sum -c reads, so a consumer can tell a truncated or tampered

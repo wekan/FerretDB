@@ -1,0 +1,20 @@
+{
+  "repo": "wekan/FerretDB",
+  "kind": "ferretdb",
+  "branch": "main-v1",
+  "upcoming": "## Upcoming FerretDB release",
+  "audits": [
+    [
+      "python3",
+      "build/ferretdb/check-telemetry.py",
+      "--source",
+      "."
+    ]
+  ],
+  "indicatorCommand": [
+    "python3",
+    "releases/risk-audit.py",
+    "--source",
+    "."
+  ]
+}

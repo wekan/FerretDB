@@ -1,0 +1,13 @@
+{
+  "scope": "Informational dependency fingerprints. Ordinary changes do not block builds; automated risk indicators do. No AI approval is required.",
+  "files": {
+    "go.mod": "450de49aab4cc0e87a4f01b70d0eab01754b4c02b10eea906ff7b90c8d1a48e8",
+    "go.sum": "d6d8b9c19bba189645bc05a152603090924d1baca5869986b6e913fd65237563",
+    "integration/go.mod": "c5f2ec9e4ca67bdfd8970848b039fe1ed0206db5fc82e70144dd0cdf0d061477",
+    "integration/go.sum": "cde51e1f88d1ea9a24a808897be53259aec4992167005f2ccb19227ee8df8e7f",
+    "tools/go.mod": "330342b220fa69181d83e83a91a66b40c45ce798e223e6e60bb2d285aed9e7b3",
+    "tools/go.sum": "b25272772aa64357c515d3cbb144b59a878e60832ced7163677ca03dc07be822",
+    "tools/golangci/go.mod": "887e54a4435218541120cc2f3d551f5a8291e06432e563925c3c2be6d4e4e926",
+    "tools/golangci/go.sum": "a54b4b2fb3ff0f599e79c5b71d011cefd4ea159eae0b3c6d5fa1f5b691ce906a"
+  }
+}

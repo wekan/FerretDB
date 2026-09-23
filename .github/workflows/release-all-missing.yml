@@ -38,9 +38,14 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 env:
   GO_VERSION: '1.27.0'
+
+concurrency:
+  group: ferretdb-release-${{ inputs.version || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-missing:
@@ -51,6 +56,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0   # tags, so `git describe` can resolve a version
+
+      - name: Check dependency risk indicators before release work
+        shell: bash
+        run: python3 releases/remote-release.py --audit
 
       - uses: actions/setup-go@v7
         with:
@@ -99,7 +108,7 @@ jobs:
           python3 build/ferretdb/check-telemetry.py --source .
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
-          ./build.sh dist-seq
+          FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       - name: Checksum the binaries this run produced
         id: sums
@@ -138,12 +147,10 @@ jobs:
             exit 0
           fi
 
-          # No --clobber: everything here was absent from the release, so an
-          # upload that would overwrite something means the release changed
-          # under this run, which is worth failing on rather than quietly
-          # replacing a neighbour's bytes.
+          # Complete binary/checksum pairs were skipped above. Replace an
+          # incomplete pair together: a rebuilt binary needs its own checksum.
           if gh release view "$V" >/dev/null 2>&1; then
-            gh release upload "$V" "${assets[@]}"
+            gh release upload "$V" "${assets[@]}" --clobber
           else
             gh release create "$V" "${assets[@]}" --title "$V" \
               --notes "FerretDB v1 (SQLite) per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
@@ -155,3 +162,9 @@ jobs:
           printf '%s\n' "${assets[@]#dist/}" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Added ${#assets[@]} file(s) to $V."
+
+      - name: Retry missing or failed Docker publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: python3 releases/retry-docker-release.py "$VERSION"

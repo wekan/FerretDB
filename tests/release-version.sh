@@ -13,9 +13,10 @@ for invalid in v2.0.0 v0.99.0 v1.99 v1.x.0 v1.99.0-extra ''; do
     echo "Invalid version accepted: $invalid" >&2; exit 1
   fi
 done
-# Ensure both release preparation paths use the tested pure helper. Do not run
-# the release action: it intentionally commits, tags and publishes for humans.
-[[ "$(grep -c 'bash "$ROOT/build/ferretdb/next-version.sh"' "$root/build.sh")" = 2 ]]
+# Both menu aliases now use the shared audited release launcher. Version
+# arithmetic still comes from the same pure helper; CI owns tag publication.
+grep -q 'build/ferretdb/next-version.sh' "$root/releases/remote-release.py"
+grep -q 'release-ferretdb|release-all)' "$root/build.sh"
 ! grep -q 'nmin - smin' "$root/build.sh"
 echo 'release-version: v1 minor increments without rollover; patch resets to zero'
 validator="$root/build/ferretdb/validate-version.sh"
