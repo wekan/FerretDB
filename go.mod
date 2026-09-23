@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/FerretDB/wire v0.1.7
-	github.com/SAP/go-hdb v1.18.4
+	github.com/SAP/go-hdb v1.18.9
 	github.com/alecthomas/kong v1.16.1
 	github.com/arl/statsviz v0.8.2
 	github.com/dop251/goja v0.0.0-20260701091749-b07b74453ea9
@@ -30,7 +30,7 @@ require (
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20260630172432-7626c5025624
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
 	golang.org/x/sys v0.48.0
-	modernc.org/sqlite v1.58.0
+	modernc.org/sqlite v1.59.0
 )
 
 require (
@@ -73,7 +73,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260819154853-08b0e4226688 // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.75.6 // indirect
+	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
