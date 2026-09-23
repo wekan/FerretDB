@@ -12,7 +12,11 @@
   audit failures instead of treating them as unsupported targets. Remove the
   unused beacon URL default; preserve explicitly configured tracing and local
   logging. Native macOS ARM64 compilation, reporter tests and positive/negative
-  gate and matrix tests pass by @xet7. Thanks to xet7.
+  gate and matrix tests pass. A fresh local macOS ARM64 build also passed
+  SQLite startup and mongosh insert/read/update/delete checks, then served as
+  the bundled database for a successful WeKan production HTTP startup. Source
+  and native telemetry gates passed with no startup errors; hosted releases and
+  other native platforms were not run by @xet7. Thanks to xet7.
 
 - **Require Node.js 26 in the packaged mongosh runtime.** Release images and
   the PPC64LE runtime helper now reject an older Node.js major. The companion
