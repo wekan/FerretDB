@@ -41,7 +41,9 @@ binary checks use known hashes and telemetry signatures. These heuristics can
 have false positives and cannot prove the absence of arbitrary reporting code.
 
 Fix unwanted reporting when detected. Legitimate URLs/keywords can be configured
-in the baseline without AI approval. To explicitly record expected source data:
+in the baseline without AI approval. `allowUrlPatternsByFile` optionally permits
+full-match URL patterns in named files only; keep hosts and paths specific.
+The website uses this for Node 26 version-directory links on its install page. To explicitly record expected source data:
 `python3 releases/risk-audit.py --source . --record-baseline`.
 Do not baseline unwanted reporting. Patch repositories use a separate
 `upstream-risk-baseline.json` for their upstream source; pass it with `--policy`.
