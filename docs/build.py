@@ -392,7 +392,8 @@ def collect_pages():
             rel = os.path.relpath(full, ROOT)
             if rel == "README.md":
                 continue
-            text = open(full, encoding="utf-8").read()
+            with open(full, encoding="utf-8") as source:
+                text = source.read()
             meta, bodyx = parse_frontmatter(text)
             pos = meta.get("sidebar_position")
             try:
@@ -558,9 +559,31 @@ def build(out_dir):
     print("Rendered %d pages into %s" % (len(pages), out_dir))
 
 
-def serve(port):
-    """Live preview: render Markdown in memory on each request; write nothing."""
+def preview_images():
+    """Snapshot regular image assets without using any HTTP request data."""
+    images = {}
+    root = os.path.join(ROOT, "img")
+    if os.path.islink(root):
+        return images
+    for directory, dirs, files in os.walk(root, followlinks=False):
+        dirs[:] = [name for name in dirs if not os.path.islink(os.path.join(directory, name))]
+        for name in files:
+            filename = os.path.join(directory, name)
+            if os.path.islink(filename) or not os.path.isfile(filename):
+                continue
+            key = "img/" + os.path.relpath(filename, root).replace(os.sep, "/")
+            ctype = "image/png" if name.endswith(".png") else "image/jpeg" if name.endswith((".jpg", ".jpeg")) else "application/octet-stream"
+            with open(filename, "rb") as image:
+                images[key] = (image.read(), ctype)
+    return images
+
+
+def preview_handler():
+    """Only allowlisted asset bytes, never request-derived filesystem paths."""
     import http.server
+    from urllib.parse import unquote
+
+    images = preview_images()
 
     def load():
         pages = collect_pages()
@@ -568,19 +591,17 @@ def serve(port):
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            path = self.path.split("?", 1)[0].split("#", 1)[0].lstrip("/")
+            path = unquote(self.path.split("?", 1)[0].split("#", 1)[0]).lstrip("/")
             if path in ("", "/"):
                 path = "index.html"
-            by_out, pages = load()  # reload each request so edits show instantly
-
             if path == "style.css":
                 return self._send(STYLE.encode("utf-8"), "text/css")
             if path.startswith("img/"):
-                fp = os.path.join(ROOT, path)
-                if os.path.isfile(fp):
-                    ctype = "image/png" if fp.endswith(".png") else "image/jpeg" if fp.endswith((".jpg", ".jpeg")) else "application/octet-stream"
-                    return self._send(open(fp, "rb").read(), ctype)
+                asset = images.get(path)
+                if asset is not None:
+                    return self._send(*asset)
                 return self._404()
+            by_out, pages = load()  # reload Markdown so edits show instantly
             if path in by_out:
                 return self._send(render_page(by_out[path], pages).encode("utf-8"), "text/html; charset=utf-8")
             return self._404()
@@ -600,7 +621,14 @@ def serve(port):
         def log_message(self, *_):
             pass
 
-    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    return Handler
+
+
+def serve(port):
+    """Live preview: reload Markdown on each request; write nothing."""
+    import http.server
+
+    httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), preview_handler())
     print("Serving the Markdown docs (rendered in memory, no files written) at")
     print("  http://127.0.0.1:%d/   — press Ctrl+C to stop" % port)
     try:

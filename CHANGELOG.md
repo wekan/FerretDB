@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Prevent file disclosure through documentation preview image URLs.** Fix
+  CodeQL alerts #47 and #48 by selecting preloaded image bytes from an allowlist
+  instead of opening request-derived filesystem paths. Reject traversal and
+  unknown paths and exclude image symlinks and symlinked directories. Markdown
+  pages still reload live; restart the preview after editing image assets.
+  Five HTTP-handler regressions cover valid assets, encoded paths, traversal,
+  symlink escapes and live page rendering. Run them before the Pages build;
+  all tests and the 41-page static documentation build pass locally by @xet7.
+  Thanks to xet7.
+
 ## [v1.81.0](https://github.com/wekan/FerretDB/releases/tag/v1.81.0) (2026-09-23)
 
 ### Other Changes 🤖

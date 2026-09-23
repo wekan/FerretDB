@@ -24,6 +24,15 @@ This starts a small local server that renders each Markdown page **in memory on 
 request** and writes nothing to disk — edit a `.md`, refresh the browser, and you see
 the change. Open http://127.0.0.1:3000/. (Same as `task docs-dev`.)
 
+Images are loaded into an allowlist when the preview starts; restart it after
+changing image assets. Image symlinks and symlinked directories are excluded.
+HTTP paths only select preloaded bytes and cannot open files outside `img/`.
+Run the preview security regressions with:
+
+```sh
+python3 -B -m unittest discover -s docs -p 'test_*.py'
+```
+
 ## Build the static site (optional)
 
 ```sh
