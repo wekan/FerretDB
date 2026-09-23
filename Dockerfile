@@ -25,6 +25,10 @@ ENV GOMODCACHE=/cache/gomodcache
 
 # do not download a newer toolchain than the one in this image
 ENV GOTOOLCHAIN=local
+ENV GOTELEMETRY=off
+
+RUN apt-get update && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
 
 # see .dockerignore for what is included in the build context
 WORKDIR /src
@@ -33,11 +37,10 @@ COPY . .
 RUN --mount=type=cache,target=/cache <<EOF
 set -ex
 
-# build/version/version.txt is gitignored, so make sure a valid version file
-# exists; without it the compiled binary panics on startup.
-if [ ! -s build/version/version.txt ]; then
-  echo "v1.24.2" > build/version/version.txt
-fi
+# Audit source before compilation; run behavior tests on the native build CPU.
+python3 build/ferretdb/check-telemetry.py --source .
+(cd build/version && go run generate.go)
+go test -mod=readonly -count=1 ./internal/util/telemetry
 
 # Cross-compile for the requested target platform. Because we build on the native
 # build platform, we CANNOT run the (possibly foreign-arch) binary here, so there
@@ -52,7 +55,8 @@ export GOARM=${TARGETVARIANT#v}
 export GOAMD64=v1
 export CGO_ENABLED=0
 
-go build -v -o=/bin/ferretdb ./cmd/ferretdb
+go build -mod=readonly -v -o=/bin/ferretdb ./cmd/ferretdb
+python3 build/ferretdb/check-telemetry.py --kind ferretdb /bin/ferretdb
 
 # create a state directory owned by the runtime user
 mkdir /state

@@ -99,7 +99,6 @@ jobs:
           python3 build/ferretdb/check-telemetry.py --source .
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
-          go test ./internal/util/telemetry
           ./build.sh dist-seq
 
       - name: Checksum the binaries this run produced

@@ -7,6 +7,7 @@
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
 #   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
 #   ./build.sh no-lfs                  # fail if anything is stored in Git LFS (also part of lint)
+#   ./build.sh telemetry-check       # review source and run no-network behavior tests
 #   ./build.sh dist                    # build all per-arch binaries, sequential (default)
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
@@ -98,7 +99,7 @@ ensure_go() {
 }
 
 go_env() {
-  ensure_go
+  ensure_go || return 1
   # keep module graph writable so first build can resolve deps
   export GOFLAGS="${GOFLAGS:-} -mod=mod"
   export FERRETDB_TELEMETRY=disable
@@ -133,26 +134,26 @@ act_deps() {
   info "Dependencies ready."
 }
 
-act_build() {
+# Source review and behavior checks are mandatory for local and release builds.
+# Fresh checkouts need generated version files before any Go test can start.
+act_telemetry_check() {
   python3 "$ROOT/build/ferretdb/check-telemetry.py" --source "$ROOT" || return 1
-  go_env
-  # Regenerate build/version FIRST, exactly as act_dist does. Go stamps the VCS
-  # revision into the binary, and build/version/version.go panics at STARTUP when
-  # that revision disagrees with the committed build/version/commit.txt:
-  #
-  #   panic: commit.txt value "e7820f36..." != vcs.revision value "cd795fa7..."
-  #
-  # Those files are only refreshed by this generator, so every commit made after
-  # the last refresh produced a binary that could not start at all - which is what
-  # `./build.sh build` did until now, while the release build was fine because it
-  # already regenerated them.
+  go_env || return 1
   info "Generating version info (build/version) ..."
-  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
+  ( cd build/version && go run -mod=readonly generate.go ) || { err "gen-version failed"; return 1; }
+  go test -mod=readonly -count=1 ./internal/util/telemetry || {
+    err "::error::Telemetry behavior tests failed; refusing to build."
+    return 1
+  }
+}
+
+act_build() {
+  act_telemetry_check || return 1
   info "Building FerretDB (sqlite, postgresql, mysql, hana handlers) -> bin/ferretdb ..."
   mkdir -p bin
   # Same build tag as the release build below, so a local binary answers the same
   # --handler values the released ones do.
-  go build -tags ferretdb_hana -o bin/ferretdb ./cmd/ferretdb || return 1
+  go build -mod=readonly -tags ferretdb_hana -o bin/ferretdb ./cmd/ferretdb || return 1
   python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb bin/ferretdb || { rm -f bin/ferretdb; return 1; }
   info "Built bin/ferretdb"
 }
@@ -237,7 +238,7 @@ build_ferretdb_target() {
   # what a client compose file for SAP HANA would hit. go-hdb is pure Go, so it
   # cross-compiles with CGO_ENABLED=0 like the rest.
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-       go build -trimpath -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+       go build -mod=readonly -trimpath -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
     if ! python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb "$out/ferretdb-$name$ext"; then
       printf '%s\n' "$name" >> "$rep/telemetry-failed.list"
       rm -f "$out/ferretdb-$name$ext"
@@ -261,11 +262,7 @@ build_ferretdb_target() {
 # platform it targets.
 act_dist() {
   local mode="${1:-seq}"
-  python3 "$ROOT/build/ferretdb/check-telemetry.py" --source "$ROOT" || return 1
-  go_env
-
-  info "Generating version info (build/version) ..."
-  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
+  act_telemetry_check || return 1
   local fver; fver="$(cat build/version/version.txt 2>/dev/null || echo unknown)"
   info "FerretDB version: $fver"
 
@@ -277,7 +274,7 @@ act_dist() {
   # Prime the module + build cache once (resolve deps, compile shared std/deps)
   # so the parallel builds below don't all race downloading/compiling at once.
   info "Priming build cache (this resolves modules on first run) ..."
-  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null ./cmd/ferretdb 2>/dev/null || true
+  CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -o /dev/null ./cmd/ferretdb 2>/dev/null || true
 
   if [ "$mode" = par ]; then
     info "Cross-compiling FerretDB for all platforms — PARALLEL ..."
@@ -400,7 +397,7 @@ act_unit() {
   # Unit packages import build/version during init, so version metadata must
   # match the current checkout just as it does for local and release builds.
   info "Generating version info (build/version) ..."
-  ( cd build/version && go run generate.go ) || { err "gen-version failed"; return 1; }
+  ( cd build/version && go run -mod=readonly generate.go ) || { err "gen-version failed"; return 1; }
   # The ferretdb_debug build tag enables the debug-only assertions that some unit
   # tests require (e.g. TestCheckError asserts debugbuild.Enabled); it is the tag
   # FerretDB's own `task test-unit` builds with.
@@ -799,6 +796,7 @@ case "${1:-}" in
                 exit 2
               fi ;;
   deps)       act_deps ;;
+  telemetry-check) act_telemetry_check ;;
   build)      act_build ;;
   run)        act_run ;;
   dist)       act_dist seq ;;

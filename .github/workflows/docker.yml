@@ -83,6 +83,17 @@ jobs:
           done
           echo "=== downloaded ==="; ls -la dist
 
+      - name: Reject telemetry in downloaded FerretDB binaries
+        run: |
+          set -euo pipefail
+          found=false
+          for binary in dist/ferretdb-*; do
+            [ -f "$binary" ] || continue
+            python3 build/ferretdb/check-telemetry.py --kind ferretdb "$binary"
+            found=true
+          done
+          "$found" || { echo '::error::No FerretDB binaries to audit'; exit 1; }
+
       - name: Download and verify mongosh packages for every Linux architecture
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

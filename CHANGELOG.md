@@ -2,6 +2,25 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Keep telemetry removal enforced after dependency updates.** Review the merged
+  go-hdb 1.18.9, SQLite 1.59.0 and matching libc 1.75.7 dependencies and refresh
+  their source inventory. No default outbound usage reporter was found in the
+  dependency changes. Dependency updates by @dependabot. Thanks to dependabot.
+
+- **Run telemetry behavior checks on every local and release build.** Generate
+  version metadata before running uncached no-network tests, including fresh
+  release checkouts. Keep audited module resolution read-only and reject native
+  telemetry signatures. Docker source builds enforce the same source, behavior
+  and binary gates; the Docker release workflow rechecks downloaded FerretDB
+  binaries. Positive and negative tests cover local, serial and parallel builds.
+  SQLite backend, HANA unit and telemetry tests and a macOS ARM64 build passed;
+  Docker images, live HANA and the complete platform matrix were not run locally
+  by @xet7. Thanks to xet7.
+
 ## [v1.80.0](https://github.com/wekan/FerretDB/releases/tag/v1.80.0) (2026-09-23)
 
 ### Other Changes 🤖

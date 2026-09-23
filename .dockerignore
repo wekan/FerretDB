@@ -4,6 +4,7 @@
 !build/version
 !cmd
 !internal
+!ferretdb
 !go.mod
 !go.sum
 

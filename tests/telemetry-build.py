@@ -20,7 +20,12 @@ class Matrix(unittest.TestCase):
     def test_telemetry_is_fatal_in_both_matrix_modes(self):
         for mode, marker, expected in [('dist-seq', 'clean binary', 0),
                                        ('dist-seq', 'beacon.ferretdb.com', 1),
-                                       ('dist-par', 'beacon.ferretdb.com', 1)]:
+                                       ('dist-par', 'beacon.ferretdb.com', 1),
+                                       ('build', 'clean binary', 0),
+                                       ('build', 'beacon.ferretdb.com', 1),
+                                       ('build', 'behavior-test-failure', 1),
+                                       ('dist-seq', 'behavior-test-failure', 1),
+                                       ('dist-par', 'behavior-test-failure', 1)]:
             with self.subTest(mode=mode, marker=marker), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 for name in ('cmd', 'build/ferretdb', 'build/version', '.goroot/bin'):
@@ -34,6 +39,8 @@ class Matrix(unittest.TestCase):
                 (root / 'build/ferretdb/telemetry-source.json').write_text(json.dumps(policy))
                 go = root / '.goroot/bin/go'
                 go.write_text("""#!/bin/sh
+# Simulate the no-network suite finding a reporter that binary strings miss.
+if [ "$1" = test ] && [ "$TEST_BINARY_CONTENT" = behavior-test-failure ]; then exit 1; fi
 out=''
 while [ "$#" -gt 0 ]; do
   if [ "$1" = -o ]; then shift; out="$1"; fi
@@ -52,8 +59,28 @@ printf '%s' "$TEST_BINARY_CONTENT" > "$out"
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                 else:
                     self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-                    self.assertIn('::error::Telemetry audit failed', result.stdout + result.stderr)
+                    self.assertIn('::error::Telemetry', result.stdout + result.stderr)
                     self.assertEqual(list((root / 'dist').glob('ferretdb-*')), [])
+                    self.assertFalse((root / 'bin/ferretdb').exists())
+
+    def test_workflows_use_build_gates_and_docker_rechecks_downloads(self):
+        for name in ('release-all.yml', 'release-all-missing.yml'):
+            text = (ROOT / '.github/workflows' / name).read_text()
+            self.assertIn('./build.sh dist-seq', text)
+            self.assertIn('check-telemetry.py --source .', text)
+            self.assertIn('tests/telemetry-build.py', text)
+            self.assertNotIn('go test ./internal/util/telemetry', text)
+        text = (ROOT / '.github/workflows/docker.yml').read_text()
+        self.assertLess(text.index('check-telemetry.py --kind ferretdb'),
+                        text.index('docker buildx build'))
+        docker = (ROOT / 'Dockerfile').read_text()
+        self.assertLess(docker.index('check-telemetry.py --source'), docker.index('go build -mod'))
+        self.assertLess(docker.index('go test -mod=readonly'), docker.index('export GOOS='))
+        self.assertIn('check-telemetry.py --kind ferretdb /bin/ferretdb', docker)
+        script = (ROOT / 'build.sh').read_text()
+        preflight = script.split('act_telemetry_check() {', 1)[1].split('\n}', 1)[0]
+        self.assertLess(preflight.index('go run -mod=readonly generate.go'), preflight.index('go test'))
+        self.assertIn('-mod=readonly -count=1', preflight)
 
 
 if __name__ == '__main__':
