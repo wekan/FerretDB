@@ -4,6 +4,13 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- **Accept valid GitHub SSH origins in release launchers.** Accept HTTPS and both SSH URL forms,
+  with or without .git, while rejecting other repositories and hosts.
+  Offline positive and negative tests and source audits pass; no hosted
+  release was run by @xet7. Thanks to xet7.
+
 ### Other Changes 🤖
 
 - **Add release menus with automated checks for shell and Windows.** Release All checks
