@@ -81,7 +81,15 @@ jobs:
         # into ./dist/ as individual ferretdb-<arch>[.exe] binaries (+ README).
         # Sequential to stay within the runner's memory (16 concurrent Go builds
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
-        run: ./build.sh dist-seq
+        run: |
+          set -euo pipefail
+          mkdir -p .tools/tmp
+          export TMPDIR="$PWD/.tools/tmp" GOTELEMETRY=off
+          python3 build/ferretdb/check-telemetry.py --source .
+          python3 -B tests/release-telemetry.py
+          python3 -B tests/telemetry-build.py
+          go test ./internal/util/telemetry
+          ./build.sh dist-seq
 
       # A checksum beside every binary, in the "<sum>  <file>" format
       # sha256sum -c reads, so a consumer can tell a truncated or tampered

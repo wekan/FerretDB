@@ -92,7 +92,15 @@ jobs:
         # the only difference, and build.sh does the comparing.
         env:
           FERRETDB_DIST_SKIP_LIST: ${{ github.workspace }}/existing.txt
-        run: ./build.sh dist-seq
+        run: |
+          set -euo pipefail
+          mkdir -p .tools/tmp
+          export TMPDIR="$PWD/.tools/tmp" GOTELEMETRY=off
+          python3 build/ferretdb/check-telemetry.py --source .
+          python3 -B tests/release-telemetry.py
+          python3 -B tests/telemetry-build.py
+          go test ./internal/util/telemetry
+          ./build.sh dist-seq
 
       - name: Checksum the binaries this run produced
         id: sums

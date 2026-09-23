@@ -134,7 +134,7 @@ var cli struct {
 		// These flags are kept, accepted and ignored for upstream compatibility;
 		// none of them is read.
 		Telemetry struct {
-			URL            string        `default:"https://beacon.ferretdb.com/" help:"Unused: telemetry is removed in this fork."`
+			URL            string        `default:"" help:"Unused: telemetry is removed in this fork."`
 			UndecidedDelay time.Duration `default:"1h"                           help:"Unused: telemetry is removed in this fork."`
 			ReportInterval time.Duration `default:"24h"                          help:"Unused: telemetry is removed in this fork."`
 			ReportTimeout  time.Duration `default:"5s"                           help:"Unused: telemetry is removed in this fork."`

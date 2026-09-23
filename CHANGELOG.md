@@ -6,6 +6,14 @@
 
 ### Other Changes 🤖
 
+- **Fail release builds when telemetry removal regresses.** Both release workflows
+  review source and pinned dependency inventories, run the telemetry behavior
+  tests and check each native binary. Local, serial and parallel builds propagate
+  audit failures instead of treating them as unsupported targets. Remove the
+  unused beacon URL default; preserve explicitly configured tracing and local
+  logging. Native macOS ARM64 compilation, reporter tests and positive/negative
+  gate and matrix tests pass by @xet7. Thanks to xet7.
+
 - **Require Node.js 26 in the packaged mongosh runtime.** Release images and
   the PPC64LE runtime helper now reject an older Node.js major. The companion
   mongosh packages use npm 12.0.2; runtime helper tests pass. Platform images

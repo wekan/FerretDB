@@ -22,6 +22,7 @@
 # It self-installs a local Go toolchain under ./.goroot if `go` is not found.
 
 set -u
+export GOTELEMETRY=off
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
@@ -133,6 +134,7 @@ act_deps() {
 }
 
 act_build() {
+  python3 "$ROOT/build/ferretdb/check-telemetry.py" --source "$ROOT" || return 1
   go_env
   # Regenerate build/version FIRST, exactly as act_dist does. Go stamps the VCS
   # revision into the binary, and build/version/version.go panics at STARTUP when
@@ -151,6 +153,7 @@ act_build() {
   # Same build tag as the release build below, so a local binary answers the same
   # --handler values the released ones do.
   go build -tags ferretdb_hana -o bin/ferretdb ./cmd/ferretdb || return 1
+  python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb bin/ferretdb || { rm -f bin/ferretdb; return 1; }
   info "Built bin/ferretdb"
 }
 
@@ -235,6 +238,11 @@ build_ferretdb_target() {
   # cross-compiles with CGO_ENABLED=0 like the rest.
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
        go build -trimpath -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+    if ! python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb "$out/ferretdb-$name$ext"; then
+      printf '%s\n' "$name" >> "$rep/telemetry-failed.list"
+      rm -f "$out/ferretdb-$name$ext"
+      return 1
+    fi
     chmod +x "$out/ferretdb-$name$ext"
     printf '%s\n' "$name" >> "$rep/built.list"
     info "  built   $name"
@@ -253,6 +261,7 @@ build_ferretdb_target() {
 # platform it targets.
 act_dist() {
   local mode="${1:-seq}"
+  python3 "$ROOT/build/ferretdb/check-telemetry.py" --source "$ROOT" || return 1
   go_env
 
   info "Generating version info (build/version) ..."
@@ -287,6 +296,12 @@ act_dist() {
       set -- $t
       build_ferretdb_target "$1" "$2" "$3" "${4:-}" "$out" "$rep"
     done
+  fi
+
+  # Child processes can fail in either matrix mode. Never swallow audit failures.
+  if [ -s "$rep/telemetry-failed.list" ]; then
+    err "::error::Telemetry audit failed for: $(tr '\n' ' ' < "$rep/telemetry-failed.list")"
+    return 1
   fi
 
   {
