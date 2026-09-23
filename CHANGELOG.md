@@ -6,6 +6,11 @@
 
 ### Fixed 🐛
 
+- **Fix Windows release source paths and allow scoped version links.** Use shell-relative source paths
+  and support narrowly configured per-file version URL patterns. Offline
+  positive and negative release/indicator tests pass; Windows builds and
+  hosted publication were not run by @xet7. Thanks to xet7.
+
 - **Accept valid GitHub SSH origins in release launchers.** Accept HTTPS and both SSH URL forms,
   with or without .git, while rejecting other repositories and hosts.
   Offline positive and negative tests and source audits pass; no hosted
