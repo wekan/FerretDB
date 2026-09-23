@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Add release menus with automated checks for shell and Windows.** Release All checks
+  Upcoming notes, prepares the next v1 version, commits pending files and
+  dispatches Actions after pushing. Release All Missing preserves the version,
+  fills incomplete binary/checksum pairs and retries missing Docker publication.
+  Dependency hash changes only warn; automated known-hash, suspicious-keyword
+  and new-URL findings stop builds without requiring AI approval. Existing
+  telemetry behavior and binary checks remain active. Offline launcher,
+  indicator, version and Docker retry tests pass; hosted publication and native
+  Windows execution were not run by @xet7. Thanks to xet7.
+
 ## [v1.83.0](https://github.com/wekan/FerretDB/releases/tag/v1.83.0) (2026-09-23)
 
 ### Fixed 🐛
