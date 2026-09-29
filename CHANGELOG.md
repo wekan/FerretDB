@@ -32,6 +32,14 @@
   negative offline tests verify classification and blocking risk findings
   by @xet7. Thanks to xet7.
 
+### Other Changes 🤖
+
+- **Sync the integration module's dependencies with the main module.** The
+  integration module still recorded go-hdb 1.18.4, SQLite 1.58.0 and libc
+  1.75.6 after the main module moved to 1.18.9, 1.59.0 and 1.75.7, so every
+  build rewrote its go.mod and go.sum. They now match; the module verifies and
+  builds by @xet7. Thanks to xet7.
+
 ## [v1.84.0](https://github.com/wekan/FerretDB/releases/tag/v1.84.0) (2026-09-23)
 
 ### Fixed 🐛
