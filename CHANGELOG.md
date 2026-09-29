@@ -6,6 +6,25 @@
 
 ### Fixed 🐛
 
+- **Keep MySQL range queries from dropping large positive integers.** MySQL 9.7
+  types some positive integers (1577934245000, not 2147483648) as `UNSIGNED
+  INTEGER`, which the range pushdown's number guard did not list, so those
+  documents vanished from `$gt`/`$lt` results. The guard now lists every JSON
+  number type. The same cause made a date range answer no rows, which is why
+  Date and Timestamp ranges were never pushed down on MySQL; they now are, in
+  exact DECIMAL form. A new conformance case fails on the previous build and all
+  110 cases agree on SQLite, PostgreSQL 18, MySQL 9.7 and MariaDB 12.3
+  (wekan/wekan#6509) by @xet7. Thanks to xet7.
+
+- **Let the OpLog tail use the capped-collection `ts` index.** The index expression
+  and the pushed-down range did not match, so every awaitData poll scanned the
+  whole table. MySQL and MariaDB now also receive the range in the index's
+  DECIMAL form, with the bound cast too and a non-strict operator so rounding
+  keeps it a superset; PostgreSQL gets the literal `'ts'` key, which a cached
+  generic plan needs. EXPLAIN on live MySQL 9.7, MariaDB 12.3 and PostgreSQL 18
+  shows index range scans with integer and double bounds by @xet7. Thanks to
+  xet7.
+
 - **Identify known dependency telemetry keyword false positives.** Report exact
   documented OpenTelemetry and tool dependency matches as informational rather
   than new warnings. New modules, versions, checksums and file locations remain

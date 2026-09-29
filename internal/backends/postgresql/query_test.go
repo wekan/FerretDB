@@ -142,8 +142,18 @@ func TestPrepareWhereClause(t *testing.T) {
 			// {ts: {$gt: <Timestamp>}} — the OpLog tail shape.
 			filter: must.NotFail(types.NewDocument("ts",
 				must.NotFail(types.NewDocument("$gt", types.Timestamp(7300000000000000000))))),
-			expected: ` WHERE jsonb_typeof(_jsonb->$1) = 'number' AND (_jsonb->>$2)::numeric > $3`,
-			args:     []any{"ts", "ts", int64(7300000000000000000)},
+			// The key is a LITERAL, matching the capped-collection index expression
+			// ((_jsonb->>'ts')::numeric); a parameter key makes generic plans scan.
+			expected: ` WHERE jsonb_typeof(_jsonb->'ts') = 'number' AND (_jsonb->>'ts')::numeric > $1`,
+			args:     []any{int64(7300000000000000000)},
+		},
+		"RangeNestedTsKeepsParameters": {
+			// Only the top-level ts field is indexed; a nested one keeps the path
+			// as a parameter.
+			filter: must.NotFail(types.NewDocument("a.ts",
+				must.NotFail(types.NewDocument("$gt", int64(5))))),
+			expected: ` WHERE jsonb_typeof(_jsonb#>$1) = 'number' AND (_jsonb#>>$2)::numeric > $3`,
+			args:     []any{[]string{"a", "ts"}, []string{"a", "ts"}, int64(5)},
 		},
 		"RangeNumberLte": {
 			filter: must.NotFail(types.NewDocument("count",

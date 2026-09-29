@@ -17,6 +17,7 @@ package mysql
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -266,31 +267,50 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					// SUPERSET (only number-typed docs are pre-filtered; the in-Go filter
 					// re-applies exact, type-bracketed comparison). Mainly this makes an
 					// idle OpLog tail's {ts:{$gt}} an indexed range scan instead of a
-					// whole-collection re-decode every awaitData poll. (Parity with the
-					// sqlite/postgresql backends.)
+					// whole-collection re-decode every awaitData poll.
+					var sqlOp, relaxed string
+					switch k {
+					case "$gt":
+						sqlOp, relaxed = ">", ">="
+					case "$gte":
+						sqlOp, relaxed = ">=", ">="
+					case "$lt":
+						sqlOp, relaxed = "<", "<="
+					case "$lte":
+						sqlOp, relaxed = "<=", "<="
+					}
+
+					// Dates and Timestamps are compared in DECIMAL form, which holds
+					// their stored integers (UnixMilli, uint64) exactly. They were not
+					// pushed down before because a live MySQL 9.7 answered a date range
+					// with no rows: MySQL types such values as 'UNSIGNED INTEGER', which
+					// the number guard did not list (see jsonNumberTypes).
+					if temporal, ok := temporalBound(v); ok {
+						filters = append(filters, decimalRange(rootKey, relaxed))
+						args = append(args, decimalRangeArgs(rootKey, temporal)...)
+
+						continue
+					}
+
 					num, ok := numericBound(v)
 					if !ok {
 						continue
 					}
 
-					var sqlOp string
-					switch k {
-					case "$gt":
-						sqlOp = ">"
-					case "$gte":
-						sqlOp = ">="
-					case "$lt":
-						sqlOp = "<"
-					case "$lte":
-						sqlOp = "<="
-					}
-
 					filters = append(filters, fmt.Sprintf(
-						`JSON_TYPE(JSON_EXTRACT(%[1]s, ?)) IN ('INTEGER', 'DOUBLE', 'DECIMAL') `+
+						`JSON_TYPE(JSON_EXTRACT(%[1]s, ?)) IN `+jsonNumberTypes+` `+
 							`AND JSON_EXTRACT(%[1]s, ?) %[2]s ?`,
 						metadata.DefaultColumn, sqlOp,
 					))
 					args = append(args, jsonPath(rootKey), jsonPath(rootKey), num)
+
+					// The capped-collection "ts" index is on the DECIMAL form (see
+					// decimalRange); neither MySQL nor MariaDB uses it for the comparison
+					// above, so the indexable form is ANDed alongside it.
+					if rootKey == "ts" {
+						filters = append(filters, decimalRange(rootKey, relaxed))
+						args = append(args, decimalRangeArgs(rootKey, num)...)
+					}
 
 				default:
 					// other operators ($regex, $exists, …) stay in the Go filter.
@@ -372,6 +392,64 @@ func filterIn(k string, arr *types.Array) (string, []any, bool) {
 // so only the two temporal types are declined here, until a live EXPLAIN shows
 // which expression MySQL needs for them. Correctness first; this costs one
 // whole-collection re-decode for a date range on the experimental backend.
+// jsonNumberTypes is every JSON_TYPE a stored number can have. MySQL 9.7
+// reports some positive integers as 'UNSIGNED INTEGER' (1577934245000 is one,
+// 2147483648 is not), so a guard without it silently dropped those documents
+// from every pushed-down range - wrong answers, not just a slower query.
+// MariaDB reports 'INTEGER' for the same values.
+const jsonNumberTypes = `('INTEGER', 'UNSIGNED INTEGER', 'DOUBLE', 'DECIMAL')`
+
+// temporalBound returns the stored JSON number of a Date (UnixMilli) or BSON
+// Timestamp (uint64) range bound. Timestamps above MaxInt64 are not pushed.
+func temporalBound(v any) (int64, bool) {
+	switch t := v.(type) {
+	case time.Time:
+		return t.UnixMilli(), true
+	case types.Timestamp:
+		if uint64(t) > math.MaxInt64 {
+			return 0, false
+		}
+
+		return int64(t), true
+	default:
+		return 0, false
+	}
+}
+
+// decimalRange is a SUPERSET range filter on the DECIMAL(65,10) value of a
+// top-level field, guarded by JSON_TYPE. relaxed must be ">=" or "<=":
+// DECIMAL(65,10) rounds past ten decimals, and rounding never reverses order,
+// so a non-strict comparison keeps every matching document; the Go filter
+// re-applies the exact one.
+//
+// For the "ts" key the path is a LITERAL, so the expression is exactly the one
+// metadata.collectionCreate indexes for capped collections: a functional key
+// part on MySQL, an indexed STORED column on MariaDB. Verified with EXPLAIN on
+// MySQL 9.7 and MariaDB 12.3: this form is a range scan on that index, and
+// MySQL needs the bound CAST to DECIMAL too - with an integer or DOUBLE bound
+// it scans the whole table.
+func decimalRange(rootKey, relaxed string) string {
+	path := "?"
+	if rootKey == "ts" {
+		path = "'$.ts'"
+	}
+
+	return fmt.Sprintf(
+		`JSON_TYPE(JSON_EXTRACT(%[1]s, %[2]s)) IN `+jsonNumberTypes+` `+
+			`AND CAST(JSON_UNQUOTE(JSON_EXTRACT(%[1]s, %[2]s)) AS DECIMAL(65,10)) %[3]s CAST(? AS DECIMAL(65,10))`,
+		metadata.DefaultColumn, path, relaxed,
+	)
+}
+
+// decimalRangeArgs returns the arguments decimalRange's placeholders take.
+func decimalRangeArgs(rootKey string, bound any) []any {
+	if rootKey == "ts" {
+		return []any{bound}
+	}
+
+	return []any{jsonPath(rootKey), jsonPath(rootKey), bound}
+}
+
 func numericBound(v any) (any, bool) {
 	switch n := v.(type) {
 	case int32:

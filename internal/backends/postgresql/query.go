@@ -253,6 +253,22 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 						sqlOp = "<="
 					}
 
+					// The top-level "ts" key is written as a LITERAL: the capped-collection
+					// index is on ((_jsonb->>'ts')::numeric), and PostgreSQL can match an
+					// index expression only when the key is a constant. With the key as a
+					// parameter, a cached generic plan is a sequential scan (verified with
+					// EXPLAIN on PostgreSQL 18 and plan_cache_mode = force_generic_plan);
+					// only custom plans, which substitute the value, could use the index.
+					if rootKey == "ts" && keyOperator == "->" {
+						filters = append(filters, fmt.Sprintf(
+							`jsonb_typeof(%[1]s->'ts') = 'number' AND (%[1]s->>'ts')::numeric %[2]s %[3]s`,
+							metadata.DefaultColumn, sqlOp, p.Next(),
+						))
+						args = append(args, num)
+
+						continue
+					}
+
 					// keyOperator is "->" or "#>"; the text-extraction form is "->>"/"#>>".
 					filters = append(filters, fmt.Sprintf(
 						`jsonb_typeof(%[1]s%[2]s%[3]s) = 'number' AND (%[1]s%[4]s%[5]s)::numeric %[6]s %[7]s`,
