@@ -2,6 +2,22 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Sync the integration module's go-hdb with the main module again.** The
+  Dependabot bump below moved SAP go-hdb to 1.18.11 in the main module only,
+  so every build rewrote the integration module's go.mod and go.sum, as after
+  the previous bump. They match again; the integration module verifies and
+  compiles in read-only module mode by @xet7. Thanks to xet7.
+
+- **Bump SAP go-hdb from 1.18.9 to 1.18.11** in the main module (#35) by
+  @dependabot. Thanks to dependabot.
+
+- **Bump markdownlint-cli2 from v0.23.2 to v0.23.3** in the build dependencies
+  image (#36) by @dependabot. Thanks to dependabot.
+
 ## [v1.85.0](https://github.com/wekan/FerretDB/releases/tag/v1.85.0) (2026-09-29)
 
 ### Fixed 🐛
