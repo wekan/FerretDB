@@ -19,7 +19,7 @@ require (
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/FerretDB/wire v0.1.7 // indirect
-	github.com/SAP/go-hdb v1.18.9 // indirect
+	github.com/SAP/go-hdb v1.18.11 // indirect
 	github.com/arl/statsviz v0.8.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
