@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/FerretDB/wire v0.1.7
-	github.com/SAP/go-hdb v1.18.9
+	github.com/SAP/go-hdb v1.18.11
 	github.com/alecthomas/kong v1.16.1
 	github.com/arl/statsviz v0.8.2
 	github.com/dop251/goja v0.0.0-20260701091749-b07b74453ea9
