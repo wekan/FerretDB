@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Record dropped collections and databases in the OpLog.** Only document
+  writes were recorded, so a client replaying the OpLog - a point-in-time
+  backup or a mirror - kept every document of a collection that had been
+  dropped. A drop is now recorded as MongoDB records it, op `c` on `<db>.$cmd`
+  with `{drop: <name>}` or `{dropDatabase: 1}`, and wakes waiting tails like
+  any other record. A failed drop and anything in `local` are not recorded.
+  Found while running WeKan's continuous backup against a FerretDB started
+  with `--repl-set-name`, which Docker Compose now does by @xet7. Thanks to
+  xet7.
+
 ## [v1.86.0](https://github.com/wekan/FerretDB/releases/tag/v1.86.0) (2026-09-30)
 
 ### Other Changes 🤖

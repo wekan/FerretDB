@@ -22,6 +22,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
 // backend implements backends.Backend interface by delegating all methods to the wrapped backend.
@@ -86,7 +88,13 @@ func (b *backend) ListDatabases(ctx context.Context, params *backends.ListDataba
 
 // DropDatabase implements backends.Backend interface.
 func (b *backend) DropDatabase(ctx context.Context, params *backends.DropDatabaseParams) error {
-	return b.origB.DropDatabase(ctx, params)
+	if err := b.origB.DropDatabase(ctx, params); err != nil {
+		return err
+	}
+
+	appendCommand(ctx, b.origB, b.l, b.notify, params.Name, must.NotFail(types.NewDocument("dropDatabase", int32(1))))
+
+	return nil
 }
 
 // Describe implements prometheus.Collector.

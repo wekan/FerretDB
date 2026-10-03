@@ -19,6 +19,8 @@ import (
 	"log/slog"
 
 	"github.com/FerretDB/FerretDB/internal/backends"
+	"github.com/FerretDB/FerretDB/internal/types"
+	"github.com/FerretDB/FerretDB/internal/util/must"
 )
 
 // database implements backends.Database interface by delegating all methods to the wrapped database.
@@ -65,7 +67,13 @@ func (db *database) CreateCollection(ctx context.Context, params *backends.Creat
 
 // DropCollection implements backends.Database interface.
 func (db *database) DropCollection(ctx context.Context, params *backends.DropCollectionParams) error {
-	return db.origDB.DropCollection(ctx, params)
+	if err := db.origDB.DropCollection(ctx, params); err != nil {
+		return err
+	}
+
+	appendCommand(ctx, db.origB, db.l, db.notify, db.name, must.NotFail(types.NewDocument("drop", params.Name)))
+
+	return nil
 }
 
 // RenameCollection implements backends.Database interface.

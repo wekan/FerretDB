@@ -16,17 +16,21 @@
 package oplog
 
 import (
+	"context"
+	"log/slog"
 	"time"
 
+	"github.com/FerretDB/FerretDB/internal/backends"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
+	"github.com/FerretDB/FerretDB/internal/util/logging"
 )
 
 // document represents a single OpLog collection record.
 type document struct {
 	o  *types.Document
 	ns string
-	op string // i, d, u
+	op string // i, d, u, c
 	o2 *types.Document
 }
 
@@ -51,4 +55,49 @@ func (d *document) marshal(t time.Time) (*types.Document, error) {
 	}
 
 	return res, nil
+}
+
+// appendCommand records a command that changed a database, in the shape
+// MongoDB uses: op "c" on "<db>.$cmd". Dropping a collection is
+// {drop: <name>}, dropping a database {dropDatabase: 1}. Without them a client
+// replaying the OpLog keeps documents of a collection that no longer exists.
+// Best-effort like the document records: a failure is logged, never returned,
+// and nothing is recorded while the OpLog does not exist or for the database
+// that holds it.
+func appendCommand(ctx context.Context, origB backends.Backend, l *slog.Logger, notify func(), dbName string, o *types.Document) {
+	if dbName == oplogDatabase {
+		return
+	}
+
+	db, err := origB.Database(oplogDatabase)
+	if err != nil {
+		l.ErrorContext(ctx, "Failed to open OpLog database", logging.Error(err))
+		return
+	}
+
+	cList, err := db.ListCollections(ctx, &backends.ListCollectionsParams{Name: oplogCollection})
+	if err != nil || len(cList.Collections) == 0 {
+		return
+	}
+
+	oplogC, err := db.Collection(oplogCollection)
+	if err != nil {
+		l.ErrorContext(ctx, "Failed to open OpLog collection", logging.Error(err))
+		return
+	}
+
+	d := &document{o: o, ns: dbName + ".$cmd", op: "c"}
+
+	doc, err := d.marshal(time.Now())
+	if err != nil {
+		l.ErrorContext(ctx, "Failed to create document", logging.Error(err))
+		return
+	}
+
+	if _, err = oplogC.InsertAll(ctx, &backends.InsertAllParams{Docs: []*types.Document{doc}}); err != nil {
+		l.ErrorContext(ctx, "Failed to insert documents", logging.Error(err))
+		return
+	}
+
+	notify()
 }
