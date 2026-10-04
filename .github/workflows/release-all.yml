@@ -4,7 +4,15 @@ name: Release All (FerretDB v1)
 # every platform (via build.sh) into ./dist/ as individual per-arch binaries
 # (ferretdb-<arch>[.exe]) and publishes a GitHub Release with each binary attached
 # separately — NO ferretdb.zip — at https://github.com/wekan/FerretDB/releases, so
-# each consumer downloads only the one binary for the platform it targets. The
+# each consumer downloads only the one binary for the platform it targets.
+#
+# Each binary is attached the moment it is built: the release is created before
+# the build starts, and build.sh hands every binary that compiled and passed its
+# telemetry audit to build/ferretdb/publish-release-asset.sh (via
+# FERRETDB_DIST_PUBLISH), which writes its .sha256sum and uploads both. So
+# ferretdb-amd64 is downloadable while the other platforms are still compiling.
+# The last step only attaches build.sh's README.md, writes the final notes and
+# checks that every built binary and checksum is on the release. The
 # release notes are:
 #   1. a fixed header line,
 #   2. "Platforms: ..." listing every arch built into ./dist/, and
@@ -90,11 +98,36 @@ jobs:
           echo "version=$V" >> "$GITHUB_OUTPUT"
           echo "Release version: $V"
 
-      - name: Build per-arch binaries for all platforms
+      # The release has to exist before the first binary is finished, because
+      # each binary is attached as soon as it is built (next step). Its notes
+      # are a placeholder until the last step replaces them.
+      - name: Create the GitHub Release so binaries can be attached as they are built
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$V" >/dev/null 2>&1; then
+            echo "Release $V exists; binaries will be attached to it as they are built."
+          else
+            gh release create "$V" --verify-tag --title "$V" \
+              --notes "FerretDB v1 (SQLite) per-arch binaries for $V are being built and attached one platform at a time. These notes are replaced with the CHANGELOG section when the build finishes."
+          fi
+
+      - name: Build per-arch binaries for all platforms, attaching each as it is built
+        id: build
         # build.sh cross-compiles every platform Go + modernc.org/sqlite support
         # into ./dist/ as individual ferretdb-<arch>[.exe] binaries (+ README).
         # Sequential to stay within the runner's memory (16 concurrent Go builds
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
+        # After each binary compiles and passes its telemetry audit, build.sh
+        # runs FERRETDB_DIST_PUBLISH on it: publish-release-asset.sh writes its
+        # .sha256sum and attaches both to the release, with retries.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
+          FERRETDB_DIST_PUBLISH: ${{ github.workspace }}/build/ferretdb/publish-release-asset.sh
         run: |
           set -euo pipefail
           mkdir -p .tools/tmp
@@ -102,7 +135,22 @@ jobs:
           python3 build/ferretdb/check-telemetry.py --source .
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
+          python3 -B tests/release-upload.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
+
+      # Runs even when the run is cancelled or the build failed part-way, as
+      # long as the release exists: every binary that FINISHED (compiled and
+      # passed its telemetry audit - build.sh's built.list) and is not on the
+      # release yet, because its upload was cut short, is attached now. On an
+      # ordinary run build.sh already attached everything and this does nothing.
+      # It cannot wait for steps.build.outcome == 'success': a cancel lands in
+      # the build step, and the binaries finished before it are the ones to save.
+      - name: Attach every finished binary, even when the run is cancelled
+        if: ${{ always() && steps.create.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
+        run: bash build/ferretdb/attach-finished.sh
 
       # A checksum beside every binary, in the "<sum>  <file>" format
       # sha256sum -c reads, so a consumer can tell a truncated or tampered
@@ -113,7 +161,10 @@ jobs:
       # One file per binary, not one for the release: a consumer fetches only
       # the platform it needs and should not have to pull a list covering
       # fifteen others to check it.
-      - name: Checksum every binary
+      #
+      # publish-release-asset.sh wrote each checksum when it attached the
+      # binary; this step checks that every binary has one and that it matches.
+      - name: Check every binary has a matching checksum
         run: |
           set -euo pipefail
           cd dist
@@ -121,14 +172,18 @@ jobs:
           n=0
           for f in ferretdb-*; do
             case "$f" in *.sha256sum) continue ;; esac
-            sha256sum "$f" > "${f}.sha256sum"
+            if [ ! -s "${f}.sha256sum" ]; then
+              echo "::error::$f has no ${f}.sha256sum - it was not attached."
+              exit 1
+            fi
+            sha256sum -c "${f}.sha256sum"
             n=$((n + 1))
           done
           if [ "$n" -eq 0 ]; then
             echo "::error::build.sh produced no ferretdb-* binary to checksum."
             exit 1
           fi
-          echo "Checksummed $n binaries:"
+          echo "Checked $n binaries:"
           cat ./*.sha256sum
 
       - name: Compose release notes (header + platforms + CHANGELOG section)
@@ -185,24 +240,28 @@ jobs:
           cat release-notes.md
           echo "notes_file=release-notes.md" >> "$GITHUB_OUTPUT"
 
-      - name: Create/update GitHub Release with the per-arch binaries
+      # The binaries and checksums are already attached, one by one, by the
+      # build step. This attaches build.sh's README.md and replaces the
+      # placeholder notes.
+      - name: Attach the README and publish the release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"
           NOTES_FILE="${{ steps.notes.outputs.notes_file }}"
-          # Attach every per-arch binary (and the README.md) from ./dist/ as an
-          # individual release asset; --clobber replaces same-named assets on re-run.
-          assets=(dist/ferretdb-* dist/README.md)
-          if gh release view "$V" >/dev/null 2>&1; then
-            gh release upload "$V" "${assets[@]}" --clobber
-            gh release edit "$V" --title "$V" --notes-file "$NOTES_FILE"
-          else
-            gh release create "$V" "${assets[@]}" \
-              --title "$V" \
-              --notes-file "$NOTES_FILE"
-          fi
+          bash build/ferretdb/publish-release-asset.sh dist/README.md
+          gh release edit "$V" --title "$V" --notes-file "$NOTES_FILE"
+
+      # The missing-asset report. Runs on a cancelled or failed run too, so it
+      # says which finished binaries are on the release; fails if any is not.
+      - name: Check every finished binary and checksum is on the release
+        if: ${{ always() && steps.create.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
+        run: bash build/ferretdb/attach-finished.sh --check
 
       - name: Trigger the Docker image build for this release
         # Build the multi-arch Docker image from the per-arch binaries just published.

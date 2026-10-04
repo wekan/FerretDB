@@ -251,6 +251,21 @@ build_ferretdb_target() {
     chmod +x "$out/ferretdb-$name$ext"
     printf '%s\n' "$name" >> "$rep/built.list"
     info "  built   $name"
+    # FERRETDB_DIST_PUBLISH names a command that attaches one finished binary to
+    # the GitHub Release (build/ferretdb/publish-release-asset.sh in the release
+    # workflows). It runs here, right after this binary compiled and passed its
+    # telemetry audit, so each platform appears on the release as soon as it is
+    # ready instead of after every other platform has been built. Unset => only
+    # build, which is what a local `./build.sh dist` does.
+    if [ -n "${FERRETDB_DIST_PUBLISH:-}" ]; then
+      if "$FERRETDB_DIST_PUBLISH" "$out/ferretdb-$name$ext"; then
+        info "  published $name"
+      else
+        printf '%s\n' "$name" >> "$rep/publish-failed.list"
+        warn "  could not publish $name"
+        return 1
+      fi
+    fi
   else
     printf '%s\n' "$name" >> "$rep/failed.list"
     warn "  skipped $name (does not compile) — see $rep/$name.log"
@@ -302,6 +317,12 @@ act_dist() {
   # Child processes can fail in either matrix mode. Never swallow audit failures.
   if [ -s "$rep/telemetry-failed.list" ]; then
     err "::error::Telemetry audit failed for: $(tr '\n' ' ' < "$rep/telemetry-failed.list")"
+    return 1
+  fi
+  # A binary that built but could not be attached is a release with a hole in
+  # it. Keep building the rest (above), then fail so the run is not green.
+  if [ -s "$rep/publish-failed.list" ]; then
+    err "::error::Built but could not attach to the release: $(tr '\n' ' ' < "$rep/publish-failed.list")"
     return 1
   fi
 

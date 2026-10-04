@@ -4,7 +4,7 @@ name: Release All Missing (FerretDB v1)
 #
 # WHY: release-all.yml cross-compiles all platforms sequentially - they are
 # built one at a time on purpose, because concurrent Go builds risk
-# running the runner out of memory - and then uploads every one with --clobber.
+# running the runner out of memory - attaching each one as soon as it is built.
 # When a single platform is missing, or an upload failed, or a run was
 # cancelled, that whole sequence had to run again to produce the one binary that
 # was absent, replacing fifteen others' bytes with identical bytes on the way.
@@ -14,6 +14,11 @@ name: Release All Missing (FerretDB v1)
 # those targets and reports them as "have". There is no second copy of the
 # target list here - it stays in build.sh's FERRETDB_DIST_TARGETS, where the
 # ordinary release build reads it too.
+#
+# Each rebuilt binary is attached as soon as it is built, the same way
+# release-all.yml does it: build.sh runs FERRETDB_DIST_PUBLISH
+# (build/ferretdb/publish-release-asset.sh) on every binary that compiled and
+# passed its telemetry audit, which writes the .sha256sum and uploads both.
 #
 # A platform counts as present only when BOTH ferretdb-<arch>[.exe] and its
 # .sha256sum are on the release. A binary whose checksum upload failed is the
@@ -96,11 +101,31 @@ jobs:
           echo "$V already carries $n asset(s)."
           echo "### $V: $n asset(s) already published" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Build only the missing platforms
+      # Binaries are attached as each one is built (next step), so the release
+      # has to exist first. Created only when there is none for this tag.
+      - name: Create the GitHub Release if there is none
+        id: create
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$V" >/dev/null 2>&1; then
+            gh release create "$V" --verify-tag --title "$V" \
+              --notes "FerretDB v1 (SQLite) per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
+          fi
+
+      - name: Build only the missing platforms, attaching each as it is built
+        id: build
         # The same ./build.sh dist-seq the full release runs; the skip list is
         # the only difference, and build.sh does the comparing.
+        # FERRETDB_DIST_PUBLISH attaches each binary and its checksum to the
+        # release right after that binary is built and audited.
         env:
           FERRETDB_DIST_SKIP_LIST: ${{ github.workspace }}/existing.txt
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
+          FERRETDB_DIST_PUBLISH: ${{ github.workspace }}/build/ferretdb/publish-release-asset.sh
         run: |
           set -euo pipefail
           mkdir -p .tools/tmp
@@ -108,38 +133,74 @@ jobs:
           python3 build/ferretdb/check-telemetry.py --source .
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
+          python3 -B tests/release-upload.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
-      - name: Checksum the binaries this run produced
+      # Runs even when the run is cancelled or the build failed part-way: every
+      # binary that FINISHED (build.sh's built.list) and is not on the release
+      # yet is attached now. A cancel lands in the build step, so this cannot
+      # wait for steps.build.outcome == 'success'.
+      - name: Attach every finished binary, even when the run is cancelled
+        if: ${{ always() && steps.create.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FERRETDB_RELEASE_TAG: ${{ steps.ver.outputs.version }}
+        run: bash build/ferretdb/attach-finished.sh
+
+      - name: Check the checksums of the binaries this run produced
         id: sums
         run: |
           set -euo pipefail
           cd dist
           shopt -s nullglob
           n=0
+          # publish-release-asset.sh wrote each checksum when it attached the
+          # binary; check every binary has one and that it matches.
           for f in ferretdb-*; do
             case "$f" in *.sha256sum) continue ;; esac
-            sha256sum "$f" > "${f}.sha256sum"
+            if [ ! -s "${f}.sha256sum" ]; then
+              echo "::error::$f has no ${f}.sha256sum - it was not attached."
+              exit 1
+            fi
+            sha256sum -c "${f}.sha256sum"
             n=$((n + 1))
           done
           echo "built=$n" >> "$GITHUB_OUTPUT"
-          echo "Checksummed $n new binaries."
+          echo "Checked $n new binaries."
           # Zero is a legitimate outcome here, unlike in release-all.yml where it
           # means the build produced nothing: it means the release was already
           # complete. build.sh writes a README.md into dist/ either way, which is
           # why this counts ferretdb-* rather than everything in the directory.
 
-      - name: Upload what was missing, and say what was filled in
+      # The build step already attached every binary and checksum it made.
+      # This checks they are on the release and says what was filled in.
+      - name: Check what was filled in, and say so
+        if: ${{ always() && steps.create.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           V: ${{ steps.ver.outputs.version }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
         run: |
           set -euo pipefail
           shopt -s nullglob
           # Only the binaries and their checksums - NOT build.sh's README.md,
-          # which the full release attaches and which is not missing.
-          assets=( dist/ferretdb-* )
+          # which the full release attaches and which is not missing. Taken
+          # from build.sh's list of FINISHED binaries, not a dist/ glob, so a
+          # compile a cancel interrupted is not counted as added.
+          assets=()
+          if [ -s tmp/ferretdb-dist/built.list ]; then
+            while IFS= read -r name; do
+              [ -n "$name" ] || continue
+              for f in "dist/ferretdb-$name" "dist/ferretdb-$name.exe"; do
+                [ -f "$f" ] && assets+=( "$f" "$f.sha256sum" )
+              done
+            done < tmp/ferretdb-dist/built.list
+          fi
 
+          if [ "${#assets[@]}" -eq 0 ] && [ "$BUILD_OUTCOME" != success ]; then
+            echo "::warning::The build did not finish ($BUILD_OUTCOME) and no binary was completed."
+            exit 0
+          fi
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "::notice::$V is already complete - nothing to build."
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -147,14 +208,11 @@ jobs:
             exit 0
           fi
 
-          # Complete binary/checksum pairs were skipped above. Replace an
-          # incomplete pair together: a rebuilt binary needs its own checksum.
-          if gh release view "$V" >/dev/null 2>&1; then
-            gh release upload "$V" "${assets[@]}" --clobber
-          else
-            gh release create "$V" "${assets[@]}" --title "$V" \
-              --notes "FerretDB v1 (SQLite) per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
-          fi
+          # Complete binary/checksum pairs were skipped above; an incomplete
+          # pair was rebuilt and both halves re-attached together. Checked
+          # against build.sh's list of FINISHED binaries, so on a cancelled run
+          # a half-written file in dist/ is not reported as missing.
+          FERRETDB_RELEASE_TAG="$V" bash build/ferretdb/attach-finished.sh --check
 
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Added ${#assets[@]} file(s):" >> "$GITHUB_STEP_SUMMARY"

@@ -2,6 +2,26 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Attach each release binary as soon as it is built, and keep what finished
+  when a release run is cancelled.** `release-all.yml` built all 25 platforms
+  one after another and uploaded them in its last step, so nothing could be
+  downloaded until every platform had compiled, and a cancelled run attached
+  nothing at all. The release is now created before the build, and `build.sh`
+  hands each binary that compiled and passed its telemetry audit to
+  `build/ferretdb/publish-release-asset.sh`, which writes its `.sha256sum` and
+  uploads both with `--clobber` and retries. `release-all-missing.yml` does the
+  same for what it rebuilds. A catch-up step and the missing-asset check run
+  with `always()` once the release exists, so a cancelled or failed run still
+  attaches every binary that finished; a half-compiled or unaudited file is
+  never attached. What is built, the versioning, tagging and Docker dispatch
+  are unchanged. `tests/release-upload.py` pins the order, the retries, the
+  cancel path, and that no unfinished file and no bulk upload come back by
+  @xet7. Thanks to xet7.
+
 ## [v1.87.0](https://github.com/wekan/FerretDB/releases/tag/v1.87.0) (2026-10-03)
 
 ### Fixed 🐛
