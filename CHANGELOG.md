@@ -22,6 +22,33 @@
   cancel path, and that no unfinished file and no bulk upload come back by
   @xet7. Thanks to xet7.
 
+- **Sync the integration module with the main module after the Dependabot
+  bumps, and fail the release when it lags again.** The main-module bump
+  moved OpenTelemetry to 1.47.0, SAP go-hdb to 1.19.0, modernc sqlite to
+  1.60.1 and their indirect dependencies, but integration/go.mod kept the old
+  versions, so read-only builds there stopped with "updates to go.mod needed" -
+  the same drift as after the go-hdb 1.18.11 bump. `go mod tidy` brings it in
+  line; `tests/integration-module-sync.py`, run by both release workflows,
+  fails when any requirement shared with the main module is older in the
+  integration module. Telemetry stays off by default after these bumps: the
+  source and binary telemetry audits pass, the usage reporter stays locked
+  disabled, and the OTLP trace exporter is still built only for an explicit
+  `--otel-traces-url` by @xet7. Thanks to xet7.
+
+- **Bump SAP go-hdb from 1.18.11 to 1.19.0, prometheus/common from 0.71.0 to
+  0.72.0, OpenTelemetry from 1.46.0 to 1.47.0 and modernc sqlite from 1.59.0
+  to 1.60.1** in the main module (#38) by @dependabot. Thanks to dependabot.
+
+- **Bump OpenTelemetry from 1.46.0 to 1.47.0 and otelmongo from 0.71.0 to
+  0.72.0** in the integration module (#37) by @dependabot. Thanks to
+  dependabot.
+
+- **Bump go-task from 3.53.1 to 3.54.0 and golang.org/x/tools from 0.50.0 to
+  0.51.0** in the tools module (#39) by @dependabot. Thanks to dependabot.
+
+- **Bump mongo from 8.3.11 to 9.0.2 and trivy from 0.74.0 to 0.75.0** in the
+  build dependencies images (#40) by @dependabot. Thanks to dependabot.
+
 ## [v1.87.0](https://github.com/wekan/FerretDB/releases/tag/v1.87.0) (2026-10-03)
 
 ### Fixed 🐛

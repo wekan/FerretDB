@@ -136,6 +136,7 @@ jobs:
           python3 -B tests/release-telemetry.py
           python3 -B tests/telemetry-build.py
           python3 -B tests/release-upload.py
+          python3 -B tests/integration-module-sync.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       # Runs even when the run is cancelled or the build failed part-way, as
