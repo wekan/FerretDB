@@ -10,6 +10,9 @@ stage="$(mktemp -d "$TMPDIR/ferretdb-node.XXXXXXXX")"
 trap 'rm -rf "$stage"' EXIT
 if [[ -z "$version" ]]; then
   tar -xzf "$out/mongosh-ppc64le.tgz" -C "$stage"
+  # Pulled with retries and Docker Hub's mirrors first: a bare `docker run`
+  # pulls once, and Docker Hub's anonymous pull limit stopped a release here.
+  bash "$(dirname "$0")/pull-image.sh" debian:trixie-slim linux/ppc64le >&2
   version="$(docker run --rm --platform linux/ppc64le \
     -v "$stage:/runtime:ro" debian:trixie-slim sh -ec '
       apt-get update >&2

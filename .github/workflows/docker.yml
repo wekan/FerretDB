@@ -50,14 +50,50 @@ jobs:
           TMPDIR="$PWD/.tools/tmp" bash integration/docker_mongosh_test.sh
           TMPDIR="$PWD/.tools/tmp" bash tests/release-version.sh
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/docker-publish.py
+          TMPDIR="$PWD/.tools/tmp" python3 -B tests/pull-image.py
+          TMPDIR="$PWD/.tools/tmp" bash tests/official-ppc64le-node.sh
 
+      # Every image this job starts from comes from Docker Hub, and the v1.89.0
+      # run died on Docker Hub's anonymous pull limit before building anything.
+      # Pulls are made as the Docker Hub account when its secret is there (a far
+      # higher limit), and the images are pulled through pull-image.sh, which
+      # retries and then takes the same image from mirror.gcr.io or Amazon ECR
+      # Public. Logging in here is only for pulling: publish-docker.sh still
+      # logs in to each registry itself before it pushes.
+      - name: Log in to Docker Hub for pulls (when the secret is set)
+        env:
+          DOCKERHUB_AUTH: ${{ secrets.DOCKERHUB_AUTH }}
+        run: |
+          set +x
+          creds="$(printf '%s' "${DOCKERHUB_AUTH:-}" | base64 -d 2>/dev/null || true)"
+          if [[ "$creds" == *:* && -n "${creds%%:*}" && -n "${creds#*:}" ]] \
+            && printf '%s' "${creds#*:}" | timeout 120 docker login docker.io -u "${creds%%:*}" --password-stdin; then
+            echo 'Pulling from Docker Hub as the account.'
+          else
+            echo '::warning::Pulling from Docker Hub anonymously; pull-image.sh falls back to its mirrors.'
+          fi
+
+      - name: Pull the images the build starts from
+        run: |
+          set -euo pipefail
+          bash build/ferretdb/pull-image.sh tonistiigi/binfmt:latest
+          bash build/ferretdb/pull-image.sh moby/buildkit:buildx-stable-1
+
+      # What docker/setup-qemu-action does, from the image pulled above.
       - name: Set up target runtime emulation
-        uses: docker/setup-qemu-action@v4
-        with:
-          platforms: arm,arm64,ppc64le,s390x,riscv64
+        run: docker run --privileged --rm tonistiigi/binfmt:latest --install arm,arm64,ppc64le,s390x,riscv64
 
+      # The builder runs the BuildKit image pulled above (buildx uses a local
+      # image as it is). Its own pulls - the FROM images of Dockerfile.release -
+      # go to mirror.gcr.io first and to Docker Hub when the mirror does not
+      # have them.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: image=moby/buildkit:buildx-stable-1
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["mirror.gcr.io"]
 
       - name: Resolve release tag and download the Linux per-arch binaries
         env:

@@ -28,11 +28,19 @@ tar -czf "$work/dist/mongosh-ppc64le.tgz" -C "$work/source" mongosh-ppc64le
 cat > "$work/bin/docker" <<'DOCKER'
 #!/usr/bin/env bash
 set -eu
+# The image is pulled first, through pull-image.sh, for the same platform.
+if [[ "$1" = pull ]]; then
+  [[ "$*" = 'pull --platform linux/ppc64le debian:trixie-slim' ]]
+  echo pulled >> "$PULL_LOG"
+  exit 0
+fi
+[[ -s "$PULL_LOG" ]]
 [[ "$1 $2 $3 $4 $5" = 'run --rm --platform linux/ppc64le -v' ]]
 [[ "$*" = *'/runtime/mongosh-ppc64le/bin/node --version'* ]]
 printf 'v26.9.0\n'
 DOCKER
 chmod +x "$work/bin/docker"
+export PULL_LOG="$work/pulls"
 bash "$helper" "$work/dist"
 bash "$helper" "$work/dist" v26.9.0
 [[ "$("$work/dist/official-node-ppc64le")" = v26.9.0 ]]
