@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Pull the Docker image job's base images with retries and Docker Hub
+  mirrors ([678ee35b](https://github.com/wekan/FerretDB/commit/678ee35b)).** The v1.89.0
+  image run died before building anything on Docker Hub's anonymous pull limit.
+  The job now logs in to Docker Hub for pulls when its secret is set, and pulls
+  binfmt, BuildKit and the PowerPC check's Debian image through
+  `build/ferretdb/pull-image.sh`, which retries and falls back to mirror.gcr.io
+  and Amazon ECR Public; BuildKit takes mirror.gcr.io as its Docker Hub mirror
+  for the `FROM` images. `tests/pull-image.py` covers each case with negative
+  tests, by @xet7. Thanks to xet7.
+
 ## [v1.89.0](https://github.com/wekan/FerretDB/releases/tag/v1.89.0) (2026-10-10)
 
 ### Fixed 🐛
