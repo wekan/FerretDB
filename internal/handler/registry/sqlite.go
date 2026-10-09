@@ -52,6 +52,7 @@ func init() {
 
 			DisablePushdown:         opts.DisablePushdown,
 			EnableNestedPushdown:    opts.EnableNestedPushdown,
+			NestedPushdownSuperset:  true,
 			CappedCleanupPercentage: opts.CappedCleanupPercentage,
 			CappedCleanupInterval:   opts.CappedCleanupInterval,
 			TTLCleanupInterval:      opts.TTLCleanupInterval,

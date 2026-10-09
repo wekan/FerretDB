@@ -65,6 +65,7 @@ type querySpeed struct {
 	filterFields   string
 	sortFields     string
 	index          string
+	sql            string
 	limit          int64
 	queryDuration  time.Duration
 	decodeDuration time.Duration
@@ -229,6 +230,7 @@ func (iter *queryIterator) close() {
 				slog.String("filter_fields", iter.speed.filterFields),
 				slog.String("sort_fields", iter.speed.sortFields),
 				slog.String("index", iter.speed.index),
+				slog.String("sql", iter.speed.sql),
 				slog.Int64("limit", iter.speed.limit),
 				slog.Int64("candidate_rows", iter.speed.candidateRows),
 				slog.Float64("query_ms", float64(iter.speed.queryDuration.Microseconds())/1000),

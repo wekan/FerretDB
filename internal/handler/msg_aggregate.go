@@ -282,11 +282,15 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 		// only documents stages or no stages - fetch documents from the DB and apply stages to them
 		qp := &backends.QueryParams{Operation: "aggregate"}
 
+		// A counting pipeline ($match ... then $count, or $group {_id: const,
+		// n: {$sum: 1}}) reads only its $match filters; decode just those.
+		qp.DecodeFields = countPipelineDecodeFields(aggregationStages)
+
 		if !h.DisablePushdown {
 			qp.Filter = filter
 		}
 
-		if !h.EnableNestedPushdown && filter != nil {
+		if !h.EnableNestedPushdown && !h.NestedPushdownSuperset && filter != nil {
 			qp.Filter = filter.DeepCopy()
 
 			for _, k := range qp.Filter.Keys() {

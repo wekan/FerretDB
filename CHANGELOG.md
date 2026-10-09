@@ -2,6 +2,43 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Push dotted-path filters such as `{'meta.cardId': {$in: [...]}}` down to
+  SQLite, safely.** The handler removed every dotted key from the filter it
+  passed to the backend unless the experimental nested pushdown was on, so
+  each such `find` read and decoded the whole collection in Go: opening one
+  large WeKan board (wekan/wekan#6745) ran 51 full scans of a 4,000-document
+  attachments collection, 3.6 s of decoding. The SQLite pushdown of a dotted
+  path is now a superset of MongoDB's match - every condition is ORed with
+  `path IS NULL`, which keeps a document whose path runs through an array of
+  documents, where the `->` chain yields NULL but MongoDB still matches - and
+  that arm reads the same expression, so SQLite answers it from the dotted
+  expression index (MULTI-INDEX OR). With that, the SQLite handler passes
+  dotted keys to the backend by default; the other backends keep removing
+  them. `TestQueryDottedPathThroughArray` pins that the array row stays a
+  candidate and another value does not by @xet7. Thanks to xet7.
+
+- **Decode only the filter's fields for counts.** `count`, and an aggregation
+  that only counts (`$match`, `$skip`, `$limit`, then `$count` or a `$group`
+  with a constant `_id` and `{$sum: <number>}` accumulators - what drivers
+  send for `countDocuments`), decoded every candidate document completely,
+  long text fields included, to read the few fields the filter names. They now
+  decode just those fields and `_id`. A filter with `$expr`, `$where`,
+  `$jsonSchema`, `$text` or `$function` reads fields its keys do not name, so
+  it still decodes whole documents - and `find` with an inclusion projection,
+  which already decoded only the projected, filter and sort fields, now does
+  the same for such filters instead of missing the fields they read by @xet7.
+  Thanks to xet7.
+
+- **Show the SQL statement in `DEBUGSPEED` query logs.** The log named the
+  filter and sort fields and the index, but not the `WHERE` and `ORDER BY`
+  SQLite actually ran, which is what tells a full scan from an index search.
+  The statement text holds only `?` placeholders, never a filter value, so the
+  log stays shareable by @xet7. Thanks to xet7.
+
 ## [v1.88.0](https://github.com/wekan/FerretDB/releases/tag/v1.88.0) (2026-10-07)
 
 ### Other Changes 🤖

@@ -246,7 +246,10 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 		Operation: "find",
 	}
 
-	if _, inclusion, projectionErr := common.ValidateProjection(params.Projection); projectionErr == nil && inclusion {
+	// A filter with $expr / $where / ... reads fields its keys do not name, so
+	// it needs the whole document even under an inclusion projection.
+	_, inclusion, projectionErr := common.ValidateProjection(params.Projection)
+	if projectionErr == nil && inclusion && !filterNeedsWholeDocument(params.Filter) {
 		// ProjectDocument always reads _id first because MongoDB includes it by
 		// default and only then applies an explicit {_id: 0}. Keep it available in
 		// both cases; omitting it makes the projection iterator panic.
@@ -272,7 +275,7 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 		qp.Filter = params.Filter
 	}
 
-	if !h.EnableNestedPushdown && params.Filter != nil {
+	if !h.EnableNestedPushdown && !h.NestedPushdownSuperset && params.Filter != nil {
 		qp.Filter = params.Filter.DeepCopy()
 
 		for _, k := range qp.Filter.Keys() {

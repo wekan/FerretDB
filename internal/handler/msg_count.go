@@ -70,6 +70,9 @@ func (h *Handler) MsgCount(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMs
 		qp.Filter = params.Filter
 	}
 
+	// Only the filter's fields are read below (filter, skip, limit, count).
+	qp.DecodeFields = filterDecodeFields(params.Filter)
+
 	queryRes, err := c.Query(connCtx, &qp)
 	if err != nil {
 		return nil, lazyerrors.Error(err)

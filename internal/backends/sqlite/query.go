@@ -603,7 +603,28 @@ func jsonPathExpr(key string) string {
 // path, so they stay in the Go filter. `expr` is the nested chain; the key is passed
 // as "" so equality/inCondition use their non-_id (array-containment) form — a dotted
 // path is never _id. Still a SUPERSET, so the Go filter stays authoritative.
+//
+// MongoDB's dotted matching also walks through arrays ("a.b" matches
+// {a: [{b: x}]}), which the -> chain does not: on an array, or wherever the
+// path stops resolving, it yields NULL. Every condition is therefore ORed with
+// `expr IS NULL`, so such a row stays a candidate for the Go filter instead of
+// being dropped. That arm reads the same expression, so SQLite still answers
+// the whole condition from the dotted expression index (MULTI-INDEX OR) - and
+// it is what makes it safe for the handler to pass dotted keys here at all
+// (handler.NewOpts.NestedPushdownSuperset). An empty $in ("0") matches nothing
+// even through an array and is returned as it is.
 func pushdownDottedFieldCondition(expr string, v any) (string, []any, bool) {
+	cond, args, ok := dottedFieldMatch(expr, v)
+	if !ok || cond == "0" {
+		return cond, args, ok
+	}
+
+	return fmt.Sprintf(`(%s OR %s IS NULL)`, cond, expr), args, true
+}
+
+// dottedFieldMatch is pushdownDottedFieldCondition without the unresolved-path
+// arm: the condition for a dotted path that resolves to a value.
+func dottedFieldMatch(expr string, v any) (string, []any, bool) {
 	switch val := v.(type) {
 	case string:
 		if !pushdownSafeString(val) {

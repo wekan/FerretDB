@@ -526,9 +526,12 @@ func TestPrepareWhereClause(t *testing.T) {
 			// {'meta.cardId': 'C'} — a Meteor-Files attachment lookup. Pushes down as
 			// the NESTED expression that matches the meta.cardId expression index, so
 			// the attachments collection is no longer full-scanned on every poll.
+			// The IS NULL arm keeps a row whose path runs through an array
+			// ({meta: [{cardId: 'C'}]}), where the -> chain yields NULL but
+			// MongoDB still matches.
 			filter: must.NotFail(types.NewDocument("meta.cardId", "C")),
 			expectWhere: ` WHERE ` + fmt.Sprintf(
-				`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`,
+				`((%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\')) OR %[1]s IS NULL)`,
 				metadata.DefaultColumn+`->"meta"->"cardId"`),
 			expectArgs: []any{`"C"`},
 		},
@@ -536,9 +539,15 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument("meta.cardId",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
 			expectWhere: ` WHERE ` + fmt.Sprintf(
-				`(%[1]s IN (?, ?) OR (%[1]s >= '[' AND %[1]s < '\'))`,
+				`((%[1]s IN (?, ?) OR (%[1]s >= '[' AND %[1]s < '\')) OR %[1]s IS NULL)`,
 				metadata.DefaultColumn+`->"meta"->"cardId"`),
 			expectArgs: []any{`"a"`, `"b"`},
+		},
+		"DottedPathEmptyInMatchesNothing": {
+			// An empty $in matches nothing, through an array or not: no IS NULL arm.
+			filter: must.NotFail(types.NewDocument("meta.cardId",
+				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray()))))),
+			expectWhere: ` WHERE 0`,
 		},
 		"DottedPathRangeNotPushed": {
 			// a range on a dotted path would need a scalar ->> on the raw key, which

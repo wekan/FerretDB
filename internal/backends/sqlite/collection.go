@@ -135,13 +135,17 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	iter := newQueryIterator(ctx, rows, params.OnlyRecordIDs, params.DecodeFields)
 	if os.Getenv("DEBUGSPEED") == "true" {
 		iter = newSpeedQueryIterator(iter, &querySpeed{
-			logger:        c.r.Logger(),
-			database:      c.dbName,
-			collection:    c.name,
-			operation:     params.Operation,
-			filterFields:  queryFieldNames(params.Filter),
-			sortFields:    queryFieldNames(params.Sort),
-			index:         index,
+			logger:       c.r.Logger(),
+			database:     c.dbName,
+			collection:   c.name,
+			operation:    params.Operation,
+			filterFields: queryFieldNames(params.Filter),
+			sortFields:   queryFieldNames(params.Sort),
+			index:        index,
+			// The statement text holds only `?` placeholders, never a filter
+			// value, so it is as shareable as the field names above - and it
+			// is what tells which WHERE / ORDER BY SQLite actually ran.
+			sql:           q,
 			limit:         params.Limit,
 			queryDuration: queryDuration,
 		})

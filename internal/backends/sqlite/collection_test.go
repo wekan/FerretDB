@@ -363,6 +363,60 @@ func TestQueryOrWithDottedArrayPaths(t *testing.T) {
 	assert.False(t, explainRes.FilterPushdown)
 }
 
+// TestQueryDottedPathThroughArray verifies that a pushed-down dotted path is a
+// superset of MongoDB's match: a document whose path runs through an array of
+// documents is still a candidate, and one with a different value is not.
+func TestQueryDottedPathThroughArray(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	b, err := NewBackend(&NewBackendParams{
+		URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100,
+	})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: []*types.Document{
+		must.NotFail(types.NewDocument("_id", "object", "meta", must.NotFail(types.NewDocument("cardId", "C")))),
+		must.NotFail(types.NewDocument("_id", "array", "meta", must.NotFail(types.NewArray(
+			must.NotFail(types.NewDocument("cardId", "C")),
+		)))),
+		must.NotFail(types.NewDocument("_id", "other", "meta", must.NotFail(types.NewDocument("cardId", "D")))),
+	}})
+	require.NoError(t, err)
+
+	for name, filter := range map[string]*types.Document{
+		"Equality": must.NotFail(types.NewDocument("meta.cardId", "C")),
+		"In": must.NotFail(types.NewDocument("meta.cardId",
+			must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("C", "X")))))),
+	} {
+		t.Run(name, func(t *testing.T) {
+			res, err := coll.Query(ctx, &backends.QueryParams{Filter: filter})
+			require.NoError(t, err)
+			docs, err := iterator.ConsumeValues[struct{}, *types.Document](res.Iter)
+			require.NoError(t, err)
+
+			var ids []string
+			for _, doc := range docs {
+				ids = append(ids, must.NotFail(doc.Get("_id")).(string))
+			}
+
+			assert.ElementsMatch(t, []string{"object", "array"}, ids,
+				"the array row must stay a candidate and the other value must not")
+
+			explainRes, err := coll.Explain(ctx, &backends.ExplainParams{Filter: filter})
+			require.NoError(t, err)
+			assert.True(t, explainRes.FilterPushdown)
+		})
+	}
+}
+
 // TestQueryElemMatchPushdown verifies that all pushed predicates are applied to
 // one array element. A document with the requested values split across two
 // elements must not pass the SQLite WHERE clause.

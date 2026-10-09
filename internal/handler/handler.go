@@ -105,8 +105,15 @@ type NewOpts struct {
 	StateProvider *state.Provider
 
 	// test options
-	DisablePushdown         bool
-	EnableNestedPushdown    bool
+	DisablePushdown      bool
+	EnableNestedPushdown bool
+
+	// NestedPushdownSuperset is set by a backend whose pushdown of a dotted
+	// path ("a.b") is a superset of what MongoDB matches - it keeps the rows
+	// where the path does not resolve to a single value (an array on the way,
+	// a missing field) - so dotted filter keys can be passed to it safely.
+	// Without it they are removed and filtered in Go only.
+	NestedPushdownSuperset  bool
 	CappedCleanupInterval   time.Duration
 	CappedCleanupPercentage uint8
 	TTLCleanupInterval      time.Duration

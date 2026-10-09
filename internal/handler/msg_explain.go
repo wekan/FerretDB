@@ -94,7 +94,7 @@ func (h *Handler) MsgExplain(connCtx context.Context, msg *wire.OpMsg) (*wire.Op
 		qp.Filter = params.Filter
 	}
 
-	if !h.EnableNestedPushdown && params.Filter != nil {
+	if !h.EnableNestedPushdown && !h.NestedPushdownSuperset && params.Filter != nil {
 		qp.Filter = params.Filter.DeepCopy()
 
 		for _, k := range qp.Filter.Keys() {
