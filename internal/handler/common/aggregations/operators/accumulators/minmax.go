@@ -30,9 +30,11 @@ import (
 // Both are the same walk over the group with one comparison flipped, so they are
 // one type: whichever of the accumulated values sorts lowest (or highest) in
 // MongoDB's total ordering of BSON types, which is what types.CompareOrder
-// implements. Documents where the expression resolves to nothing are skipped -
-// they are not "smaller than everything" - and a group where nothing resolved
-// returns Null, as MongoDB does.
+// implements. Documents where the expression resolves to nothing OR to null are
+// skipped - they are not "smaller than everything" - and a group where nothing
+// non-null resolved returns Null, as MongoDB does: "If some, but not all,
+// documents ... have either a null value for the field or are missing the field,
+// the $min operator only considers the non-null and the non-missing values."
 type minMax struct {
 	expression *aggregations.Expression
 	operator   operators.Operator
@@ -126,8 +128,8 @@ func (m *minMax) Accumulate(iter types.DocumentsIterator) (any, error) {
 			value = m.value
 		}
 
-		// Missing is skipped; an explicit null is a value, and sorts below numbers.
-		if value == nil {
+		// Missing and null are both skipped, as in MongoDB.
+		if value == nil || value == types.Null {
 			continue
 		}
 

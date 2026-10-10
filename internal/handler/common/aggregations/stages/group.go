@@ -128,11 +128,16 @@ func (g *group) Process(ctx context.Context, iter types.DocumentsIterator, close
 	for _, groupedDocument := range groupedDocuments {
 		doc := must.NotFail(types.NewDocument("_id", groupedDocument.groupID))
 
-		groupIter := iterator.Values(iterator.ForSlice(groupedDocument.documents))
-		defer groupIter.Close()
-
 		for _, accumulation := range g.groupBy {
+			// Each accumulator walks the group's documents with its OWN iterator,
+			// as $bucket's do (buildBucketOutput). One iterator shared by all of
+			// them was exhausted by the first, so every later accumulator of the
+			// stage saw an empty group: {$avg, $min, $max} answered $min and $max
+			// null, and {$first, $last, $push} answered $last null and $push [].
+			groupIter := iterator.Values(iterator.ForSlice(groupedDocument.documents))
 			out, err := accumulation.accumulator.Accumulate(groupIter)
+			groupIter.Close()
+
 			if err != nil {
 				// existing accumulators do not return error
 				return nil, processGroupStageError(err)

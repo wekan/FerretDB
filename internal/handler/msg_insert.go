@@ -180,6 +180,10 @@ func (h *Handler) MsgInsert(connCtx context.Context, msg *wire.OpMsg) (*wire.OpM
 		}
 	}
 
+	if inserted > 0 {
+		h.trimCappedByCount(connCtx, db, params.Collection)
+	}
+
 	res := must.NotFail(types.NewDocument(
 		"n", inserted,
 	))

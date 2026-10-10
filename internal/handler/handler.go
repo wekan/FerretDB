@@ -818,6 +818,41 @@ func getDocCleanupCount(cInfo *backends.CollectionInfo, cStats *backends.Collect
 	return (cStats.CountDocuments - cInfo.CappedDocuments)
 }
 
+// trimCappedByCount keeps a capped collection created with `max` at that many
+// documents right after an insert, by deleting the oldest, as MongoDB does: a
+// read straight after the insert sees only the newest `max`. The periodic
+// cleanup (runCappedCleanup) still trims by SIZE, which MongoDB also does at
+// once but which needs the size estimate the cleanup computes. A failure here
+// is logged and never fails the insert that has already succeeded.
+func (h *Handler) trimCappedByCount(ctx context.Context, db backends.Database, name string) {
+	list, err := db.ListCollections(ctx, &backends.ListCollectionsParams{Name: name})
+	if err != nil || len(list.Collections) != 1 {
+		return
+	}
+
+	cInfo := list.Collections[0]
+	if !cInfo.Capped() || cInfo.CappedDocuments <= 0 {
+		return
+	}
+
+	coll, err := db.Collection(name)
+	if err != nil {
+		return
+	}
+
+	stats, err := coll.Stats(ctx, &backends.CollectionStatsParams{Refresh: true})
+	if err != nil {
+		h.L.WarnContext(ctx, "trimCappedByCount: stats failed", logging.Error(err))
+		return
+	}
+
+	if count := getDocCleanupCount(&cInfo, stats); count > 0 {
+		if err = deleteFirstNDocuments(ctx, coll, count); err != nil {
+			h.L.WarnContext(ctx, "trimCappedByCount: delete failed", logging.Error(err))
+		}
+	}
+}
+
 // getSizeCleanupCount returns the number of documents to be deleted during capped collection cleanup
 // based collection size, capped configuration and cleanup percentage.
 func getSizeCleanupCount(cInfo *backends.CollectionInfo, cStats *backends.CollectionStatsResult, cleanupPercent uint8) int64 {
