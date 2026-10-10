@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Fix the Docker image job's first test step
+  ([c2f7f5e8](https://github.com/wekan/FerretDB/commit/c2f7f5e8)).** The v1.90.0 run
+  stopped with only "exit code 1": the Docker release guard still required
+  `docker/setup-qemu-action`, which the job replaced with registering qemu from
+  the binfmt image pulled through `build/ferretdb/pull-image.sh`. The guard now
+  checks that pull and registration, and names a failing check, by @xet7.
+  Thanks to xet7.
+
 ## [v1.90.0](https://github.com/wekan/FerretDB/releases/tag/v1.90.0) (2026-10-10)
 
 ### Other Changes 🤖
