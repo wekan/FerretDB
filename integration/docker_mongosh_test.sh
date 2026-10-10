@@ -2,6 +2,9 @@
 # Static release guard plus the command the published image must pass on its
 # native architecture after it starts.
 set -euo pipefail
+# Every check below is a quiet grep; say which one failed, or a release job
+# stops with only "exit code 1" in its log (as the v1.90.0 Docker run did).
+trap 'echo "docker_mongosh_test.sh: check at line $LINENO failed" >&2' ERR
 root="$(cd "$(dirname "$0")/.." && pwd)"
 workflow="$root/.github/workflows/docker.yml"
 dockerfile="$root/Dockerfile.release"
@@ -14,7 +17,12 @@ grep -q 'ENV PATH=/opt/mongosh:' "$dockerfile"
 grep -q 'FROM debian:trixie-slim AS final' "$dockerfile"
 grep -q 'ca-certificates libstdc++6 libatomic1' "$dockerfile"
 grep -q '/opt/mongosh/mongosh --version' "$dockerfile"
-grep -q 'docker/setup-qemu-action@' "$workflow"
+# The target runtimes are emulated through binfmt, registered from the image
+# the job pulls through build/ferretdb/pull-image.sh (Docker Hub with retries,
+# then its mirrors) - what docker/setup-qemu-action did, without its single
+# unretried Docker Hub pull (tests/pull-image.py checks the step order).
+grep -q 'pull-image.sh tonistiigi/binfmt:latest' "$workflow" || { echo 'docker.yml must pull binfmt through pull-image.sh' >&2; exit 1; }
+grep -q 'tonistiigi/binfmt:latest --install arm,arm64,ppc64le,s390x,riscv64' "$workflow" || { echo 'docker.yml must register qemu for every target' >&2; exit 1; }
 grep -q 'bash build/ferretdb/release-platforms.sh dist' "$workflow"
 
 # Exercise actual selection with complete, partial and broken release assets.
