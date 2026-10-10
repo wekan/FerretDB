@@ -2,6 +2,21 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Fix `$group` accumulators after the first, `$min`/`$max` of null, and
+  capped `max` ([7fc21b45](https://github.com/wekan/FerretDB/commit/7fc21b45)).** Found by
+  comparing the conformance catalogue with MongoDB 8 and 9: `$group` handed all
+  its accumulators one iterator, so every accumulator after the first saw an
+  empty group (`$min`/`$max` after `$avg` answered null, `$last` null and
+  `$push` `[]` after `$first`); `$min` and `$max` took null as the smallest
+  value instead of skipping it; and a capped collection kept more than `max`
+  documents until the periodic cleanup ran. Each accumulator now gets its own
+  iterator, null is skipped, and an insert trims a capped collection to `max`
+  at once, by @xet7. Thanks to xet7.
+
 ## [v1.91.0](https://github.com/wekan/FerretDB/releases/tag/v1.91.0) (2026-10-10)
 
 ### Other Changes 🤖
