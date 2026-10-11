@@ -9,7 +9,7 @@ class DockerRecovery(unittest.TestCase):
     def test_dispatch_or_retry_failed_without_touching_success(self):
         for state in ['absent','success','failure','running']:
             rows=[] if state=='absent' else [{'id':12,'display_title':'Docker v1.100.0','status':'in_progress' if state=='running' else 'completed','conclusion':state}]
-            with patch.object(r.subprocess,'check_output',return_value=json.dumps([{'workflow_runs':rows}])),patch.object(r.subprocess,'run') as run:
+            with patch.object(r.subprocess,'check_output',return_value=json.dumps({'workflow_runs':rows})),patch.object(r.subprocess,'run') as run:
                 r.recover('v1.100.0','wekan/FerretDB')
                 if state in ['success','running']:run.assert_not_called()
                 elif state=='failure':self.assertIn('--failed',run.call_args.args[0])
@@ -18,4 +18,12 @@ class DockerRecovery(unittest.TestCase):
         with patch.object(r.subprocess,'check_output') as read:
             with self.assertRaises(ValueError):r.recover('v2.0.0','wekan/FerretDB')
             read.assert_not_called()
+    def test_pages_are_read_without_slurp(self):
+        # gh before 2.48 has no --slurp; --paginate prints pages back to back.
+        later=[{'id':5,'display_title':'Docker v1.100.0','status':'completed','conclusion':'failure'}]
+        pages=json.dumps({'workflow_runs':[]})+'\n'+json.dumps({'workflow_runs':later})
+        with patch.object(r.subprocess,'check_output',return_value=pages) as read,patch.object(r.subprocess,'run') as run:
+            r.recover('v1.100.0','wekan/FerretDB')
+            self.assertIn('--failed',run.call_args.args[0])
+            self.assertNotIn('--slurp',read.call_args.args[0])
 if __name__=='__main__':unittest.main()

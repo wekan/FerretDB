@@ -7,10 +7,29 @@ import subprocess
 import sys
 
 
+def gh_pages(text):
+    """The pages `gh api --paginate` prints, as a list with one entry per page.
+
+    Without --slurp, gh prints the pages back to back ([...][...]), which one
+    json.loads cannot read. --slurp would wrap them in one array, but it exists
+    only from GitHub CLI 2.48 on, and an older gh stopped the release with
+    "unknown flag: --slurp". So the pages are read one after another here.
+    """
+    decoder = json.JSONDecoder()
+    text = text.strip()
+    pages, i = [], 0
+    while i < len(text):
+        page, i = decoder.raw_decode(text, i)
+        pages.append(page)
+        while i < len(text) and text[i].isspace():
+            i += 1
+    return pages
+
+
 def recover(version, repo):
     if not re.fullmatch(r'v1\.\d+\.\d+', version):
         raise ValueError('Expected a FerretDB v1 release tag')
-    pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp',
+    pages = gh_pages(subprocess.check_output(['gh', 'api', '--paginate',
         f'repos/{repo}/actions/workflows/docker.yml/runs?per_page=100'], text=True))
     matches = [run for page in pages for run in page['workflow_runs']
                if run['display_title'] == 'Docker ' + version]
