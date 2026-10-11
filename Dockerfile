@@ -55,7 +55,9 @@ export GOARM=${TARGETVARIANT#v}
 export GOAMD64=v1
 export CGO_ENABLED=0
 
-go build -mod=readonly -v -o=/bin/ferretdb ./cmd/ferretdb
+# -ldflags "-s -w": no symbol table or DWARF data (~30% smaller); panics still
+# print function names, from the runtime's pclntab. Same as build.sh.
+go build -mod=readonly -v -trimpath -ldflags "-s -w" -o=/bin/ferretdb ./cmd/ferretdb
 python3 build/ferretdb/check-telemetry.py --kind ferretdb /bin/ferretdb
 
 # create a state directory owned by the runtime user

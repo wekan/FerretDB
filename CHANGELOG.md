@@ -2,6 +2,16 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Release binaries and the Docker image are built without symbol tables and
+  DWARF debug data.** `-ldflags "-s -w"` takes the amd64 binary from 57.7 MB to
+  40.3 MB; it is in every WeKan bundle, image and snap. Panics still print full
+  stack traces with function names, and the version still comes from the
+  embedded build/version files, by @xet7. Thanks to xet7.
+
 ## [v1.92.0](https://github.com/wekan/FerretDB/releases/tag/v1.92.0) (2026-10-10)
 
 ### Fixed 🐛

@@ -241,8 +241,13 @@ build_ferretdb_target() {
   # the released binaries answer `--handler=hana` with "unknown handler" - which is
   # what a client compose file for SAP HANA would hit. go-hdb is pure Go, so it
   # cross-compiles with CGO_ENABLED=0 like the rest.
+  # -ldflags "-s -w": no symbol table and no DWARF debug data. The binary was
+  # 57.7 MB with them and 40.3 MB without (amd64), in every WeKan bundle, image
+  # and snap. A panic still prints a full stack trace with function names: those
+  # come from the runtime's own pclntab, which -s -w keeps. The version comes
+  # from embedded files (build/version), not from linker flags.
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-       go build -mod=readonly -trimpath -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+       go build -mod=readonly -trimpath -ldflags "-s -w" -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
     if ! python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb "$out/ferretdb-$name$ext"; then
       printf '%s\n' "$name" >> "$rep/telemetry-failed.list"
       rm -f "$out/ferretdb-$name$ext"
