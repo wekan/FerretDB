@@ -6,6 +6,12 @@
 
 ### Other Changes 🤖
 
+- **Release All works with a GitHub CLI older than 2.48.** The release scripts
+  read GitHub's lists with `gh api --paginate --slurp`, and an older `gh`
+  stopped the release with "unknown flag: --slurp". The pages `--paginate`
+  prints one after another are now read in turn; a truncated page is still an
+  error, by @xet7. Thanks to xet7.
+
 - **Release binaries and the Docker image are built without symbol tables and
   DWARF debug data.** `-ldflags "-s -w"` takes the amd64 binary from 57.7 MB to
   40.3 MB; it is in every WeKan bundle, image and snap. Panics still print full
