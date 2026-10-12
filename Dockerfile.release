@@ -51,7 +51,11 @@ FROM debian:trixie-slim AS final
 # Node packages are linked against newer glibc and libstdc++ than bookworm.
 # Official PowerPC Node also requires libatomic.so.1 (libatomic1).
 # Unlike the native pick stage, this runs on the target CPU (QEMU in CI).
+# `upgrade` takes the Debian security updates released since debian:trixie-slim
+# was last published (the v12.38 scan found liblzma5 5.8.1-1+deb13u1 with the
+# fixed deb13u2 already out), as the WeKan image's Dockerfile does.
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libatomic1 \
     && rm -rf /var/lib/apt/lists/*
 

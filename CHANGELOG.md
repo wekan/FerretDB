@@ -14,6 +14,13 @@
   require 1.27.2, and all three modules use x/net v0.60.0. govulncheck finds
   nothing the code reaches, by @xet7. Thanks to xet7.
 
+- **The Docker image takes Debian's security updates.** Its final stage
+  installed three packages on `debian:trixie-slim` but never upgraded the
+  base image's own, so a fix Debian had already released stayed out until the
+  base image was republished; the v12.38 scan found liblzma5 5.8.1-1+deb13u1
+  with deb13u2 available. `Dockerfile.release` now runs `apt-get upgrade -y`,
+  as the WeKan image does, by @xet7. Thanks to xet7.
+
 ## [v1.93.0](https://github.com/wekan/FerretDB/releases/tag/v1.93.0) (2026-10-12)
 
 ### Other Changes 🤖
