@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Build with Go 1.27.2 and golang.org/x/net v0.60.0.** The Quay scan of
+  the WeKan v12.38 image listed the `ferretdb` binary's Go 1.27.0 standard
+  library (GO-2026-6599 to GO-2026-6617, fixed in 1.27.2) and x/net v0.59.0
+  (GO-2026-6603, -6610, -6611, -6612, -6617, fixed in 0.60.0). `build.sh`, the
+  Dockerfile, both release workflows and the `go` line of every module now
+  require 1.27.2, and all three modules use x/net v0.60.0. govulncheck finds
+  nothing the code reaches, by @xet7. Thanks to xet7.
+
 ## [v1.93.0](https://github.com/wekan/FerretDB/releases/tag/v1.93.0) (2026-10-12)
 
 ### Other Changes 🤖
