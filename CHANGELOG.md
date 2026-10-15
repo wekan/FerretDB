@@ -2,6 +2,26 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Ship the dependencies the tests run with.** The integration module links
+  the main module's code with its own versions, so after #41 bumped
+  prometheus/client_golang to 1.25.0 in the integration group alone, the
+  integration tests ran with 1.25.0, procfs 0.22.0 and klauspost/compress
+  1.20.1 while the released binary kept 1.24.1, 0.21.1 and 1.19.1; and
+  montanaflynn/stats, which the binary links through the MongoDB driver, had
+  drifted the same way (0.9.0 shipped, 0.12.7 tested). The main module now
+  requires the same versions, and `tests/integration-module-sync.py` fails
+  when a shared requirement differs in either direction, not only when the
+  integration module lags. Build, vet, the unit tests, the SQLite integration
+  suite and the release guards, telemetry audits included, pass by @xet7.
+  Thanks to xet7.
+
+- **Bump prometheus/client_golang from 1.24.1 to 1.25.0** in the integration
+  module (#41) by @dependabot. Thanks to dependabot.
+
 ## [v1.94.0](https://github.com/wekan/FerretDB/releases/tag/v1.94.0) (2026-10-13)
 
 ### Fixed 🐛

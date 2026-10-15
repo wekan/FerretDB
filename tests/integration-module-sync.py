@@ -8,6 +8,14 @@ integration go.mod still records the older version, and every build in
 integration/ rewrites go.mod and go.sum (read-only module mode refuses to
 build at all). That happened after the go-hdb 1.18.11 bump and again after the
 OpenTelemetry 1.47.0 / go-hdb 1.19.0 / sqlite 1.60.1 bump.
+
+The other direction is a fault too, of a quieter kind: integration/ links the
+main module's code with ITS versions, so when the integration go.mod is ahead,
+the tests exercise dependencies the released ferretdb binary does not contain.
+A Dependabot bump of the integration group alone (prometheus/client_golang
+1.25.0, #41) did that, and montanaflynn/stats, which the binary links through
+the MongoDB driver, had drifted the same way (0.9.0 shipped, 0.12.7 tested).
+So a shared requirement must be the SAME in both.
 """
 import re
 import unittest
@@ -44,6 +52,14 @@ def lagging(main, integration):
     )
 
 
+def ahead(main, integration):
+    return sorted(
+        f'{m}: integration {integration[m]} > main {v}'
+        for m, v in main.items()
+        if m in integration and key(integration[m]) > key(v)
+    )
+
+
 class IntegrationModuleSync(unittest.TestCase):
     def test_integration_requirements_not_below_main(self):
         problems = lagging(requirements(ROOT / 'go.mod'),
@@ -61,9 +77,26 @@ class IntegrationModuleSync(unittest.TestCase):
              'google.golang.org/genproto/googleapis/rpc: integration '
              'v0.0.0-20260819154853-08b0e4226688 < main v0.0.0-20260928230214-8a89bd6388cc'])
 
-    def test_higher_or_equal_is_fine(self):
-        self.assertEqual(lagging({'a': 'v1.2.0', 'b': 'v1.0.0-rc.1'},
-                                 {'a': 'v1.10.0', 'b': 'v1.0.0'}), [])
+    def test_main_not_behind_integration(self):
+        problems = ahead(requirements(ROOT / 'go.mod'),
+                         requirements(ROOT / 'integration/go.mod'))
+        self.assertEqual(problems, [],
+                         'the released binary would differ from what the tests ran: '
+                         '`go get` the same version in the main module, then `go mod tidy` in both')
+
+    def test_detects_integration_ahead(self):
+        # Negative test: #41's bump of the integration group alone.
+        self.assertEqual(
+            ahead({'github.com/prometheus/client_golang': 'v1.24.1', 'x': 'v1.0.0'},
+                  {'github.com/prometheus/client_golang': 'v1.25.0', 'x': 'v1.0.0'}),
+            ['github.com/prometheus/client_golang: integration v1.25.0 > main v1.24.1'])
+
+    def test_equal_is_fine(self):
+        self.assertEqual(lagging({'a': 'v1.10.0', 'b': 'v1.0.0'}, {'a': 'v1.10.0', 'b': 'v1.0.0'}), [])
+        self.assertEqual(ahead({'a': 'v1.10.0', 'b': 'v1.0.0'}, {'a': 'v1.10.0', 'b': 'v1.0.0'}), [])
+        # versions compare as versions, not text
+        self.assertEqual(ahead({'a': 'v1.10.0'}, {'a': 'v1.9.0'}), [])
+        self.assertEqual(ahead({'b': 'v1.0.0'}, {'b': 'v1.0.0-rc.1'}), [])
 
     def test_parses_both_require_forms(self):
         tmp = ROOT / '.tools/tmp'
