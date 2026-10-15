@@ -21,9 +21,9 @@ const _ErrorCode_name = "ErrorCodeDatabaseNameIsInvalidErrorCodeDatabaseDoesNotE
 var _ErrorCode_index = [...]uint8{0, 30, 59, 91, 122, 154, 180}
 
 func (i ErrorCode) String() string {
-	i -= 1
-	if i < 0 || i >= ErrorCode(len(_ErrorCode_index)-1) {
-		return "ErrorCode(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_ErrorCode_index)-1 {
+		return "ErrorCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ErrorCode_name[_ErrorCode_index[i]:_ErrorCode_index[i+1]]
+	return _ErrorCode_name[_ErrorCode_index[idx]:_ErrorCode_index[idx+1]]
 }

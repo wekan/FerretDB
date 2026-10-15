@@ -27,9 +27,9 @@ const _compareTypeOrderResult_name = "nullDataTypenanDataTypenumbersDataTypestri
 var _compareTypeOrderResult_index = [...]uint8{0, 12, 23, 38, 52, 68, 81, 92, 108, 123, 135, 152, 165}
 
 func (i compareTypeOrderResult) String() string {
-	i -= 1
-	if i >= compareTypeOrderResult(len(_compareTypeOrderResult_index)-1) {
-		return "compareTypeOrderResult(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_compareTypeOrderResult_index)-1 {
+		return "compareTypeOrderResult(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _compareTypeOrderResult_name[_compareTypeOrderResult_index[i]:_compareTypeOrderResult_index[i+1]]
+	return _compareTypeOrderResult_name[_compareTypeOrderResult_index[idx]:_compareTypeOrderResult_index[idx+1]]
 }

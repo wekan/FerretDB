@@ -18,9 +18,9 @@ const _ValidationErrorCode_name = "ErrValidationErrWrongIDTypeErrIDNotFound"
 var _ValidationErrorCode_index = [...]uint8{0, 13, 27, 40}
 
 func (i ValidationErrorCode) String() string {
-	i -= 1
-	if i < 0 || i >= ValidationErrorCode(len(_ValidationErrorCode_index)-1) {
-		return "ValidationErrorCode(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_ValidationErrorCode_index)-1 {
+		return "ValidationErrorCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ValidationErrorCode_name[_ValidationErrorCode_index[i]:_ValidationErrorCode_index[i+1]]
+	return _ValidationErrorCode_name[_ValidationErrorCode_index[idx]:_ValidationErrorCode_index[idx+1]]
 }

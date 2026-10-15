@@ -22,6 +22,19 @@
 - **Bump prometheus/client_golang from 1.24.1 to 1.25.0** in the integration
   module (#41) by @dependabot. Thanks to dependabot.
 
+- **Regenerate the String() methods with stringer from golang.org/x/tools
+  0.52.0.** After #43 `go generate ./...` rewrote seven `*_string.go` files: for
+  an enum that does not start at zero, the new stringer indexes with a copy
+  instead of shifting the receiver, so a value outside the enum prints as
+  itself. The output is otherwise the same; committing it keeps the tree clean
+  after code generation. Build and the unit tests pass by @xet7. Thanks to xet7.
+
+- **Bump golang.org/x/pkgsite from 0.5.0 to 0.6.0, golang.org/x/tools from
+  0.51.0 to 0.52.0 and golang.org/x/vuln from 1.8.0 to 1.9.0** in the tools
+  module (#43) by @dependabot. Thanks to dependabot. All seventeen tool binaries
+  build with `go generate`; govulncheck 1.9.0 finds no vulnerability the code
+  reaches.
+
 ## [v1.94.0](https://github.com/wekan/FerretDB/releases/tag/v1.94.0) (2026-10-13)
 
 ### Fixed 🐛

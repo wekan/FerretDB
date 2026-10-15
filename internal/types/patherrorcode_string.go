@@ -24,9 +24,9 @@ const _PathErrorCode_name = "ErrPathElementEmptyErrPathElementInvalidErrPathKeyN
 var _PathErrorCode_index = [...]uint8{0, 19, 40, 58, 77, 99, 118, 142, 166, 190}
 
 func (i PathErrorCode) String() string {
-	i -= 1
-	if i < 0 || i >= PathErrorCode(len(_PathErrorCode_index)-1) {
-		return "PathErrorCode(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_PathErrorCode_index)-1 {
+		return "PathErrorCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _PathErrorCode_name[_PathErrorCode_index[i]:_PathErrorCode_index[i+1]]
+	return _PathErrorCode_name[_PathErrorCode_index[idx]:_PathErrorCode_index[idx+1]]
 }

@@ -20,9 +20,9 @@ const _ExpressionErrorCode_name = "ErrNotExpressionErrInvalidExpressionErrEmptyF
 var _ExpressionErrorCode_index = [...]uint8{0, 16, 36, 53, 73, 89}
 
 func (i ExpressionErrorCode) String() string {
-	i -= 1
-	if i < 0 || i >= ExpressionErrorCode(len(_ExpressionErrorCode_index)-1) {
-		return "ExpressionErrorCode(" + strconv.FormatInt(int64(i+1), 10) + ")"
+	idx := int(i) - 1
+	if i < 1 || idx >= len(_ExpressionErrorCode_index)-1 {
+		return "ExpressionErrorCode(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _ExpressionErrorCode_name[_ExpressionErrorCode_index[i]:_ExpressionErrorCode_index[i+1]]
+	return _ExpressionErrorCode_name[_ExpressionErrorCode_index[idx]:_ExpressionErrorCode_index[idx+1]]
 }

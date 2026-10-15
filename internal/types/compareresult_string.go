@@ -18,9 +18,9 @@ const _CompareResult_name = "<==>"
 var _CompareResult_index = [...]uint8{0, 1, 3, 4}
 
 func (i CompareResult) String() string {
-	i -= -1
-	if i < 0 || i >= CompareResult(len(_CompareResult_index)-1) {
-		return "CompareResult(" + strconv.FormatInt(int64(i+-1), 10) + ")"
+	idx := int(i) - -1
+	if i < -1 || idx >= len(_CompareResult_index)-1 {
+		return "CompareResult(" + strconv.FormatInt(int64(i), 10) + ")"
 	}
-	return _CompareResult_name[_CompareResult_index[i]:_CompareResult_index[i+1]]
+	return _CompareResult_name[_CompareResult_index[idx]:_CompareResult_index[idx+1]]
 }
