@@ -29,6 +29,19 @@
   itself. The output is otherwise the same; committing it keeps the tree clean
   after code generation. Build and the unit tests pass by @xet7. Thanks to xet7.
 
+- **Sync the integration module with the main module after #44.** #44 moved
+  SAP go-hdb to 1.19.2, prometheus/common to 0.72.1, golang.org/x/crypto to
+  0.58.0 and golang.org/x/sys to 0.49.0 (with x/net, x/sync and x/text) in the
+  main module only, so `tests/integration-module-sync.py` failed and read-only
+  builds in integration/ needed go.mod updates. `go mod tidy` brings it in line.
+  Build (also with the HANA tag), vet, the unit tests, the SQLite integration
+  suite, govulncheck and the release guards pass by @xet7. Thanks to xet7.
+
+- **Bump SAP go-hdb from 1.19.0 to 1.19.2, prometheus/common from 0.72.0 to
+  0.72.1, golang.org/x/crypto from 0.57.0 to 0.58.0 and golang.org/x/sys from
+  0.48.0 to 0.49.0** in the main module (#44) by @dependabot. Thanks to
+  dependabot.
+
 - **Bump golang.org/x/pkgsite from 0.5.0 to 0.6.0, golang.org/x/tools from
   0.51.0 to 0.52.0 and golang.org/x/vuln from 1.8.0 to 1.9.0** in the tools
   module (#43) by @dependabot. Thanks to dependabot. All seventeen tool binaries
