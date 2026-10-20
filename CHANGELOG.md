@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Bump getkin/kin-openapi from 0.144.0 to 0.149.0**, with
+  santhosh-tekuri/jsonschema from 6.0.2 to 6.0.3, in the tools module (#45)
+  by @dependabot. Thanks to dependabot. Both are indirect dependencies of
+  oapi-codegen, a tool this fork builds but generates nothing with, and neither
+  is in the main or integration module, so the released binary does not change.
+  All seventeen tool binaries build with `go generate`, `go vet` passes on the
+  in-repo tools, and `go mod tidy` changes nothing further.
+
 ## [v1.95.0](https://github.com/wekan/FerretDB/releases/tag/v1.95.0) (2026-10-15)
 
 ### Other Changes 🤖
