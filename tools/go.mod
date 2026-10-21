@@ -7,7 +7,7 @@ require (
 	github.com/FerretDB/gh v0.2.0
 	github.com/go-task/task/v3 v3.54.0
 	github.com/google/go-github/v70 v70.0.1-0.20250402125210-3a3f51bc7c5d
-	github.com/goreleaser/nfpm/v2 v2.47.0
+	github.com/goreleaser/nfpm/v2 v2.48.0
 	github.com/kisielk/godepgraph v1.0.0
 	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0
 	github.com/quasilyte/go-consistent v0.6.2
@@ -43,7 +43,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.5.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/ProtonMail/go-crypto v1.4.1 // indirect
+	github.com/ProtonMail/go-crypto v1.5.2 // indirect
 	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/alecthomas/chroma/v2 v2.27.0 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
@@ -70,14 +70,13 @@ require (
 	github.com/blakesmith/ar v0.0.0-20190502131153-809d4375e1fb // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/caarlos0/go-version v0.2.2 // indirect
-	github.com/cavaliergopher/cpio v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chainguard-dev/git-urls v1.0.2 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
 	github.com/charmbracelet/fang v1.0.0 // indirect
 	github.com/charmbracelet/ultraviolet v0.0.0-20260811164956-006e29f97886 // indirect
 	github.com/charmbracelet/x/ansi v0.11.8 // indirect
-	github.com/charmbracelet/x/exp/charmtone v0.0.0-20250603201427-c31516f43444 // indirect
+	github.com/charmbracelet/x/exp/charmtone v0.0.0-20260622092256-25656177ba8e // indirect
 	github.com/charmbracelet/x/term v0.2.2 // indirect
 	github.com/charmbracelet/x/termios v0.1.1 // indirect
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
@@ -85,8 +84,8 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cloudflare/circl v1.6.5 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
-	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
+	github.com/cyphar/filepath-securejoin v0.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2/v2 v2.7.1 // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
@@ -119,14 +118,13 @@ require (
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/licensecheck v0.3.1 // indirect
-	github.com/google/rpmpack v0.7.1 // indirect
 	github.com/google/s2a-go v0.1.10 // indirect
 	github.com/google/safehtml v0.0.3-0.20211026203422-d6f0e11a5516 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.22 // indirect
 	github.com/googleapis/gax-go/v2 v2.26.2 // indirect
 	github.com/goreleaser/chglog v0.7.4 // indirect
-	github.com/goreleaser/fileglob v1.4.0 // indirect
+	github.com/goreleaser/fileglob v1.4.1 // indirect
 	github.com/hashicorp/aws-sdk-go-base/v2 v2.0.0-beta.74 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-getter v1.8.9 // indirect
@@ -136,11 +134,11 @@ require (
 	github.com/invopop/jsonschema v0.14.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
-	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/kisielk/gotool v1.0.0 // indirect
-	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
-	github.com/klauspost/pgzip v1.2.6 // indirect
+	github.com/klauspost/pgzip v1.2.7 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.1 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
@@ -152,7 +150,7 @@ require (
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.2.0 // indirect
 	github.com/muesli/mango-cobra v1.3.0 // indirect
-	github.com/muesli/mango-pflag v0.1.0 // indirect
+	github.com/muesli/mango-pflag v0.2.0 // indirect
 	github.com/muesli/roff v0.1.0 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
@@ -167,7 +165,7 @@ require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/sergi/go-diff v1.4.0 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/skeema/knownhosts v1.3.1 // indirect
+	github.com/skeema/knownhosts v1.3.2 // indirect
 	github.com/speakeasy-api/jsonpath v0.6.3 // indirect
 	github.com/speakeasy-api/openapi v1.24.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
@@ -177,13 +175,14 @@ require (
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/u-root/u-root v0.16.0 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
-	github.com/ulikunitz/xz v0.5.16 // indirect
+	github.com/ulikunitz/xz v0.5.17 // indirect
 	github.com/vmware-labs/yaml-jsonpath v0.3.2 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	gitlab.com/digitalxero/go-conventional-commit v1.0.7 // indirect
-	go.digitalxero.dev/go-msix v0.3.1 // indirect
+	go.digitalxero.dev/go-msix v1.0.1 // indirect
+	go.digitalxero.dev/rpm v0.3.4 // indirect
 	go.mozilla.org/pkcs7 v0.9.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/detectors/gcp v1.45.0 // indirect
@@ -195,7 +194,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.45.0 // indirect
 	go.opentelemetry.io/otel/trace v1.45.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	go.yaml.in/yaml/v4 v4.0.0-rc.2 // indirect
+	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/net v0.61.0 // indirect
