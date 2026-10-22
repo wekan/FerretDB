@@ -2,6 +2,15 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Cancel workflow keeps stopping a release run**: `tests/release-upload.py`
+  fails on a job on `always()`, which Cancel workflow does not stop, that is a
+  reusable workflow or has no timeout of 60 minutes or less. Today only steps
+  use `always()`, and no job does. by @xet7. Thanks to xet7.
+
 ## [v1.96.0](https://github.com/wekan/FerretDB/releases/tag/v1.96.0) (2026-10-20)
 
 ### Other Changes 🤖

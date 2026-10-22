@@ -26,6 +26,36 @@ audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)
 
 
+def always_jobs_unbounded(workflows):
+    """Jobs that a cancel cannot stop and that may run on without a bound.
+
+    Cancelling a run re-evaluates the `if:` of every running job, and a job
+    whose `if:` is still true - always() is, in a cancelled run - is not
+    cancelled and still starts if it has not. Such a job must end on its own:
+    a timeout of 60 minutes or less, and never a reusable workflow, which can
+    have none. node-patches' openbsd-arm64 resume stages were reusable
+    workflows on always(), and Cancel workflow did not stop them.
+    """
+    bad = []
+    for f in sorted(Path(workflows).glob('*.y*ml')):
+        t = f.read_text(encoding='utf-8')
+        m = re.search(r'^jobs:\n', t, re.M)
+        if not m:
+            continue
+        for p in re.split(r'^(?=  [A-Za-z0-9_-]+:\s*$)', t[m.end():], flags=re.M):
+            h = re.match(r'  ([A-Za-z0-9_-]+):', p)
+            c = re.search(r'^    if:\s*(.+)$', p, re.M)
+            if not h or not c or 'always()' not in c.group(1):
+                continue
+            if re.search(r'^    uses:', p, re.M):
+                bad.append(f'{f.name}: {h.group(1)} (reusable workflow)')
+                continue
+            to = re.search(r'^    timeout-minutes:\s*(\d+)', p, re.M)
+            if not to or int(to.group(1)) > 60:
+                bad.append(f'{f.name}: {h.group(1)} (no timeout-minutes of 60 or less)')
+    return bad
+
+
 def targets():
     text = (ROOT / 'build.sh').read_text()
     block = text.split('FERRETDB_DIST_TARGETS=(', 1)[1].split('\n)', 1)[0]
@@ -247,6 +277,17 @@ class Workflows(unittest.TestCase):
                     if 'gh workflow run docker.yml' in s or 'retry-docker-release.py' in s \
                             or 'gh release edit' in s:
                         self.assertNotIn('always()', s)
+
+    def test_negative_cancel_stops_every_job(self):
+        self.assertEqual(always_jobs_unbounded(ROOT / '.github/workflows'), [])
+        # The check itself: an unbounded always() job and a reusable one are found.
+        with tempfile.TemporaryDirectory() as d:
+            Path(d, 'x.yml').write_text(
+                'jobs:\n  a:\n    if: ${{ always() }}\n    runs-on: x\n'
+                '  b:\n    if: ${{ always() }}\n    uses: ./y.yml\n'
+                '  c:\n    if: ${{ always() }}\n    timeout-minutes: 15\n')
+            self.assertEqual(always_jobs_unbounded(d),
+                             ['x.yml: a (no timeout-minutes of 60 or less)', 'x.yml: b (reusable workflow)'])
 
 
 class AttachFinished(unittest.TestCase):
