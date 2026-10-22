@@ -2,6 +2,25 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Build with Go 1.27.3**, which carries security fixes to `crypto/x509`, the
+  package FerretDB's TLS listener and its client certificate checks use: the
+  release workflows, `build.sh`, every Dockerfile and both `go.mod` files move
+  from 1.27.2. by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **Update the Go modules**: `golang.org/x/crypto/x509roots/fallback` (the root
+  certificates used when the system has none) to 2026-10-20,
+  `modernc.org/sqlite` 1.60.1 → 1.61.0 (SQLite 3.53.4 → 3.54.1, so the three
+  unit tests that pin SQLite's version and source id follow it), `goja`,
+  `golang.org/x/exp`, and `golang.org/x/perf` in the tools module. Unit tests
+  with `-tags=ferretdb_debug`, the telemetry test and `go vet` pass. by @xet7.
+  Thanks to xet7.
+
 ## [v1.97.0](https://github.com/wekan/FerretDB/releases/tag/v1.97.0) (2026-10-22)
 
 ### Other Changes 🤖

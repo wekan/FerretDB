@@ -14,7 +14,7 @@ require (
 	github.com/rogpeppe/go-internal v1.16.0
 	github.com/sethvargo/go-githubactions v1.4.0
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/perf v0.0.0-20250515181355-8f5f3abfb71a
+	golang.org/x/perf v0.0.0-20261009192801-be2c69fb417e
 	golang.org/x/pkgsite v0.6.0
 	golang.org/x/tools v0.52.0
 	golang.org/x/vuln v1.9.0

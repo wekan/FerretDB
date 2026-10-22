@@ -115,7 +115,7 @@ func TestCreateDrop(t *testing.T) {
 
 	state := sp.Get()
 	require.Equal(t, "SQLite", state.BackendName)
-	require.Equal(t, "3.53.4", state.BackendVersion)
+	require.Equal(t, "3.54.1", state.BackendVersion)
 
 	collectionName := testutil.CollectionName(t)
 
