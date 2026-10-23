@@ -49,7 +49,20 @@ func profileName(obj any) string {
 // Track tracks the lifetime of an object until Untrack is called on it.
 //
 // Obj should a pointer to a struct with a field "token" of type *Token.
+//
+// Only in debug builds (-tags ferretdb_debug, which the unit and integration
+// tests use). Tracking adds the object to a pprof profile - which records the
+// caller's whole stack - and sets a finalizer, and it is called for every
+// document and array iterator: a query returning ten thousand documents made
+// tens of thousands of stack captures. A release build spent about an eighth of
+// its CPU on it (measured with a client's database speed test) to detect a programming
+// error that the tests are there to find, and whose only effect in production
+// would have been a panic.
 func Track(obj any, token *Token) {
+	if !debugbuild.Enabled {
+		return
+	}
+
 	checkArgs(obj, token)
 
 	name := profileName(obj)
@@ -94,6 +107,10 @@ func Track(obj any, token *Token) {
 //
 // It is safe to call this function multiple times.
 func Untrack(obj any, token *Token) {
+	if !debugbuild.Enabled {
+		return
+	}
+
 	checkArgs(obj, token)
 
 	p := pprof.Lookup(profileName(obj))
