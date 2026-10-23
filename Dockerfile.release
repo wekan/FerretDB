@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# Builds the FerretDB image from the PREBUILT per-arch binaries attached to a
-# GitHub Release (downloaded into ./dist/ferretdb-<arch>) — no compiling. Used by
+# Builds the FerretDB images from the PREBUILT per-arch binaries attached to a
+# GitHub Release (downloaded into ./dist/ferretdb-<arch> and
+# ./dist/ferretdb-sqlite-<arch>) — no compiling. FERRETDB_ASSET picks which. Used by
 # .github/workflows/docker.yml. The pick stage runs on the native build platform
 # and just selects the binary matching the target platform, so buildx emits every
 # supported runtime architecture present in ./dist. The matching mongosh package is
@@ -14,6 +15,11 @@
 FROM --platform=$BUILDPLATFORM busybox AS pick
 ARG TARGETARCH
 ARG TARGETVARIANT
+# Which release binary the image is made of: ferretdb (ferretdb-<arch>, every
+# handler) for the ferretdb image, ferretdb-sqlite (ferretdb-sqlite-<arch>,
+# the sqlite handler only) for the ferretdb-sqlite image. build/ferretdb/
+# publish-docker.sh passes it; everything else in the two images is the same.
+ARG FERRETDB_ASSET=ferretdb
 COPY dist /bins
 RUN set -eux; \
     # Map the OCI target platform to the arch name used in the binary name.
@@ -29,9 +35,10 @@ RUN set -eux; \
       s390x/*)   n=s390x ;; \
       riscv64/*) n=riscv64 ;; \
       loong64/*) n=loong64 ;; \
-      *) echo "no prebuilt ferretdb for ${TARGETARCH}/${TARGETVARIANT}" >&2; exit 1 ;; \
+      *) echo "no prebuilt ${FERRETDB_ASSET} for ${TARGETARCH}/${TARGETVARIANT}" >&2; exit 1 ;; \
     esac; \
-    cp "/bins/ferretdb-${n}" /ferretdb; \
+    case "${FERRETDB_ASSET}" in ferretdb|ferretdb-sqlite) ;; *) echo "unknown FERRETDB_ASSET ${FERRETDB_ASSET}" >&2; exit 1 ;; esac; \
+    cp "/bins/${FERRETDB_ASSET}-${n}" /ferretdb; \
     chmod 0755 /ferretdb; \
     m="${m:-$n}"; \
     test -f "/bins/mongosh-${m}.tgz"; \

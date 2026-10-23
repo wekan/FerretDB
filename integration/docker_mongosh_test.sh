@@ -55,6 +55,25 @@ if select_platforms > "$tmp/result" 2> "$tmp/error"; then
   echo 'Empty release must fail selection' >&2; exit 1
 fi
 grep -q 'No supported FerretDB' "$tmp/error"
+
+# The ferretdb-sqlite image is made of ferretdb-sqlite-<arch> and selects its
+# platforms from those alone; ferretdb-<arch> does not count for it, and an
+# asset name that is neither is refused rather than guessed.
+grep -q 'ARG FERRETDB_ASSET=ferretdb' "$dockerfile"
+grep -q 'cp "/bins/${FERRETDB_ASSET}-${n}" /ferretdb' "$dockerfile"
+grep -q '"ferretdb-sqlite-$a"' "$workflow"
+grep -q 'release-platforms.sh dist ferretdb-sqlite' "$workflow"
+grep -q 'SQLITE_PLATFORMS=' "$workflow"
+grep -q 'FERRETDB_ASSET=$asset' "$root/build/ferretdb/publish-docker.sh"
+for arch in amd64 arm64; do printf 'binary' > "$tmp/ferretdb-sqlite-$arch"; done
+[ "$(bash "$root/build/ferretdb/release-platforms.sh" "$tmp" ferretdb-sqlite 2>/dev/null)" = 'linux/amd64,linux/arm64' ]
+if bash "$root/build/ferretdb/release-platforms.sh" "$tmp" > "$tmp/result" 2> "$tmp/error"; then
+  echo 'ferretdb-sqlite binaries must not make up the ferretdb image' >&2; exit 1
+fi
+if bash "$root/build/ferretdb/release-platforms.sh" "$tmp" ferretdb-mysql > "$tmp/result" 2> "$tmp/error"; then
+  echo 'Unknown asset name must fail selection' >&2; exit 1
+fi
+grep -q 'Unknown FerretDB asset name' "$tmp/error"
 if [ "${FERRETDB_MONGOSH_CONTAINER:-}" ]; then
   docker exec "$FERRETDB_MONGOSH_CONTAINER" mongosh \
     'mongodb://127.0.0.1:27017/?directConnection=true' \

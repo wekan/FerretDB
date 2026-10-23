@@ -1,9 +1,16 @@
 name: Docker (from release binaries)
 run-name: Docker ${{ inputs.version || github.event.release.tag_name }}
 
-# Builds the FerretDB multi-arch Docker image from the PREBUILT per-arch binaries
-# attached to a GitHub Release (no compilation) and pushes it to Docker Hub,
-# Quay.io and GHCR — the same registries release-all.yml used to. Because the
+# Builds the FerretDB multi-arch Docker images from the PREBUILT per-arch binaries
+# attached to a GitHub Release (no compilation) and pushes them to Docker Hub,
+# Quay.io and GHCR — the same registries release-all.yml used to. Two images:
+#   wekanteam/ferretdb, quay.io/wekan/ferretdb, ghcr.io/wekan/ferretdb
+#     from ferretdb-<arch>: every handler (sqlite, postgresql, mysql, hana)
+#   wekanteam/ferretdb-sqlite, quay.io/wekan/ferretdb-sqlite,
+#   ghcr.io/wekan/ferretdb-sqlite
+#     from ferretdb-sqlite-<arch>: the sqlite handler only
+# A release made before the SQLite-only build has no ferretdb-sqlite-<arch>
+# assets; then only the ferretdb image is published. Because the
 # binaries are already built, buildx just repackages the right one per target
 # into a runtime image. QEMU installs target runtime libraries and smoke-tests
 # the packaged commands. Only platforms supported by the Debian runtime and
@@ -111,13 +118,16 @@ jobs:
           bash build/ferretdb/validate-version.sh "$TAG"
           echo "Using release: $TAG"
           echo "VERSION=$TAG" >> "$GITHUB_ENV"
-          # Download only the Linux ferretdb-<arch> assets (each pattern is an exact
-          # name, so ferretdb-amd64 does not match ferretdb-mac-amd64). Missing
-          # arches are tolerated: whatever is present defines the platform list.
+          # Download only the Linux ferretdb-<arch> and ferretdb-sqlite-<arch>
+          # assets (each pattern is an exact name, so ferretdb-amd64 does not match
+          # ferretdb-mac-amd64). Missing arches are tolerated: whatever is present
+          # defines each image's platform list.
           mkdir -p dist
           for a in amd64 arm64 armhf armv6 armel i386 ppc64le s390x riscv64 loong64; do
-            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
-              -p "ferretdb-$a" -D dist --clobber 2>/dev/null || true
+            for asset in "ferretdb-$a" "ferretdb-sqlite-$a"; do
+              gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+                -p "$asset" -D dist --clobber 2>/dev/null || true
+            done
           done
           echo "=== downloaded ==="; ls -la dist
 
@@ -146,7 +156,7 @@ jobs:
           [ -n "$tag" ] && [ "$tag" != null ] || { echo '::error::no mongosh release found'; exit 1; }
           echo "MONGOSH_VERSION=$tag" >> "$GITHUB_ENV"
           for binary in amd64 arm64 armhf i386 ppc64le s390x riscv64; do
-            [ -f "dist/ferretdb-$binary" ] || continue
+            [ -f "dist/ferretdb-$binary" ] || [ -f "dist/ferretdb-sqlite-$binary" ] || continue
             arch="$binary"
             [ "$arch" != armhf ] || arch=armv7
             for suffix in tgz tgz.sha256sum; do
@@ -169,8 +179,18 @@ jobs:
         run: |
           set -euo pipefail
           plats="$(bash build/ferretdb/release-platforms.sh dist)"
-          echo "Platforms: $plats"
+          echo "Platforms (ferretdb): $plats"
           echo "PLATFORMS=$plats" >> "$GITHUB_ENV"
+          # The ferretdb-sqlite image is made of ferretdb-sqlite-<arch>; a
+          # release that has none publishes only the ferretdb image.
+          if compgen -G 'dist/ferretdb-sqlite-*' >/dev/null; then
+            sqlite_plats="$(bash build/ferretdb/release-platforms.sh dist ferretdb-sqlite)"
+          else
+            sqlite_plats=""
+            echo "::warning::$VERSION has no ferretdb-sqlite-<arch> assets; the ferretdb-sqlite image is not published for it."
+          fi
+          echo "Platforms (ferretdb-sqlite): ${sqlite_plats:-none}"
+          echo "SQLITE_PLATFORMS=$sqlite_plats" >> "$GITHUB_ENV"
 
       - name: Authenticate and publish to each registry independently
         # Login failures must not skip publishing to the remaining registries.

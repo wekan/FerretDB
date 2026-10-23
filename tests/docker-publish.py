@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PublishTests(unittest.TestCase):
-    def run_publish(self, *, offline='', broken='', transient='', credentials=None, version='v1.82.0'):
+    def run_publish(self, *, offline='', broken='', transient='', credentials=None, version='v1.82.0',
+                    sqlite_platforms='linux/amd64,linux/arm64'):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             docker = directory / 'docker'
@@ -41,6 +42,7 @@ sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
             auth = base64.b64encode(b'dummy-user:dummy-token').decode()
             env = dict(os.environ, PATH=str(directory) + os.pathsep + os.environ['PATH'],
                        VERSION=version, PLATFORMS='linux/amd64,linux/ppc64le',
+                       SQLITE_PLATFORMS=sqlite_platforms,
                        DOCKERHUB_AUTH=auth, QUAY_AUTH=auth, GHCR_AUTH=auth,
                        MOCK_DOCKER_LOG=str(directory / 'calls'), MOCK_OFFLINE=offline,
                        MOCK_BROKEN=broken, MOCK_TRANSIENT=transient)
@@ -55,10 +57,14 @@ sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
     def repositories(self, calls):
         return [row[row.index('-t') + 1].split(':')[0] for row in calls if row[:2] == ['buildx', 'build']]
 
+    FULL = ['wekanteam/ferretdb', 'quay.io/wekan/ferretdb', 'ghcr.io/wekan/ferretdb']
+    SQLITE = [r + '-sqlite' for r in FULL]
+    BOTH = [r for pair in zip(FULL, SQLITE) for r in pair]
+
     def test_all_registries_publish_both_tags(self):
         result, calls = self.run_publish()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(self.repositories(calls), ['wekanteam/ferretdb', 'quay.io/wekan/ferretdb', 'ghcr.io/wekan/ferretdb'])
+        self.assertEqual(self.repositories(calls), self.BOTH)
         for row in calls:
             if row[0] != 'buildx':
                 continue
@@ -66,44 +72,71 @@ sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
             self.assertIn(repo + ':v1.82.0', row)
             self.assertIn(repo + ':latest', row)
             self.assertIn('--push', row)
-            self.assertIn('linux/amd64,linux/ppc64le', row)
+        self.assertIn('Published 6 of 6 images', result.stdout)
+
+    def test_each_image_is_made_of_its_own_binaries(self):
+        # ferretdb from ferretdb-<arch> on its platforms, ferretdb-sqlite from
+        # ferretdb-sqlite-<arch> on ITS platforms - never the other's.
+        result, calls = self.run_publish()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        for row in calls:
+            if row[:2] != ['buildx', 'build']:
+                continue
+            repo = row[row.index('-t') + 1].split(':')[0]
+            platforms = row[row.index('--platform') + 1]
+            if repo.endswith('-sqlite'):
+                self.assertIn('FERRETDB_ASSET=ferretdb-sqlite', row)
+                self.assertEqual(platforms, 'linux/amd64,linux/arm64')
+            else:
+                self.assertIn('FERRETDB_ASSET=ferretdb', row)
+                self.assertEqual(platforms, 'linux/amd64,linux/ppc64le')
+
+    def test_release_without_sqlite_binaries_publishes_only_ferretdb(self):
+        # Releases made before the SQLite-only build have no ferretdb-sqlite-<arch>:
+        # that is a warning, not a failed release.
+        result, calls = self.run_publish(sqlite_platforms='')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(self.repositories(calls), self.FULL)
+        self.assertIn('no ferretdb-sqlite-<arch> binaries', result.stdout)
+        self.assertIn('Published 3 of 3 images', result.stdout)
 
     def test_each_offline_registry_does_not_block_others(self):
         hosts = ['docker.io', 'quay.io', 'ghcr.io']
-        repos = ['wekanteam/ferretdb', 'quay.io/wekan/ferretdb', 'ghcr.io/wekan/ferretdb']
-        for host, repo in zip(hosts, repos):
+        for host, repo in zip(hosts, self.FULL):
             with self.subTest(host=host):
                 result, calls = self.run_publish(offline=host)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(self.repositories(calls), [r for r in repos if r != repo])
+                self.assertEqual(self.repositories(calls),
+                                 [r for r in self.BOTH if r not in (repo, repo + '-sqlite')])
                 self.assertEqual(sum(row[:2] == ['login', host] for row in calls), 2)
-                self.assertIn('Published to 2 of 3', result.stdout)
+                self.assertIn('Published 4 of 6', result.stdout)
 
     def test_build_or_push_failure_does_not_block_others(self):
-        for repo in ['wekanteam/ferretdb', 'quay.io/wekan/ferretdb', 'ghcr.io/wekan/ferretdb']:
+        # One failed image, on any registry, leaves the other five published.
+        for repo in self.BOTH:
             with self.subTest(repo=repo):
                 result, calls = self.run_publish(broken=repo)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(len(self.repositories(calls)), 3)
-                self.assertIn('Published to 2 of 3', result.stdout)
+                self.assertEqual(len(self.repositories(calls)), 6)
+                self.assertIn('Published 5 of 6', result.stdout)
 
     def test_all_offline_fails_without_push_attempts(self):
         result, calls = self.run_publish(offline='docker.io,quay.io,ghcr.io')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.repositories(calls), [])
-        self.assertIn('Published to 0 of 3', result.stdout)
+        self.assertIn('Published 0 of 6', result.stdout)
 
     def test_transient_login_recovers(self):
         result, calls = self.run_publish(transient='docker.io')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(self.repositories(calls)), 3)
+        self.assertEqual(len(self.repositories(calls)), 6)
 
     def test_missing_and_malformed_credentials_are_isolated(self):
         for credential in ['', '!!!', base64.b64encode(b'no-colon').decode(), base64.b64encode(b'user:').decode()]:
             with self.subTest(credential=credential):
                 result, calls = self.run_publish(credentials={'DOCKERHUB_AUTH': credential})
                 self.assertNotEqual(result.returncode, 0)
-                self.assertEqual(self.repositories(calls), ['quay.io/wekan/ferretdb', 'ghcr.io/wekan/ferretdb'])
+                self.assertEqual(self.repositories(calls), self.BOTH[2:])
 
     def test_invalid_version_never_invokes_docker(self):
         result, calls = self.run_publish(version='bad tag')
