@@ -695,3 +695,37 @@ func TestPrepareOrderByClause(t *testing.T) {
 		})
 	}
 }
+
+// A field every branch of an $or constrains narrows every match, so it picks the
+// index too: {$and: [{$or: [{boardId: {$in: A}}, {boardId: {$in: B}, assignees:
+// u}]}], type: ...} is a boardId lookup, and was answered from the far less
+// selective {type: 1} index - every row of that type read.
+func TestPreferredCompoundIndexOr(t *testing.T) {
+	t.Parallel()
+
+	indexes := []metadata.IndexInfo{
+		{Name: "boardId_1_archived_1_type_1_dueAt_1", Key: []metadata.IndexKeyPair{
+			{Field: "boardId"}, {Field: "archived"}, {Field: "type"}, {Field: "dueAt"},
+		}},
+		{Name: "type_1", Key: []metadata.IndexKeyPair{{Field: "type"}}},
+	}
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	common := doc(
+		"type", "cardType-card", "archived", false,
+		"$and", arr(doc("$or", arr(
+			doc("boardId", doc("$in", arr("b1", "b2"))),
+			doc("boardId", doc("$in", arr()), "assignees", "u1"),
+		))),
+	)
+	assert.Equal(t, "cards_boardId_1_archived_1_type_1_dueAt_1", preferredCompoundIndex("cards", indexes, common))
+
+	// Negative: a field only SOME branches constrain does not narrow the others'
+	// matches, and is not counted.
+	partial := doc(
+		"type", "cardType-card", "archived", false,
+		"$or", arr(doc("boardId", "b1"), doc("assignees", "u1")),
+	)
+	assert.Equal(t, "cards_type_1", preferredCompoundIndex("cards", indexes, partial))
+}

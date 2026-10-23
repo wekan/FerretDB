@@ -448,6 +448,47 @@ func coveringIndexFields(keys []metadata.IndexKeyPair, needed map[string]struct{
 
 func collectIndexedFields(filter *types.Document, fields map[string]struct{}) {
 	for _, key := range filter.Keys() {
+		// A field that EVERY branch of an $or constrains narrows every match,
+		// whichever branch it matches by - {$or: [{boardId: {$in: A}},
+		// {boardId: {$in: B}, assignees: u}]} is a boardId lookup. Without it,
+		// such a selector could only use an index on its other, less selective
+		// fields, and SQLite read every row they matched.
+		if key == "$or" {
+			branches, ok := must.NotFail(filter.Get(key)).(*types.Array)
+			if !ok || branches.Len() == 0 {
+				continue
+			}
+
+			var common map[string]struct{}
+			for i := 0; i < branches.Len(); i++ {
+				branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+				if !ok {
+					common = nil
+					break
+				}
+
+				own := map[string]struct{}{}
+				collectIndexedFields(branch, own)
+
+				if common == nil {
+					common = own
+					continue
+				}
+
+				for field := range common {
+					if _, ok := own[field]; !ok {
+						delete(common, field)
+					}
+				}
+			}
+
+			for field := range common {
+				fields[field] = struct{}{}
+			}
+
+			continue
+		}
+
 		if key == "$and" {
 			branches, ok := must.NotFail(filter.Get(key)).(*types.Array)
 			if !ok {
