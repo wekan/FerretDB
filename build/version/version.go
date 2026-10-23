@@ -30,8 +30,12 @@
 //
 //	ferretdb_debug			- enables debug build (see below; implied by builds with race detector)
 //	ferretdb_hana			- enables Hana backend (alpha)
+//	ferretdb_no_mysql		- disables MySQL backend
 //	ferretdb_no_postgresql	- disables PostgreSQL backend
 //	ferretdb_no_sqlite		- disables SQLite backend
+//
+// A SQLite-only build (the ferretdb-sqlite-<arch> release binaries) uses
+// -tags ferretdb_no_postgresql,ferretdb_no_mysql and no ferretdb_hana.
 //
 // # Debug builds
 //

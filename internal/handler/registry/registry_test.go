@@ -111,6 +111,19 @@ func TestDeps(t *testing.T) {
 		assert.Contains(t, diff, "github.com/jackc/pgx/v5")
 	})
 
+	t.Run("SQLiteOnly", func(t *testing.T) {
+		t.Parallel()
+
+		// The ferretdb-sqlite-<arch> release binaries are built this way.
+		diff := negTagPackages(t, "ferretdb_no_postgresql,ferretdb_no_mysql")
+		assert.Contains(t, diff, "github.com/FerretDB/FerretDB/internal/backends/postgresql")
+		assert.Contains(t, diff, "github.com/jackc/pgx/v5")
+		assert.Contains(t, diff, "github.com/FerretDB/FerretDB/internal/backends/mysql")
+		assert.Contains(t, diff, "github.com/go-sql-driver/mysql")
+		assert.NotContains(t, diff, "github.com/FerretDB/FerretDB/internal/backends/sqlite")
+		assert.NotContains(t, diff, "modernc.org/sqlite")
+	})
+
 	t.Run("NoSqlite", func(t *testing.T) {
 		t.Parallel()
 
@@ -118,4 +131,20 @@ func TestDeps(t *testing.T) {
 		assert.Contains(t, diff, "github.com/FerretDB/FerretDB/internal/backends/sqlite")
 		assert.Contains(t, diff, "modernc.org/sqlite")
 	})
+}
+
+// TestDefaultHandler pins the handler used without a --handler flag.
+// A default build keeps upstream's "postgresql"; default_sqlite_test.go checks
+// the SQLite-only build.
+func TestDefaultHandler(t *testing.T) {
+	t.Parallel()
+
+	h := Handlers()
+	require.NotEmpty(t, h)
+	assert.Equal(t, h[0], DefaultHandler())
+	assert.Contains(t, h, DefaultHandler())
+
+	if _, ok := registry["postgresql"]; ok {
+		assert.Equal(t, "postgresql", DefaultHandler())
+	}
 }

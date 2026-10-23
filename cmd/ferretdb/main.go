@@ -61,7 +61,7 @@ var cli struct {
 	} `cmd:"" name:"check-sqlite" help:"Run SQLite PRAGMA quick_check and exit."`
 
 	Version     bool   `default:"false"           help:"Print version to stdout and exit." env:"-"`
-	Handler     string `default:"postgresql"      help:"${help_handler}"`
+	Handler     string `default:"${default_handler}" help:"${help_handler}"`
 	Mode        string `default:"${default_mode}" help:"${help_mode}"                      enum:"${enum_mode}"`
 	StateDir    string `default:"."               help:"Process state directory."`
 	ReplSetName string `default:""                help:"Replica set name."`
@@ -210,6 +210,7 @@ var (
 			Compact: true,
 		},
 		kong.Vars{
+			"default_handler":   registry.DefaultHandler(),
 			"default_log_level": defaultLogLevel().String(),
 			"default_mode":      clientconn.AllModes[0],
 

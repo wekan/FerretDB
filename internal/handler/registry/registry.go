@@ -121,3 +121,17 @@ func Handlers() []string {
 
 	return res
 }
+
+// DefaultHandler returns the handler used when none is configured:
+// "postgresql" when it is built in, as upstream, otherwise the first handler
+// this build has. A build with -tags ferretdb_no_postgresql,ferretdb_no_mysql
+// has only "sqlite", so it starts without a --handler flag instead of failing
+// with `unknown handler "postgresql"`.
+func DefaultHandler() string {
+	h := Handlers()
+	if len(h) == 0 {
+		return ""
+	}
+
+	return h[0]
+}
