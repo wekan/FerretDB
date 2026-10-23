@@ -459,6 +459,35 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 	}, nil
 }
 
+// CountAll implements backends.Collection interface.
+func (c *collection) CountAll(ctx context.Context, params *backends.CountAllParams) (*backends.CountAllResult, error) {
+	p, err := c.r.DatabaseGetExisting(ctx, c.dbName)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if p == nil {
+		return new(backends.CountAllResult), nil
+	}
+
+	coll, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if coll == nil {
+		return new(backends.CountAllResult), nil
+	}
+
+	var res backends.CountAllResult
+	q := `SELECT COUNT(*) FROM ` + pgx.Identifier{c.dbName, coll.TableName}.Sanitize()
+	if err = p.QueryRow(ctx, q).Scan(&res.Count); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	return &res, nil
+}
+
 // Compact implements backends.Collection interface.
 func (c *collection) Compact(ctx context.Context, params *backends.CompactParams) (*backends.CompactResult, error) {
 	db, err := c.r.DatabaseGetExisting(ctx, c.dbName)

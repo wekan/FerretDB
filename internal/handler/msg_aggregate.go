@@ -391,7 +391,9 @@ func (h *Handler) MsgAggregate(connCtx context.Context, msg *wire.OpMsg) (*wire.
 			}
 		}
 
-		iter, err = processStagesDocuments(ctx, closer, &stagesDocumentsParams{c, qp, stagesDocuments})
+		iter, err = processStagesDocuments(ctx, closer, &stagesDocumentsParams{
+			c, qp, stagesDocuments, !h.DisablePushdown && countPipelineMatchesAll(aggregationStages),
+		})
 	} else {
 		// TODO https://github.com/FerretDB/FerretDB/issues/2423
 		statistics := stages.GetStatistics(collStatsDocuments)
@@ -488,19 +490,36 @@ type stagesDocumentsParams struct {
 	c      backends.Collection
 	qp     *backends.QueryParams
 	stages []aggregations.Stage
+	// countAll: the pipeline only counts the whole collection (count_all.go).
+	countAll bool
 }
 
 // processStagesDocuments retrieves the documents from the database and then processes them through the stages.
 func processStagesDocuments(ctx context.Context, closer *iterator.MultiCloser, p *stagesDocumentsParams) (types.DocumentsIterator, error) { //nolint:lll // for readability
-	queryRes, err := p.c.Query(ctx, p.qp)
-	if err != nil {
-		closer.Close()
-		return nil, lazyerrors.Error(err)
+	var iter types.DocumentsIterator
+
+	if p.countAll {
+		// countDocuments({}): counted by the database (count_all.go).
+		counted, err := countedDocuments(ctx, p.c)
+		if err != nil {
+			closer.Close()
+			return nil, err
+		}
+
+		iter = counted
+	} else {
+		queryRes, err := p.c.Query(ctx, p.qp)
+		if err != nil {
+			closer.Close()
+			return nil, lazyerrors.Error(err)
+		}
+
+		iter = queryRes.Iter
 	}
 
-	closer.Add(queryRes.Iter)
+	closer.Add(iter)
 
-	iter := queryRes.Iter
+	var err error
 
 	for _, s := range p.stages {
 		if iter, err = s.Process(ctx, iter, closer); err != nil {

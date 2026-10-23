@@ -73,12 +73,21 @@ func (h *Handler) MsgCount(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMs
 	// Only the filter's fields are read below (filter, skip, limit, count).
 	qp.DecodeFields = filterDecodeFields(params.Filter)
 
-	queryRes, err := c.Query(connCtx, &qp)
-	if err != nil {
-		return nil, lazyerrors.Error(err)
-	}
+	var iter types.DocumentsIterator
 
-	iter := queryRes.Iter
+	if !h.DisablePushdown && matchesAll(params.Filter) {
+		// The whole collection: counted by the database (count_all.go).
+		if iter, err = countedDocuments(connCtx, c); err != nil {
+			return nil, err
+		}
+	} else {
+		queryRes, err := c.Query(connCtx, &qp)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+
+		iter = queryRes.Iter
+	}
 
 	closer := iterator.NewMultiCloser(iter)
 	defer closer.Close()

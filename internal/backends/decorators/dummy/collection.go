@@ -60,6 +60,11 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 	return c.c.Stats(ctx, params)
 }
 
+// CountAll implements backends.Collection interface.
+func (c *collection) CountAll(ctx context.Context, params *backends.CountAllParams) (*backends.CountAllResult, error) {
+	return c.c.CountAll(ctx, params)
+}
+
 // Compact implements backends.Collection interface.
 func (c *collection) Compact(ctx context.Context, params *backends.CompactParams) (*backends.CompactResult, error) {
 	return c.c.Compact(ctx, params)

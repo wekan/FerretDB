@@ -385,6 +385,34 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 	return &res, nil
 }
 
+// CountAll implements backends.Collection interface.
+func (c *collection) CountAll(ctx context.Context, params *backends.CountAllParams) (*backends.CountAllResult, error) {
+	db, err := databaseExists(ctx, c.hdb, c.database)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if !db {
+		return new(backends.CountAllResult), nil
+	}
+
+	col, err := collectionExists(ctx, c.hdb, c.database, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	if !col {
+		return new(backends.CountAllResult), nil
+	}
+
+	n, err := querySingleInt(fmt.Sprintf("SELECT count(*) FROM %q.%q", c.database, c.name), ctx, c.hdb)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	return &backends.CountAllResult{Count: n}, nil
+}
+
 // Compact implements backends.Collection interface.
 func (c *collection) Compact(ctx context.Context, params *backends.CompactParams) (*backends.CompactResult, error) {
 	// HANA does not provide compact functionality.

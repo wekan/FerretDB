@@ -485,6 +485,26 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 	}, nil
 }
 
+// CountAll implements backends.Collection interface.
+func (c *collection) CountAll(ctx context.Context, params *backends.CountAllParams) (*backends.CountAllResult, error) {
+	db := c.r.DatabaseGetExisting(ctx, c.dbName)
+	if db == nil {
+		return new(backends.CountAllResult), nil
+	}
+
+	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if meta == nil {
+		return new(backends.CountAllResult), nil
+	}
+
+	var res backends.CountAllResult
+	if err := db.QueryRowContext(ctx, fmt.Sprintf(`SELECT COUNT(*) FROM %q`, meta.TableName)).Scan(&res.Count); err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+
+	return &res, nil
+}
+
 // Compact implements backends.Collection interface.
 func (c *collection) Compact(ctx context.Context, params *backends.CompactParams) (*backends.CompactResult, error) {
 	db := c.r.DatabaseGetExisting(ctx, c.dbName)

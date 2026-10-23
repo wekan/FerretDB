@@ -166,3 +166,33 @@ func TestFindKeepsDottedKeysForSupersetBackends(t *testing.T) {
 		})
 	}
 }
+
+func TestCountPipelineMatchesAll(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	group := doc("$group", doc("_id", int32(1), "n", doc("$sum", int32(1))))
+	empty := doc("$match", doc())
+
+	// The driver's countDocuments({}), with and without skip/limit, and $count.
+	for name, pipeline := range map[string][]any{
+		"countDocuments": {empty, group},
+		"skip and limit": {empty, doc("$skip", int64(10)), doc("$limit", int64(5)), group},
+		"count stage":    {empty, doc("$count", "n")},
+	} {
+		assert.True(t, countPipelineMatchesAll(pipeline), name)
+	}
+
+	// Negative: a filter, or anything but counting, still reads documents.
+	for name, pipeline := range map[string][]any{
+		"filter":          {doc("$match", doc("boardId", "b1")), group},
+		"_id filter":      {doc("$match", doc("_id", "x")), group},
+		"$expr":           {doc("$match", doc("$expr", true)), group},
+		"group by field":  {empty, doc("$group", doc("_id", "$listId", "n", doc("$sum", int32(1))))},
+		"sum of a field":  {empty, doc("$group", doc("_id", int32(1), "n", doc("$sum", "$size")))},
+		"project":         {empty, doc("$project", doc("a", int32(1)))},
+		"no counting end": {empty},
+	} {
+		assert.False(t, countPipelineMatchesAll(pipeline), name)
+	}
+}

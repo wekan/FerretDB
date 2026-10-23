@@ -49,6 +49,7 @@ type Collection interface {
 	DeleteAll(context.Context, *DeleteAllParams) (*DeleteAllResult, error)
 
 	Stats(context.Context, *CollectionStatsParams) (*CollectionStatsResult, error)
+	CountAll(context.Context, *CountAllParams) (*CountAllResult, error)
 	Compact(context.Context, *CompactParams) (*CompactResult, error)
 
 	ListIndexes(context.Context, *ListIndexesParams) (*ListIndexesResult, error)
@@ -322,6 +323,34 @@ type CollectionStatsResult struct {
 	SizeCollection  int64
 	SizeFreeStorage int64
 	IndexSizes      []IndexSize
+}
+
+// CountAllParams represents the parameters of Collection.CountAll method.
+type CountAllParams struct{}
+
+// CountAllResult represents the results of Collection.CountAll method.
+type CountAllResult struct {
+	Count int64
+}
+
+// CountAll returns the EXACT number of documents in the collection, counted by
+// the database itself (SELECT COUNT(*)) - unlike Stats, whose count may be an
+// estimate. A count with an empty filter used to fetch and decode every
+// document to count them.
+//
+// A collection or database that does not exist has no documents.
+func (cc *collectionContract) CountAll(ctx context.Context, params *CountAllParams) (*CountAllResult, error) {
+	ctx, span := otel.Tracer("").Start(ctx, "CollectionCountAll")
+	defer span.End()
+
+	res, err := cc.c.CountAll(ctx, params)
+	if err != nil {
+		span.SetStatus(otelcodes.Error, "")
+	}
+
+	checkError(err)
+
+	return res, err
 }
 
 // IndexSize represents the name and the size of an index.

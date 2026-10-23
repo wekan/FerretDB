@@ -572,3 +572,46 @@ func TestQueryRangePushdownDates(t *testing.T) {
 		assert.True(t, explainRes.FilterPushdown, "the date range must be pushed down")
 	})
 }
+
+func TestCountAll(t *testing.T) {
+	t.Parallel()
+
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	b, err := NewBackend(&NewBackendParams{URI: testutil.TestSQLiteURI(t, ""), L: testutil.Logger(t), P: sp, BatchSize: 100})
+	require.NoError(t, err)
+	t.Cleanup(b.Close)
+
+	db, err := b.Database(testutil.DatabaseName(t))
+	require.NoError(t, err)
+
+	coll, err := db.Collection(testutil.CollectionName(t))
+	require.NoError(t, err)
+
+	// Negative: a collection (and database) that does not exist has none.
+	res, err := coll.CountAll(ctx, new(backends.CountAllParams))
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), res.Count)
+
+	docs := make([]*types.Document, 1234)
+	for i := range docs {
+		docs[i] = must.NotFail(types.NewDocument("_id", int32(i), "v", "x"))
+	}
+
+	_, err = coll.InsertAll(ctx, &backends.InsertAllParams{Docs: docs})
+	require.NoError(t, err)
+
+	res, err = coll.CountAll(ctx, new(backends.CountAllParams))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1234), res.Count, "exact, not an estimate")
+
+	_, err = coll.DeleteAll(ctx, &backends.DeleteAllParams{IDs: []any{int32(0), int32(1)}})
+	require.NoError(t, err)
+
+	res, err = coll.CountAll(ctx, new(backends.CountAllParams))
+	require.NoError(t, err)
+	assert.Equal(t, int64(1232), res.Count, "and current after a delete")
+}
