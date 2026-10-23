@@ -49,6 +49,12 @@
 
 ### Fixed 🐛
 
+- **PostgreSQL answers equality and `$in` from the field's index**: the
+  field name was a query parameter (`_jsonb->$1 @> $2`), which no expression
+  index can match, so every query read the whole table - one document by `_id`
+  took 1.3 s in a table of 600,000. The field is now a literal and the array
+  case an index range. by @xet7. Thanks to xet7.
+
 - **`$elemMatch` on SQLite failed or missed matches**: a document whose array
   held a string made every `$elemMatch` on that array fail with "malformed
   JSON", and a field named `key`, `value`, `type`, `id` or `path` was compared
