@@ -1,10 +1,13 @@
 name: Release All (FerretDB v1)
 
-# Manually triggered. Builds FerretDB v1 (wekan/FerretDB, SQLite backend) for
-# every platform (via build.sh) into ./dist/ as individual per-arch binaries
-# (ferretdb-<arch>[.exe]) and publishes a GitHub Release with each binary attached
-# separately — NO ferretdb.zip — at https://github.com/wekan/FerretDB/releases, so
-# each consumer downloads only the one binary for the platform it targets.
+# Manually triggered. Builds FerretDB v1 (wekan/FerretDB) for every platform
+# (via build.sh) into ./dist/ as individual per-arch binaries, two per platform:
+#   ferretdb-<arch>[.exe]          every handler (sqlite, postgresql, mysql, hana)
+#   ferretdb-sqlite-<arch>[.exe]   the sqlite handler only (build.sh's
+#                                  FERRETDB_DIST_VARIANTS has the build tags)
+# and publishes a GitHub Release with each binary attached separately — NO
+# ferretdb.zip — at https://github.com/wekan/FerretDB/releases, so each consumer
+# downloads only the one binary for the platform and the handlers it needs.
 #
 # Each binary is attached the moment it is built: the release is created before
 # the build starts, and build.sh hands every binary that compiled and passed its
@@ -18,8 +21,9 @@ name: Release All (FerretDB v1)
 #   2. "Platforms: ..." listing every arch built into ./dist/, and
 #   3. the CHANGELOG.md section for that version.
 #
-# The multi-arch Docker image is built by a SEPARATE workflow, docker.yml, which
-# repackages the prebuilt binaries from the newest release into images and pushes
+# The multi-arch Docker images are built by a SEPARATE workflow, docker.yml, which
+# repackages the prebuilt binaries from the newest release into images - ferretdb
+# from ferretdb-<arch>, ferretdb-sqlite from ferretdb-sqlite-<arch> - and pushes
 # them to Docker Hub, Quay.io and GHCR (no recompilation). This workflow dispatches
 # docker.yml automatically as its final step (docker.yml also listens for a published
 # release, but a release created here with the default GITHUB_TOKEN does not emit that
@@ -112,13 +116,14 @@ jobs:
             echo "Release $V exists; binaries will be attached to it as they are built."
           else
             gh release create "$V" --verify-tag --title "$V" \
-              --notes "FerretDB v1 (SQLite) per-arch binaries for $V are being built and attached one platform at a time. These notes are replaced with the CHANGELOG section when the build finishes."
+              --notes "FerretDB v1 per-arch binaries for $V are being built and attached one platform at a time. These notes are replaced with the CHANGELOG section when the build finishes."
           fi
 
       - name: Build per-arch binaries for all platforms, attaching each as it is built
         id: build
         # build.sh cross-compiles every platform Go + modernc.org/sqlite support
-        # into ./dist/ as individual ferretdb-<arch>[.exe] binaries (+ README).
+        # into ./dist/ as individual ferretdb-<arch>[.exe] and
+        # ferretdb-sqlite-<arch>[.exe] binaries (+ README).
         # Sequential to stay within the runner's memory (16 concurrent Go builds
         # would risk OOM). setup-go put `go` on PATH, so build.sh uses it.
         # After each binary compiles and passes its telemetry audit, build.sh
@@ -196,9 +201,13 @@ jobs:
           # 1. Every arch built into ./dist/ (a "ferretdb-<arch>[.exe]" file),
           #    listed in build.sh's canonical order with any extras appended.
           # grep -v the checksum files: dist/ now holds ferretdb-amd64 AND
-          # ferretdb-amd64.sha256sum, and only the first is a platform.
-          present="$(ls dist | grep -v '\.sha256sum$' \
+          # ferretdb-amd64.sha256sum, and only the first is a platform. The
+          # SQLite-only ferretdb-sqlite-<arch> binaries are listed on a line of
+          # their own, so "sqlite-amd64" is not taken for a platform.
+          present="$(ls dist | grep -v '\.sha256sum$' | grep -v '^ferretdb-sqlite-' \
             | sed -n 's#^ferretdb-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
+          sqlite_present="$(ls dist | grep -v '\.sha256sum$' \
+            | sed -n 's#^ferretdb-sqlite-\(.*\)#\1#p' | sed 's#\.exe$##' | sort -u)"
           order="amd64 arm64 armhf armv6 armel i386 ppc64le s390x riscv64 loong64 win64 win-arm64 win32 mac-amd64 mac-arm64 freebsd-amd64 freebsd-i386 freebsd-armel freebsd-armv6 freebsd-armv7 freebsd-arm64 netbsd-amd64 openbsd-amd64 openbsd-arm64 android-arm64"
           plats=""
           for a in $order; do
@@ -206,6 +215,12 @@ jobs:
           done
           for a in $present; do
             printf ' %s ' "$order" | grep -q " $a " || plats="${plats:+$plats, }$a"
+          done
+          sqlite_plats=""
+          for a in $order $sqlite_present; do
+            printf '%s\n' "$sqlite_present" | grep -qx "$a" || continue
+            case ", $sqlite_plats, " in *", $a, "*) continue ;; esac
+            sqlite_plats="${sqlite_plats:+$sqlite_plats, }$a"
           done
 
           # 2. CHANGELOG section for this version: "## [<version>]" up to the next
@@ -222,16 +237,18 @@ jobs:
 
           # 3. Assemble: header line, Platforms line, then the CHANGELOG section.
           {
-            echo "FerretDB v1 (SQLite) multi-platform binaries — one ferretdb-<arch>[.exe] asset per platform (no ferretdb.zip). Built by release-all.yml from the wekan/FerretDB fork."
+            echo "FerretDB v1 multi-platform binaries — one ferretdb-<arch>[.exe] asset per platform with every handler, and one ferretdb-sqlite-<arch>[.exe] with only the SQLite handler (no ferretdb.zip). Built by release-all.yml from the wekan/FerretDB fork."
             echo ""
             echo "Platforms: $plats"
+            echo ""
+            echo "SQLite-only (ferretdb-sqlite-<arch>): ${sqlite_plats:-none}"
             echo ""
             echo "Every binary has a \`<name>.sha256sum\` beside it. To check a download:"
             echo ""
             echo '```'
-            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-amd64"
-            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-amd64.sha256sum"
-            echo "sha256sum -c ferretdb-amd64.sha256sum"
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-sqlite-amd64"
+            echo "curl -fsSLO https://github.com/${{ github.repository }}/releases/download/$V/ferretdb-sqlite-amd64.sha256sum"
+            echo "sha256sum -c ferretdb-sqlite-amd64.sha256sum"
             echo '```'
             echo ""
             cat changelog-section.md

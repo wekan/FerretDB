@@ -20,8 +20,11 @@ name: Release All Missing (FerretDB v1)
 # (build/ferretdb/publish-release-asset.sh) on every binary that compiled and
 # passed its telemetry audit, which writes the .sha256sum and uploads both.
 #
-# A platform counts as present only when BOTH ferretdb-<arch>[.exe] and its
-# .sha256sum are on the release. A binary whose checksum upload failed is the
+# Each platform has two assets, ferretdb-<arch>[.exe] (every handler) and
+# ferretdb-sqlite-<arch>[.exe] (SQLite only), and each is checked on its own:
+# a release made before the SQLite-only build existed gets just those added.
+# An asset counts as present only when BOTH it and its .sha256sum are on the
+# release. A binary whose checksum upload failed is the
 # half-published state this is meant to repair, so calling it present would
 # leave it that way.
 #
@@ -112,7 +115,7 @@ jobs:
           set -euo pipefail
           if ! gh release view "$V" >/dev/null 2>&1; then
             gh release create "$V" --verify-tag --title "$V" \
-              --notes "FerretDB v1 (SQLite) per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
+              --notes "FerretDB v1 per-arch binaries. Created by release-all-missing.yml because no release existed for this tag."
           fi
 
       - name: Build only the missing platforms, attaching each as it is built

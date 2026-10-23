@@ -62,6 +62,12 @@ def targets():
     return re.findall(r'^  "([^ "]+) ', block, re.M)
 
 
+def variants():
+    text = (ROOT / 'build.sh').read_text()
+    block = text.split('FERRETDB_DIST_VARIANTS=(', 1)[1].split('\n)', 1)[0]
+    return re.findall(r'^  "(\S+) (\S+)"', block, re.M)
+
+
 def fixture(root: Path, events: Path):
     for name in ('cmd', 'build/ferretdb', 'build/version', '.goroot/bin'):
         (root / name).mkdir(parents=True)
@@ -115,16 +121,71 @@ class BuildAttachesEachBinary(unittest.TestCase):
         expected = []
         for name in targets():
             exe = '.exe' if name.startswith('win') else ''
-            expected += [f'build ferretdb-{name}{exe}', f'publish ferretdb-{name}{exe}']
-        self.assertEqual(len(expected), 50)
+            for prefix in ('ferretdb', 'ferretdb-sqlite'):
+                expected += [f'build {prefix}-{name}{exe}', f'publish {prefix}-{name}{exe}']
+        self.assertEqual(len(expected), 100)
         self.assertEqual(lines, expected)
+
+    def test_every_target_has_a_full_and_a_sqlite_only_build(self):
+        # ferretdb-<arch> keeps every handler (hana is opt-in by tag);
+        # ferretdb-sqlite-<arch> leaves out PostgreSQL and MySQL and never adds
+        # hana, so the SQLite handler is the only one in it.
+        self.assertEqual(variants(), [
+            ('ferretdb', 'ferretdb_hana'),
+            ('ferretdb-sqlite', 'ferretdb_no_postgresql,ferretdb_no_mysql'),
+        ])
+        text = (ROOT / 'build.sh').read_text()
+        self.assertIn('-tags "$tags"', text)
+        # Negative: no release build hardcodes one variant's tags any more.
+        build = text.split('build_ferretdb_variant() {', 1)[1].split('\n}\n', 1)[0]
+        self.assertNotIn('-tags ferretdb_hana', build)
+
+    def test_sqlite_build_is_recorded_so_the_asset_name_can_be_rebuilt(self):
+        # attach-finished.sh and release-all-missing.yml rebuild the asset as
+        # ferretdb-<built.list entry>: "sqlite-amd64" -> ferretdb-sqlite-amd64.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            fixture(root, Path(tmp) / 'events')
+            result = subprocess.run(['bash', str(root / 'build.sh'), 'dist-seq'], cwd=root,
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            built = (root / 'tmp/ferretdb-dist/built.list').read_text().split()
+            self.assertIn('amd64', built)
+            self.assertIn('sqlite-amd64', built)
+            self.assertIn('sqlite-win64', built)
+            for entry in built:
+                exe = '.exe' if entry.removeprefix('sqlite-').startswith('win') else ''
+                self.assertTrue((root / 'dist' / f'ferretdb-{entry}{exe}').is_file(), entry)
+            readme = (root / 'dist/README.md').read_text()
+            self.assertIn('ferretdb-sqlite-<arch>', readme)
+
+    def test_skip_list_skips_each_variant_on_its_own(self):
+        # A release from before the SQLite-only build has every ferretdb-<arch>
+        # but no ferretdb-sqlite-<arch>: release-all-missing.yml builds only those.
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / 'repo'
+            events = Path(tmp) / 'events'
+            fixture(root, events)
+            skip = Path(tmp) / 'existing.txt'
+            names = []
+            for name in targets():
+                exe = '.exe' if name.startswith('win') else ''
+                names += [f'ferretdb-{name}{exe}', f'ferretdb-{name}{exe}.sha256sum']
+            skip.write_text('\n'.join(names) + '\n')
+            result = subprocess.run(['bash', str(root / 'build.sh'), 'dist-seq'], cwd=root,
+                                    env={**os.environ, 'FERRETDB_DIST_SKIP_LIST': str(skip)},
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            built = [l.split()[1] for l in events.read_text().splitlines() if l.startswith('build ')]
+            self.assertEqual(len(built), 25)
+            self.assertTrue(all(b.startswith('ferretdb-sqlite-') for b in built), built)
 
     def test_parallel_build_publishes_every_binary_once(self):
         result, lines = self.run_dist('dist-par')
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         published = [l for l in lines if l.startswith('publish ')]
-        self.assertEqual(len(published), 25)
-        self.assertEqual(len(set(published)), 25)
+        self.assertEqual(len(published), 50)
+        self.assertEqual(len(set(published)), 50)
         for line in published:
             self.assertLess(lines.index(line.replace('publish', 'build', 1)), lines.index(line))
 
@@ -132,7 +193,7 @@ class BuildAttachesEachBinary(unittest.TestCase):
         result, lines = self.run_dist('dist-seq', fail='ferretdb-arm64')
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('could not attach to the release: arm64', result.stdout + result.stderr)
-        self.assertEqual(len([l for l in lines if l.startswith('build ')]), 25)
+        self.assertEqual(len([l for l in lines if l.startswith('build ')]), 50)
 
     def test_without_publisher_build_sh_only_builds(self):
         with tempfile.TemporaryDirectory() as tmp:

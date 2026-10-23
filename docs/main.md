@@ -33,7 +33,8 @@ MySQL, MariaDB and SAP HANA remain experimental. MySQL and MariaDB became able t
 store anything at all in 2026-07 — the backend had been quoting identifiers the way
 PostgreSQL does, which MySQL rejects outright — and MariaDB runs on that same `mysql`
 backend. SAP HANA needs a binary built with the `ferretdb_hana` build tag; the
-releases of this fork carry it.
+`ferretdb-<arch>` releases of this fork carry it. The `ferretdb-sqlite-<arch>`
+releases and the `ferretdb-sqlite` image carry only the SQLite handler.
 
 See our [public roadmap](https://github.com/orgs/FerretDB/projects/2/views/1),
 a list of [known differences with MongoDB](diff.md),

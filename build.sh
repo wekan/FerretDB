@@ -6,9 +6,11 @@
 #   ./build.sh              # interactive menu
 #   ./build.sh <command>    # run one action non-interactively, e.g.:
 #   ./build.sh deps | build | run | goenv | unit | lint | docker | clean
+#   ./build.sh build-sqlite            # SQLite-only build -> bin/ferretdb-sqlite
 #   ./build.sh no-lfs                  # fail if anything is stored in Git LFS (also part of lint)
 #   ./build.sh telemetry-check       # review source and run no-network behavior tests
-#   ./build.sh dist                    # build all per-arch binaries, sequential (default)
+#   ./build.sh dist                    # build all per-arch binaries (ferretdb-<arch> and
+#                                      # ferretdb-sqlite-<arch>), sequential (default)
 #   ./build.sh dist-seq                # build all per-arch binaries, one platform at a time
 #   ./build.sh dist-par                # build all per-arch binaries, all platforms in parallel
 #   ./build.sh release [version]       # trigger release-all.yml (per-arch binaries + GitHub Release)
@@ -162,6 +164,17 @@ act_build() {
   info "Built bin/ferretdb"
 }
 
+# The SQLite-only binary the ferretdb-sqlite-<arch> release assets are: the
+# same tags as FERRETDB_DIST_VARIANTS below.
+act_build_sqlite() {
+  act_telemetry_check || return 1
+  info "Building FerretDB (sqlite handler only) -> bin/ferretdb-sqlite ..."
+  mkdir -p bin
+  go build -mod=readonly -tags ferretdb_no_postgresql,ferretdb_no_mysql -o bin/ferretdb-sqlite ./cmd/ferretdb || return 1
+  python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb bin/ferretdb-sqlite || { rm -f bin/ferretdb-sqlite; return 1; }
+  info "Built bin/ferretdb-sqlite"
+}
+
 act_run() {
   act_build || return 1
   mkdir -p "$STATE_DIR"
@@ -213,13 +226,49 @@ FERRETDB_DIST_TARGETS=(
   "android-arm64 android arm64 "
 )
 
+# Every target is built twice, as two release assets:
+#
+#   ferretdb-<arch>[.exe]         every handler: sqlite, postgresql, mysql and
+#                                 hana (-tags ferretdb_hana)
+#   ferretdb-sqlite-<arch>[.exe]  ONLY the sqlite handler
+#                                 (-tags ferretdb_no_postgresql,ferretdb_no_mysql,
+#                                 no ferretdb_hana): no pgx, MySQL or go-hdb
+#                                 driver in it, about 5 MB smaller, and its
+#                                 --handler default is "sqlite"
+#
+# A client that only runs SQLite takes the second; one that needs PostgreSQL,
+# MySQL, MariaDB or SAP HANA takes the first. Each line is
+# "<asset prefix> <build tags>". The asset prefix minus "ferretdb" is what
+# built.list records in front of the arch ("amd64", "sqlite-amd64"), so
+# attach-finished.sh and release-all-missing.yml, which rebuild the asset name
+# as ferretdb-<entry>, need no list of their own.
+FERRETDB_DIST_VARIANTS=(
+  "ferretdb ferretdb_hana"
+  "ferretdb-sqlite ferretdb_no_postgresql,ferretdb_no_mysql"
+)
+
 # build_ferretdb_target <name> <goos> <goarch> <goarm> <out-dir> <report-dir>
-# Builds one target; on success writes the (executable) binary as
-# <out-dir>/ferretdb-<name>[.exe] and records <name> in <report-dir>/built.list,
-# else skips and records it in <report-dir>/failed.list. Safe to run concurrently.
+# Builds every FERRETDB_DIST_VARIANTS asset of one target, one after the other.
+# Returns non-zero when any of them failed its audit or could not be attached,
+# after trying the others.
 build_ferretdb_target() {
-  local name="$1" goos="$2" goarch="$3" goarm="$4" out="$5" rep="$6"
+  local rc=0 v
+  for v in "${FERRETDB_DIST_VARIANTS[@]}"; do
+    build_ferretdb_variant "${v%% *}" "${v#* }" "$@" || rc=1
+  done
+  return "$rc"
+}
+
+# build_ferretdb_variant <asset-prefix> <tags> <name> <goos> <goarch> <goarm> <out-dir> <report-dir>
+# Builds one asset; on success writes the (executable) binary as
+# <out-dir>/<asset-prefix>-<name>[.exe] and records it in <report-dir>/built.list
+# as <name> (ferretdb) or <variant>-<name> (ferretdb-<variant>), else skips and
+# records it in <report-dir>/failed.list. Safe to run concurrently.
+build_ferretdb_variant() {
+  local prefix="$1" tags="$2" arch="$3" goos="$4" goarch="$5" goarm="$6" out="$7" rep="$8"
   local ext=""; [ "$goos" = windows ] && ext=".exe"
+  # "amd64" for ferretdb-amd64, "sqlite-amd64" for ferretdb-sqlite-amd64.
+  local name="${prefix#ferretdb}"; name="${name#-}"; name="${name:+$name-}$arch"
   mkdir -p "$out"
   # FERRETDB_DIST_SKIP_LIST names a file of asset names already on the release
   # (one per line). A target listed there is not rebuilt, which is how
@@ -237,17 +286,19 @@ build_ferretdb_target() {
     info "  have    $name (already on the release)"
     return 0
   fi
-  # -tags ferretdb_hana: the "hana" handler is behind that build tag, so without it
-  # the released binaries answer `--handler=hana` with "unknown handler" - which is
-  # what a client compose file for SAP HANA would hit. go-hdb is pure Go, so it
-  # cross-compiles with CGO_ENABLED=0 like the rest.
+  # -tags "$tags" from FERRETDB_DIST_VARIANTS. The full build has
+  # ferretdb_hana: the "hana" handler is behind that build tag, so without it
+  # the released binaries answer `--handler=hana` with "unknown handler" - which
+  # is what a client compose file for SAP HANA would hit. go-hdb is pure Go, so
+  # it cross-compiles with CGO_ENABLED=0 like the rest. The SQLite-only build
+  # leaves that tag out and adds ferretdb_no_postgresql,ferretdb_no_mysql.
   # -ldflags "-s -w": no symbol table and no DWARF debug data. The binary was
   # 57.7 MB with them and 40.3 MB without (amd64), in every WeKan bundle, image
   # and snap. A panic still prints a full stack trace with function names: those
   # come from the runtime's own pclntab, which -s -w keeps. The version comes
   # from embedded files (build/version), not from linker flags.
   if CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" GOARM="$goarm" \
-       go build -mod=readonly -trimpath -ldflags "-s -w" -tags ferretdb_hana -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
+       go build -mod=readonly -trimpath -ldflags "-s -w" -tags "$tags" -o "$out/ferretdb-$name$ext" ./cmd/ferretdb 2>"$rep/$name.log"; then
     if ! python3 "$ROOT/build/ferretdb/check-telemetry.py" --kind ferretdb "$out/ferretdb-$name$ext"; then
       printf '%s\n' "$name" >> "$rep/telemetry-failed.list"
       rm -f "$out/ferretdb-$name$ext"
@@ -279,9 +330,9 @@ build_ferretdb_target() {
   fi
 }
 
-# act_dist <seq|par> — cross-compile FerretDB (SQLite) for all platforms into
-# ./dist/ as individual, self-contained binaries named ferretdb-<arch>[.exe]
-# (plus a README.md). No ferretdb.zip is produced: the GitHub Release attaches
+# act_dist <seq|par> — cross-compile FerretDB for all platforms into ./dist/ as
+# individual, self-contained binaries named ferretdb-<arch>[.exe] (every
+# handler) and ferretdb-sqlite-<arch>[.exe] (SQLite only), plus a README.md. No ferretdb.zip is produced: the GitHub Release attaches
 # every binary separately, so each consumer downloads only the one binary for the
 # platform it targets.
 act_dist() {
@@ -332,34 +383,40 @@ act_dist() {
   fi
 
   {
-    echo "# FerretDB v1 (SQLite)"
+    echo "# FerretDB v1"
     echo
     echo "FerretDB v1 binaries compiled from this fork:"
     echo "https://github.com/wekan/FerretDB"
     echo
-    echo "FerretDB is an open-source, MongoDB-compatible database. These builds use"
-    echo "the embedded pure-Go SQLite backend, so each binary is a single"
-    echo "self-contained MongoDB-compatible server that needs no external database."
+    echo "FerretDB is an open-source, MongoDB-compatible database. Each binary is a"
+    echo "single self-contained MongoDB-compatible server; with the embedded pure-Go"
+    echo "SQLite backend it needs no external database."
     echo
     echo "Version: $fver"
     echo
     echo "## Assets"
     echo
-    echo "Each platform is a separate release asset (no ferretdb.zip):"
+    echo "Each platform is a separate release asset (no ferretdb.zip), in two builds:"
     echo
-    echo "    ferretdb-<arch>        (Linux/macOS/BSD)"
-    echo "    ferretdb-<arch>.exe    (Windows)"
+    echo "    ferretdb-<arch>               every handler: sqlite, postgresql, mysql, hana"
+    echo "    ferretdb-<arch>.exe           (Windows)"
+    echo "    ferretdb-sqlite-<arch>        the sqlite handler only - smaller, and"
+    echo "    ferretdb-sqlite-<arch>.exe    --handler defaults to sqlite (Windows)"
     echo
-    echo "Download only the one you need, e.g.:"
+    echo "Every binary has a <name>.sha256sum beside it. Download only the one you"
+    echo "need, e.g.:"
     echo
-    echo "    curl -fSLO https://github.com/wekan/FerretDB/releases/latest/download/ferretdb-amd64"
+    echo "    curl -fSLO https://github.com/wekan/FerretDB/releases/latest/download/ferretdb-sqlite-amd64"
     echo
     echo "Included in this build: $(tr '\n' ' ' < "$rep/built.list")"
     echo
     echo "## Run"
     echo
-    echo "    ferretdb-<arch> --handler=sqlite --sqlite-url=file:./ferretdb-sqlite/ \\"
+    echo "    ferretdb-sqlite-<arch> --sqlite-url=file:./ferretdb-sqlite/ \\"
     echo "      --listen-addr=127.0.0.1:27017 --telemetry=disable"
+    echo
+    echo "The full ferretdb-<arch> needs --handler=sqlite for that (its default is"
+    echo "postgresql), or --handler=postgresql|mysql|hana with that handler's URL."
     echo
     echo "Then point your MongoDB client at it: MONGO_URL=mongodb://127.0.0.1:27017/mydb"
     echo
@@ -688,7 +745,8 @@ menu() {
     printf "\n${B}FerretDB v1 (SQLite) — build.sh${N}\n"
     cat <<EOF
   1) Install dependencies         (go mod download: root + integration + tools)
-  2) Build FerretDB               (-> bin/ferretdb, SQLite handler)
+  2) Build FerretDB               (-> bin/ferretdb, every handler)
+ 18) Build FerretDB SQLite-only   (-> bin/ferretdb-sqlite, sqlite handler only)
   3) Run FerretDB                 (SQLite backend on $LISTEN_ADDR)
   4) Run integration tests        — PARALLEL (all tests, $(cpu_count) workers)
   5) Run integration tests        — SEQUENTIAL (one at a time)
@@ -717,6 +775,7 @@ EOF
     case "$choice" in
       1) act_deps ;;
       2) act_build ;;
+      18) act_build_sqlite ;;
       3) act_run ;;
       4) act_test par ;;
       5) act_test seq ;;
@@ -754,6 +813,7 @@ case "${1:-}" in
   deps)       act_deps ;;
   telemetry-check) act_telemetry_check ;;
   build)      act_build ;;
+  build-sqlite) act_build_sqlite ;;
   run)        act_run ;;
   dist)       act_dist seq ;;
   dist-seq)   act_dist seq ;;
@@ -774,6 +834,6 @@ case "${1:-}" in
   clean)      act_clean ;;
   goenv)      act_goenv ;;
   -h|--help|help)
-    sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) err "Unknown command: $1"; err "Run '$0 --help' for usage."; exit 2 ;;
 esac
