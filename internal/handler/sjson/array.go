@@ -34,12 +34,22 @@ func (a *arrayType) UnmarshalJSONWithSchema(data []byte, schemas []*elem) error 
 		panic("null data")
 	}
 
-	var rawMessages []json.RawMessage
-	// json.Unmarshal rejects trailing non-whitespace input. Nested arrays are
-	// extremely common, so avoid allocating a Reader, Decoder and decoder buffer
-	// for every one while recursively decoding a result set.
-	if err := unmarshalComposite(data, &rawMessages); err != nil {
-		return lazyerrors.Error(err)
+	// The fast path (scan.go) splits the array without reflection; anything it
+	// does not expect is decoded, or rejected, by json.Unmarshal as before.
+	rawMessages, ok := scanArray(data)
+	if !ok {
+		var slow []json.RawMessage
+		// json.Unmarshal rejects trailing non-whitespace input. Nested arrays are
+		// extremely common, so avoid allocating a Reader, Decoder and decoder buffer
+		// for every one while recursively decoding a result set.
+		if err := unmarshalComposite(data, &slow); err != nil {
+			return lazyerrors.Error(err)
+		}
+
+		rawMessages = make([][]byte, len(slow))
+		for i, m := range slow {
+			rawMessages[i] = m
+		}
 	}
 
 	if len(rawMessages) > 0 && schemas == nil {

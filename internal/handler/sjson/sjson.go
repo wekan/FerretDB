@@ -66,11 +66,12 @@ package sjson
 import (
 	"bytes"
 	"container/list"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"hash/maphash"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -89,18 +90,34 @@ const (
 
 type schemaCache struct {
 	sync.Mutex
-	m   map[[sha256.Size]byte]*list.Element
+	m   map[schemaKey]*list.Element
 	lru list.List
 }
 
-var decodedSchemas = schemaCache{m: make(map[[sha256.Size]byte]*list.Element)}
+var decodedSchemas = schemaCache{m: make(map[schemaKey]*list.Element)}
+
+// schemaKey identifies a raw schema in the cache: its length and two 64-bit
+// hashes with independent random seeds. It replaced a SHA-256 of the schema,
+// computed for every decoded document - a tenth of the decoding time - while a
+// keyed 128-bit hash is as safe a cache key: the seeds are chosen at startup,
+// so a stored document cannot be crafted to collide with another's schema.
+type schemaKey struct {
+	n    int
+	a, b uint64
+}
+
+var schemaSeedA, schemaSeedB = maphash.MakeSeed(), maphash.MakeSeed()
+
+func schemaKeyOf(data []byte) schemaKey {
+	return schemaKey{n: len(data), a: maphash.Bytes(schemaSeedA, data), b: maphash.Bytes(schemaSeedB, data)}
+}
 
 type cachedSchema struct {
-	key [sha256.Size]byte
+	key schemaKey
 	sch *schema
 }
 
-func (c *schemaCache) get(key [sha256.Size]byte) *schema {
+func (c *schemaCache) get(key schemaKey) *schema {
 	c.Lock()
 	defer c.Unlock()
 
@@ -112,7 +129,7 @@ func (c *schemaCache) get(key [sha256.Size]byte) *schema {
 	return entry.Value.(*cachedSchema).sch
 }
 
-func (c *schemaCache) add(key [sha256.Size]byte, sch *schema, capacity int) *schema {
+func (c *schemaCache) add(key schemaKey, sch *schema, capacity int) *schema {
 	c.Lock()
 	defer c.Unlock()
 
@@ -140,9 +157,9 @@ func (c *schemaCache) add(key [sha256.Size]byte, sch *schema, capacity int) *sch
 // hot entry when a scan encounters a new shape.
 func decodeSchema(data []byte) (*schema, error) {
 	cacheable := len(data) <= schemaCacheMaxBytes
-	var key [sha256.Size]byte
+	var key schemaKey
 	if cacheable {
-		key = sha256.Sum256(data)
+		key = schemaKeyOf(data)
 		if sch := decodedSchemas.get(key); sch != nil {
 			return sch, nil
 		}
@@ -275,6 +292,32 @@ func toSJSON(v any) sjsontype {
 // Unmarshal decodes the top-level document.
 // It decodes document's schema from the `$s` field and uses it to decode the data of the document.
 func Unmarshal(data []byte) (*types.Document, error) {
+	if fields, ok := scanObject(data); ok && len(fields) > 0 && fields[0].key == "$s" {
+		// A schema decodeSchema refuses is refused again, with its error, by the
+		// original path.
+		if sch, err := decodeSchema(fields[0].value); err == nil && inSchemaOrder(fields, 1, sch) {
+			d := types.MakeDocument(len(sch.Keys))
+
+			for i, key := range sch.Keys {
+				v, err := unmarshalSingleValue(fields[i+1].value, sch.Properties[key])
+				if err != nil {
+					return nil, lazyerrors.Error(err)
+				}
+
+				d.Set(key, v)
+			}
+
+			return d, nil
+		}
+	}
+
+	return unmarshalSlow(data)
+}
+
+// unmarshalSlow is Unmarshal for a document that is not in the canonical form
+// the fast path decodes (see scan.go): it decodes, or rejects, every document
+// exactly as Unmarshal always has.
+func unmarshalSlow(data []byte) (*types.Document, error) {
 	var v map[string]json.RawMessage
 	// Unmarshal already rejects trailing non-whitespace input. Using it directly
 	// avoids allocating a Reader, Decoder and its read buffer for every document
@@ -329,6 +372,40 @@ func Unmarshal(data []byte) (*types.Document, error) {
 // values and their often much larger schemas (for example member arrays when a
 // client requested only _id). Missing selected fields remain missing.
 func UnmarshalFields(data []byte, fields []string) (*types.Document, error) {
+	if raw, ok := scanObject(data); ok && len(raw) > 0 && raw[0].key == "$s" {
+		// Only the schema (usually cached) and the selected values are decoded:
+		// an unselected value is skipped by the scanner and never parsed. A
+		// schema the strict cached decoder refuses is left to the original path.
+		if sch, err := decodeSchema(raw[0].value); err == nil && inSchemaOrder(raw, 1, sch) {
+			d := must.NotFail(types.NewDocument())
+
+			for i, key := range sch.Keys {
+				if !slices.Contains(fields, key) {
+					continue
+				}
+
+				fieldSchema := sch.Properties[key]
+				if fieldSchema == nil {
+					return nil, lazyerrors.Errorf("sjson.UnmarshalFields: missing schema for key %q", key)
+				}
+
+				decoded, err := unmarshalSingleValue(raw[i+1].value, fieldSchema)
+				if err != nil {
+					return nil, lazyerrors.Error(err)
+				}
+
+				d.Set(key, decoded)
+			}
+
+			return d, nil
+		}
+	}
+
+	return unmarshalFieldsSlow(data, fields)
+}
+
+// unmarshalFieldsSlow is UnmarshalFields for a document not in canonical form.
+func unmarshalFieldsSlow(data []byte, fields []string) (*types.Document, error) {
 	var values map[string]json.RawMessage
 	if err := json.Unmarshal(data, &values); err != nil {
 		return nil, lazyerrors.Error(err)
@@ -392,6 +469,10 @@ func unmarshalSingleValue(data json.RawMessage, sch *elem) (any, error) {
 	// avoiding a decoder, reader and buffered-state allocation for every field.
 	switch sch.Type {
 	case elemTypeString:
+		if v, ok := fastString(data); ok {
+			return v, nil
+		}
+
 		var v string
 		if err := json.Unmarshal(data, &v); err != nil {
 			return nil, lazyerrors.Error(err)

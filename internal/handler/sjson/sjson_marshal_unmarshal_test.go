@@ -16,7 +16,6 @@ package sjson
 
 import (
 	"container/list"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -113,10 +112,10 @@ func TestDecodeSchemaCache(t *testing.T) {
 func TestSchemaCacheLRU(t *testing.T) {
 	t.Parallel()
 
-	cache := schemaCache{m: make(map[[sha256.Size]byte]*list.Element)}
-	oneKey := sha256.Sum256([]byte("one"))
-	twoKey := sha256.Sum256([]byte("two"))
-	threeKey := sha256.Sum256([]byte("three"))
+	cache := schemaCache{m: make(map[schemaKey]*list.Element)}
+	oneKey := schemaKeyOf([]byte("one"))
+	twoKey := schemaKeyOf([]byte("two"))
+	threeKey := schemaKeyOf([]byte("three"))
 	one := new(schema)
 	two := new(schema)
 	three := new(schema)

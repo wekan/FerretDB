@@ -35,6 +35,25 @@ func (doc *documentType) UnmarshalJSONWithSchema(data []byte, sch *schema) error
 		panic("null data")
 	}
 
+	// The canonical form - keys in schema order, each once - is decoded by the
+	// fast path (scan.go); anything else as before.
+	if fields, ok := scanObject(data); ok && sch != nil && len(fields) > 0 && inSchemaOrder(fields, 0, sch) {
+		td := types.MakeDocument(len(sch.Keys))
+
+		for i, key := range sch.Keys {
+			v, err := unmarshalSingleValue(fields[i].value, sch.Properties[key])
+			if err != nil {
+				return lazyerrors.Error(err)
+			}
+
+			td.Set(key, v)
+		}
+
+		*doc = documentType(*td)
+
+		return nil
+	}
+
 	var rawMessages map[string]json.RawMessage
 	// json.Unmarshal rejects trailing non-whitespace input. Nested documents are
 	// extremely common, so avoid allocating a Reader, Decoder and decoder buffer
