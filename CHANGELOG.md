@@ -2,6 +2,59 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **`ferretdb_no_mysql` build tag**: the "mysql" handler and its
+  `--mysql-url` flag can now be left out of a build, the same way
+  `ferretdb_no_postgresql` and `ferretdb_no_sqlite` already leave out theirs.
+  A client that only ever runs the "sqlite" handler can build with
+  `-tags ferretdb_no_postgresql,ferretdb_no_mysql` (and without
+  `ferretdb_hana`): the linux/amd64 binary goes from 41,009,312 to 35,569,824
+  bytes. Default builds are unchanged. See wekan/wekan Sandstorm
+  `Smaller-wekan-spk.md`. by @xet7. Thanks to xet7.
+- **Multikey side tables for SQLite**: an index whose leading key is
+  `ARRAY.FIELD` (`members.userId`) now has a side table of element values and
+  `_id`s, kept current by triggers, so a membership test
+  (`{members: {$elemMatch: {userId: X}}}`, alone or in an `$or` whose other
+  branches name `_id`s) reads only the matching documents instead of parsing
+  the array of nearly every row. Existing databases get the tables once when
+  opened (index format 3). On wekan/wekan's database speed test, the All Boards
+  count of a user on hundreds of boards went from 6.2 s to milliseconds. by
+  @xet7. Thanks to xet7.
+
+### Fixed 🐛
+
+- **`$elemMatch` on SQLite failed or missed matches**: a document whose array
+  held a string made every `$elemMatch` on that array fail with "malformed
+  JSON", and a field named `key`, `value`, `type`, `id` or `path` was compared
+  with `json_each`'s column of that name, losing real matches. by @xet7. Thanks
+  to xet7.
+- **The SQL guard checked SQLite with PostgreSQL rules**: SQLite pools are
+  named after their database, so the dialect was never recognised; they now
+  declare it. The guard accepts the one `;` that ends a single-statement SQLite
+  trigger body and nothing more. by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **Faster decoding of stored documents**: a scanner splits a document into
+  its raw values instead of `json.Unmarshal` into a map and again for every
+  string and nested value, and the schema cache key is a keyed 128-bit hash
+  instead of a SHA-256. A 2.2 kB document decodes in 20 µs instead of 65,
+  three of its fields in 8 instead of 68. Only the canonical stored form takes
+  the fast path; anything else is decoded, or refused, as before, and a fuzz
+  test compares the two. by @xet7. Thanks to xet7.
+- **Iterator leak tracking only in debug builds**: it captured a stack and set
+  a finalizer for every document iterator, about an eighth of the CPU of a
+  release build answering large queries. by @xet7. Thanks to xet7.
+- **A whole-collection count is `SELECT COUNT(*)`**: `count` without a query
+  and `countDocuments({})` no longer fetch and decode every document; the new
+  `Collection.CountAll` is exact in every backend. by @xet7. Thanks to xet7.
+- **SQLite index choice sees `$or`**: a field every branch of an `$or`
+  constrains chooses the index, so a `boardId` lookup written as an `$or` no
+  longer reads every row of a less selective index. by @xet7. Thanks to xet7.
+
 ## [v1.98.0](https://github.com/wekan/FerretDB/releases/tag/v1.98.0) (2026-10-22)
 
 ### Fixed 🐛
