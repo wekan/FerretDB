@@ -66,6 +66,19 @@ func WrapDB(db *sql.DB, name string, l *slog.Logger) *DB {
 	return res
 }
 
+// WrapDBDialect is WrapDB for a database whose SQL guard dialect is not in its
+// name. A SQLite pool is named after the database it opens, so DialectByName
+// read it as PostgreSQL - the same quoting rules, but not SQLite's trigger
+// grammar (sqlguard.Check).
+func WrapDBDialect(db *sql.DB, name string, l *slog.Logger, dialect sqlguard.Dialect) *DB {
+	res := WrapDB(db, name, l)
+	if res != nil {
+		res.dialect = dialect
+	}
+
+	return res
+}
+
 // Close calls [*sql.DB.Close].
 func (db *DB) Close() error {
 	resource.Untrack(db, db.token)

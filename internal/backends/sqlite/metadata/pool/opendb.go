@@ -26,6 +26,7 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/fsql"
 	"github.com/FerretDB/FerretDB/internal/util/lazyerrors"
 	"github.com/FerretDB/FerretDB/internal/util/logging"
+	"github.com/FerretDB/FerretDB/internal/util/sqlguard"
 	"github.com/FerretDB/FerretDB/internal/util/state"
 )
 
@@ -65,7 +66,7 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 		}
 	}
 
-	return fsql.WrapDB(db, name, l), nil
+	return fsql.WrapDBDialect(db, name, l, sqlguard.SQLite), nil
 }
 
 // sqliteAutoRepairEnabled reports whether automatic SQLite corruption detection and

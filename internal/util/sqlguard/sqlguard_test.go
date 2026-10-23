@@ -44,6 +44,9 @@ func TestCheckAcceptsRealStatements(t *testing.T) {
 		"SQLiteSelect": {SQLite, `SELECT _ferretdb_sjson FROM "cards_1a2b3c4d"`},
 		"DoubledQuoteInLiteral": {PostgreSQL, `SELECT * FROM "t" WHERE a = 'it''s'`},
 		"DoubledQuoteInIdent": {PostgreSQL, `SELECT * FROM "we""ird"`},
+		// A multikey side table's trigger: ONE statement in the body, ended by
+		// the `;` SQLite requires before END.
+		"SQLiteTrigger": {SQLite, `CREATE TRIGGER IF NOT EXISTS "t_mk_1_ad" AFTER DELETE ON "t" BEGIN DELETE FROM "t_mk_1" WHERE id = OLD._ferretdb_sjson->"_id"; END`},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {
@@ -74,6 +77,13 @@ func TestCheckRefusesInjection(t *testing.T) {
 		// The exact shapes the mysql index path used to allow.
 		"IndexKeyBreakout": {MySQL, "ALTER TABLE `db`.`t` ADD COLUMN a VARCHAR(255) GENERATED ALWAYS AS ((_ferretdb_sjson->'$.a')); DROP TABLE users; --')) STORED"},
 		"IdentBreakout":    {MySQL, "INSERT INTO `db`.`t`; DROP DATABASE app; --` (_ferretdb_sjson) VALUES (?)"},
+		// The trigger exception is that one `;` and nothing more.
+		"TriggerSecondStatement": {SQLite, `CREATE TRIGGER "x" AFTER DELETE ON "t" BEGIN DELETE FROM "a"; DROP TABLE "users"; END`},
+		"TriggerAfterEnd":        {SQLite, `CREATE TRIGGER "x" AFTER DELETE ON "t" BEGIN DELETE FROM "a"; END; DROP TABLE "users"`},
+		"TriggerTrailing":        {SQLite, `CREATE TRIGGER "x" AFTER DELETE ON "t" BEGIN DELETE FROM "a"; END x`},
+		"NotATrigger":            {SQLite, `DELETE FROM "a"; END`},
+		"TriggerOtherDialect":    {PostgreSQL, `CREATE TRIGGER "x" AFTER DELETE ON "t" BEGIN DELETE FROM "a"; END`},
+		"TriggerNotAtStart":      {SQLite, `SELECT 1 WHERE 0; CREATE TRIGGER "x" AFTER DELETE ON "t" BEGIN DELETE FROM "a"; END`},
 	} {
 		name, tc := name, tc
 		t.Run(name, func(t *testing.T) {

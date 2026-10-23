@@ -231,7 +231,7 @@ func TestPrepareWhereClause(t *testing.T) {
 		return fmt.Sprintf(
 			`(json_type(%[1]s) = 'array' AND EXISTS (`+
 				`SELECT 1 FROM json_each(%[1]s) AS element `+
-				`WHERE json_type(element.value) = 'object' AND %s))`,
+				`WHERE element.type = 'object' AND %s))`,
 			fieldExpr,
 			strings.Join(conditions, " AND "),
 		)
@@ -449,8 +449,8 @@ func TestPrepareWhereClause(t *testing.T) {
 				"$elemMatch", must.NotFail(types.NewDocument("userId", "u1", "isActive", true)),
 			)))),
 			expectWhere: ` WHERE ` + elemMatch("members",
-				`(element.value->"userId" = ? OR (element.value->"userId" >= '[' AND element.value->"userId" < '\'))`,
-				`(element.value->"isActive" = ? OR (element.value->"isActive" >= '[' AND element.value->"isActive" < '\'))`,
+				`((CASE WHEN element.type = 'object' THEN element.value->'userId' END) = ? OR ((CASE WHEN element.type = 'object' THEN element.value->'userId' END) >= '[' AND (CASE WHEN element.type = 'object' THEN element.value->'userId' END) < '\'))`,
+				`((CASE WHEN element.type = 'object' THEN element.value->'isActive' END) = ? OR ((CASE WHEN element.type = 'object' THEN element.value->'isActive' END) >= '[' AND (CASE WHEN element.type = 'object' THEN element.value->'isActive' END) < '\'))`,
 			),
 			expectArgs: []any{`"u1"`, `true`},
 		},
@@ -462,8 +462,8 @@ func TestPrepareWhereClause(t *testing.T) {
 				)),
 			)))),
 			expectWhere: ` WHERE ` + elemMatch("teams",
-				`(element.value->"teamId" IN (?, ?) OR (element.value->"teamId" >= '[' AND element.value->"teamId" < '\'))`,
-				`(element.value->"isActive" = ? OR (element.value->"isActive" >= '[' AND element.value->"isActive" < '\'))`,
+				`((CASE WHEN element.type = 'object' THEN element.value->'teamId' END) IN (?, ?) OR ((CASE WHEN element.type = 'object' THEN element.value->'teamId' END) >= '[' AND (CASE WHEN element.type = 'object' THEN element.value->'teamId' END) < '\'))`,
+				`((CASE WHEN element.type = 'object' THEN element.value->'isActive' END) = ? OR ((CASE WHEN element.type = 'object' THEN element.value->'isActive' END) >= '[' AND (CASE WHEN element.type = 'object' THEN element.value->'isActive' END) < '\'))`,
 			),
 			expectArgs: []any{`"t1"`, `"t2"`, `true`},
 		},

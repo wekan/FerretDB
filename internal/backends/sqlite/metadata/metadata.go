@@ -27,9 +27,17 @@ import (
 // TODO https://github.com/FerretDB/FerretDB/issues/226
 
 const (
-	// CurrentIndexFormat appends the SJSON schema expression to eligible
-	// single-field indexes, making BSON-aware distinct scans covering.
-	CurrentIndexFormat = 2
+	// CurrentIndexFormat is the newest index layout. Each step is applied once,
+	// to a collection whose stored IndexFormat is below it:
+	//
+	//   2: the SJSON schema expression is appended to eligible single-field
+	//      indexes, making BSON-aware distinct scans covering;
+	//   3: an index whose leading key is ARRAY.FIELD gets its multikey side
+	//      table (multikey.go).
+	CurrentIndexFormat = 3
+
+	// coveringIndexFormat is the format that added covering distinct indexes.
+	coveringIndexFormat = 2
 
 	// DefaultColumn is a column name for all fields.
 	DefaultColumn = backends.ReservedPrefix + "sjson"

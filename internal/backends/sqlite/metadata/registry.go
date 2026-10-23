@@ -182,7 +182,7 @@ func (r *Registry) upgradeIndexFormats(ctx context.Context, dbs map[string]*fsql
 			continue
 		}
 		for _, c := range colls {
-			if c.Settings.IndexFormat >= CurrentIndexFormat {
+			if c.Settings.IndexFormat >= coveringIndexFormat {
 				continue
 			}
 			for _, index := range c.Settings.Indexes {
@@ -236,8 +236,15 @@ func (r *Registry) upgradeIndexFormat(
 	)
 
 	err := db.InTransaction(ctx, func(tx *fsql.Tx) error {
+		// Format 3: the multikey side tables, built from the existing documents.
+		// A collection already at format 2 gets only this step: its covering
+		// indexes are not rebuilt again.
+		if err := ensureMultikey(ctx, tx, c.TableName, c.Settings.Indexes); err != nil {
+			return lazyerrors.Error(err)
+		}
+
 		for _, index := range c.Settings.Indexes {
-			if !coveringDistinctIndex(index) {
+			if c.Settings.IndexFormat >= coveringIndexFormat || !coveringDistinctIndex(index) {
 				continue
 			}
 			progress.Database = dbName
@@ -605,6 +612,11 @@ func (r *Registry) collectionDrop(ctx context.Context, dbName, collectionName st
 		return false, lazyerrors.Error(err)
 	}
 
+	// The triggers went with the table; the side tables are tables of their own.
+	if err := dropUnusedMultikey(ctx, db, c.TableName, c.Settings.Indexes, nil); err != nil {
+		return false, lazyerrors.Error(err)
+	}
+
 	delete(r.colls[dbName], collectionName)
 
 	return true, nil
@@ -674,6 +686,7 @@ func (r *Registry) indexesCreate(ctx context.Context, dbName, collectionName str
 	}
 
 	created := make([]string, 0, len(indexes))
+	existing := slices.Clone(c.Settings.Indexes)
 
 	for _, index := range indexes {
 		if slices.ContainsFunc(c.Settings.Indexes, func(i IndexInfo) bool { return index.Name == i.Name }) {
@@ -693,6 +706,21 @@ func (r *Registry) indexesCreate(ctx context.Context, dbName, collectionName str
 
 		created = append(created, index.Name)
 		c.Settings.Indexes = append(c.Settings.Indexes, index)
+	}
+
+	// The multikey side tables of paths no earlier index had, filled from the
+	// documents already in the collection. A path that already has one is not
+	// backfilled again.
+	var added []IndexInfo
+	for _, index := range c.Settings.Indexes[len(existing):] {
+		if a, f, ok := MultikeyPath(index); ok && !slices.Contains(multikeyPaths(existing), [2]string{a, f}) {
+			added = append(added, index)
+		}
+	}
+
+	if err := ensureMultikey(ctx, db, c.TableName, added); err != nil {
+		_ = r.indexesDrop(ctx, dbName, collectionName, created)
+		return lazyerrors.Error(err)
 	}
 
 	q := fmt.Sprintf("UPDATE %q SET settings = ? WHERE table_name = ?", metadataTableName)
@@ -736,6 +764,8 @@ func (r *Registry) indexesDrop(ctx context.Context, dbName, collectionName strin
 		return nil
 	}
 
+	var dropped []IndexInfo
+
 	for _, name := range indexNames {
 		i := slices.IndexFunc(c.Settings.Indexes, func(i IndexInfo) bool { return name == i.Name })
 		if i < 0 {
@@ -747,7 +777,13 @@ func (r *Registry) indexesDrop(ctx context.Context, dbName, collectionName strin
 			return lazyerrors.Error(err)
 		}
 
+		dropped = append(dropped, c.Settings.Indexes[i])
 		c.Settings.Indexes = slices.Delete(c.Settings.Indexes, i, i+1)
+	}
+
+	// A side table nothing indexes any more would only slow every write.
+	if err := dropUnusedMultikey(ctx, db, c.TableName, dropped, c.Settings.Indexes); err != nil {
+		return lazyerrors.Error(err)
 	}
 
 	q := fmt.Sprintf("UPDATE %q SET settings = ? WHERE table_name = ?", metadataTableName)

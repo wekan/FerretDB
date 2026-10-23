@@ -66,6 +66,15 @@ const (
 	SQLite
 )
 
+// singleStatementTriggerEnd reports whether the `;` at i is the end of the one
+// statement in a SQLite CREATE TRIGGER body: the statement starts with
+// CREATE TRIGGER and nothing but END follows the `;`.
+func singleStatementTriggerEnd(dialect Dialect, statement string, i int) bool {
+	return dialect == SQLite &&
+		strings.HasPrefix(statement, "CREATE TRIGGER ") &&
+		strings.TrimSpace(statement[i+1:]) == "END"
+}
+
 // Check reports whether the finished statement is safe to execute.
 //
 // The rules, all about what is left once quoted parts are removed:
@@ -132,8 +141,14 @@ func Check(dialect Dialect, statement string) error {
 				}
 			case ';':
 				// Trailing semicolons are not written by FerretDB, so any `;` is
-				// a separator - the classic "; DROP TABLE".
-				return fmt.Errorf("%w: statement separator ';' at %d", ErrSuspicious, i)
+				// a separator - the classic "; DROP TABLE". The one exception is
+				// the `;` SQLite's grammar requires to end a trigger's body, and
+				// only for a body of ONE statement: the `;` must be followed by
+				// nothing but END. A second statement inside the body would need
+				// a second `;`, which is refused like any other.
+				if !singleStatementTriggerEnd(dialect, statement, i) {
+					return fmt.Errorf("%w: statement separator ';' at %d", ErrSuspicious, i)
+				}
 			case '-':
 				if i+1 < len(statement) && statement[i+1] == '-' {
 					return fmt.Errorf("%w: comment '--' at %d", ErrSuspicious, i)

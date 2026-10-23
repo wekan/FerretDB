@@ -758,7 +758,14 @@ func elemMatchCondition(expr string, doc *types.Document) (string, []any, bool) 
 		}
 
 		value := must.NotFail(doc.Get(key))
-		innerExpr := fmt.Sprintf(`element.value->%s`, quoteJSONLabel(key))
+		// json_each returns a SCALAR element as a plain SQL value, and -> or
+		// json_type on that value fails with "malformed JSON" - for the whole
+		// query, as soon as one document's array holds a string. The element's
+		// type column needs no parsing, so the key is read from objects only.
+		// And the key is a string literal, not ->"key": beside json_each a
+		// "key", "value", "type", "id" or "path" is that json_each column, and
+		// {$elemMatch: {key: X}} compared X with the element's array index.
+		innerExpr := fmt.Sprintf(`(CASE WHEN element.type = 'object' THEN element.value->%s END)`, metadata.LabelLiteral(key))
 
 		var condition string
 		var conditionArgs []any
@@ -795,7 +802,7 @@ func elemMatchCondition(expr string, doc *types.Document) (string, []any, bool) 
 	return fmt.Sprintf(
 		`(json_type(%[1]s) = 'array' AND EXISTS (`+
 			`SELECT 1 FROM json_each(%[1]s) AS element `+
-			`WHERE json_type(element.value) = 'object' AND %s))`,
+			`WHERE element.type = 'object' AND %s))`,
 		expr,
 		strings.Join(conditions, " AND "),
 	), args, true

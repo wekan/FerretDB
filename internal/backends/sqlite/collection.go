@@ -77,6 +77,14 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 			index = numericIndex
 		}
 	}
+	// An array membership filter: candidates by _id from the multikey side
+	// table (query_multikey.go), read through the unique _id index.
+	mkCond, mkArgs, mkIndex, mkOK := "", []any(nil), "", false
+	if index == "" {
+		if mkCond, mkArgs, mkIndex, mkOK = multikeyCandidates(meta, params.Filter); mkOK {
+			index = mkIndex
+		}
+	}
 	if index == "" {
 		index = preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter)
 	}
@@ -93,6 +101,14 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	// only a bare {_id: X} filter was pushed down, so every other query decoded
 	// the WHOLE collection in Go on every Meteor poll.
 	whereClause, args := prepareWhereClause(params.Filter)
+	if mkOK {
+		if whereClause == "" {
+			whereClause = ` WHERE ` + mkCond
+		} else {
+			whereClause += ` AND ` + mkCond
+		}
+		args = append(args, mkArgs...)
+	}
 	if meta.Capped() && params.StartRecordID != 0 {
 		if whereClause == "" {
 			whereClause = " WHERE "
@@ -340,13 +356,24 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 	}
 
 	selectClause := prepareSelectClause(meta.TableName, "", meta.Capped(), false)
-	if index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter); index != "" {
+	mkCond, mkArgs, mkIndex, mkOK := multikeyCandidates(meta, params.Filter)
+	if mkOK {
+		selectClause += fmt.Sprintf(` INDEXED BY %q`, mkIndex)
+	} else if index := preferredCompoundIndex(meta.TableName, meta.Settings.Indexes, params.Filter); index != "" {
 		selectClause += fmt.Sprintf(` INDEXED BY %q`, index)
 	}
 
 	// Same pushdown as Query — top-level equality conditions
 	// (superset semantics; the Go filter stays authoritative).
 	whereClause, args := prepareWhereClause(params.Filter)
+	if mkOK {
+		if whereClause == "" {
+			whereClause = ` WHERE ` + mkCond
+		} else {
+			whereClause += ` AND ` + mkCond
+		}
+		args = append(args, mkArgs...)
+	}
 	filterPushdown := whereClause != ""
 
 	orderByClause := prepareOrderByClause(params.Sort)
