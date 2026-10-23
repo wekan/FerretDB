@@ -98,7 +98,10 @@ func TestPrepareWhereClause(t *testing.T) {
 	objectID := types.ObjectID{0x62, 0x56, 0xc5, 0xba, 0x0b, 0xad, 0xc0, 0xff, 0xee, 0xff, 0xff, 0xff}
 
 	// WHERE clauses occurring frequently in tests
-	whereContain := " WHERE _jsonb->$1 @> $2"
+	// A top-level equality names its field as a literal, as the index does
+	// (filterEqualIndexed), so PostgreSQL can answer it from that index.
+	whereEqID := " WHERE _jsonb->'_id' = $1"
+	whereEqV := ` WHERE (_jsonb->'v' = $1 OR (_jsonb->'v' >= '[null]'::jsonb AND _jsonb->'v' < '{}'::jsonb AND _jsonb->'v' @> $1))`
 	whereContainDotNotation := " WHERE _jsonb#>$1 @> $2"
 
 	whereGt := " WHERE _jsonb->$1 > $2"
@@ -112,15 +115,15 @@ func TestPrepareWhereClause(t *testing.T) {
 	}{
 		"IDObjectID": {
 			filter:   must.NotFail(types.NewDocument("_id", objectID)),
-			expected: whereContain,
+			expected: whereEqID,
 		},
 		"IDString": {
 			filter:   must.NotFail(types.NewDocument("_id", "foo")),
-			expected: whereContain,
+			expected: whereEqID,
 		},
 		"IDBool": {
 			filter:   must.NotFail(types.NewDocument("_id", "foo")),
-			expected: whereContain,
+			expected: whereEqID,
 		},
 		"IDDotNotation": {
 			filter:   must.NotFail(types.NewDocument("_id.doc", "foo")),
@@ -172,14 +175,14 @@ func TestPrepareWhereClause(t *testing.T) {
 		"InPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
-			expected: ` WHERE (_jsonb->$1 @> $2 OR _jsonb->$3 @> $4)`,
-			args:     []any{"labelIds", `"a"`, "labelIds", `"b"`},
+			expected: ` WHERE (_jsonb->'labelIds' IN ($1, $2) OR (_jsonb->'labelIds' >= '[null]'::jsonb AND _jsonb->'labelIds' < '{}'::jsonb AND (_jsonb->'labelIds' @> $1 OR _jsonb->'labelIds' @> $2)))`,
+			args:     []any{`"a"`, `"b"`},
 		},
 		"InWithNullPushed": {
 			filter: must.NotFail(types.NewDocument("boardId",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("B", types.Null)))))),
-			expected: ` WHERE (_jsonb->$1 @> $2 OR (_jsonb->$3 IS NULL OR _jsonb->$4 = 'null'::jsonb))`,
-			args:     []any{"boardId", `"B"`, "boardId", "boardId"},
+			expected: ` WHERE (_jsonb->'boardId' IN ($1) OR (_jsonb->'boardId' >= '[null]'::jsonb AND _jsonb->'boardId' < '{}'::jsonb AND (_jsonb->'boardId' @> $1)) OR (_jsonb->'boardId' IS NULL OR _jsonb->'boardId' = 'null'::jsonb))`,
+			args:     []any{`"B"`},
 		},
 		"InNestedElementNotPushed": {
 			// a nested-array element has no safe arm -> the whole $in stays in Go.
@@ -191,23 +194,23 @@ func TestPrepareWhereClause(t *testing.T) {
 
 		"ImplicitString": {
 			filter:   must.NotFail(types.NewDocument("v", "foo")),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitEmptyString": {
 			filter:   must.NotFail(types.NewDocument("v", "")),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitInt32": {
 			filter:   must.NotFail(types.NewDocument("v", int32(42))),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitInt64": {
 			filter:   must.NotFail(types.NewDocument("v", int64(42))),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitFloat64": {
 			filter:   must.NotFail(types.NewDocument("v", float64(42.13))),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitMaxFloat64": {
 			filter:   must.NotFail(types.NewDocument("v", math.MaxFloat64)),
@@ -215,49 +218,49 @@ func TestPrepareWhereClause(t *testing.T) {
 		},
 		"ImplicitBool": {
 			filter:   must.NotFail(types.NewDocument("v", true)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitDatetime": {
 			filter: must.NotFail(types.NewDocument(
 				"v", time.Date(2021, 11, 1, 10, 18, 42, 123000000, time.UTC),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"ImplicitObjectID": {
 			filter:   must.NotFail(types.NewDocument("v", objectID)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 
 		"EqString": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", "foo")),
 			)),
-			args:     []any{`v`, `"foo"`},
-			expected: whereContain,
+			args:     []any{`"foo"`},
+			expected: whereEqV,
 		},
 		"EqEmptyString": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", "")),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqInt32": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", int32(42))),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqInt64": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", int64(42))),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqFloat64": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", float64(42.13))),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqMaxFloat64": {
 			filter: must.NotFail(types.NewDocument(
@@ -278,7 +281,7 @@ func TestPrepareWhereClause(t *testing.T) {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", true)),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqDatetime": {
 			filter: must.NotFail(types.NewDocument(
@@ -286,13 +289,13 @@ func TestPrepareWhereClause(t *testing.T) {
 					"$eq", time.Date(2021, 11, 1, 10, 18, 42, 123000000, time.UTC),
 				)),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 		"EqObjectID": {
 			filter: must.NotFail(types.NewDocument(
 				"v", must.NotFail(types.NewDocument("$eq", objectID)),
 			)),
-			expected: whereContain,
+			expected: whereEqV,
 		},
 
 		"NeString": {

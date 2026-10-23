@@ -334,7 +334,80 @@ func prepareOrderByClause(sort *types.Document) (string, []any) {
 // JSON-null field (what a `null` $in element matches). It returns ok=false when any
 // element has no safe arm (a nested doc/array/binary/regex/Timestamp), since dropping
 // one would make IN a SUBSET, not a superset. The Go filter re-applies the exact $in.
+// filterInIndexed is filterIn for a top-level field and scalar values, written
+// so that PostgreSQL can answer it from the field's index - the same rewrite as
+// filterEqualIndexed: the field a literal, `IN (...)` for the values, and a
+// non-empty array that contains one of them for MongoDB's array matching. It
+// also needs one parameter per value instead of two, which matters for a long
+// list (PostgreSQL takes at most 65,535).
+func filterInIndexed(p *metadata.Placeholder, field string, arr *types.Array) (string, []any, bool) {
+	expr := metadata.DefaultColumn + `->` + quoteLiteral(field)
+
+	var placeholders []string
+	var args []any
+	hasNull := false
+
+	for i := 0; i < arr.Len(); i++ {
+		switch e := must.NotFail(arr.Get(i)).(type) {
+		case types.NullType:
+			hasNull = true
+		case string, types.ObjectID, time.Time:
+			placeholders = append(placeholders, p.Next())
+			args = append(args, string(must.NotFail(sjson.MarshalSingleValue(e))))
+		case bool, int32:
+			placeholders = append(placeholders, p.Next())
+			args = append(args, e)
+		case float64:
+			if e > types.MaxSafeDouble || e < -types.MaxSafeDouble {
+				return "", nil, false
+			}
+
+			placeholders = append(placeholders, p.Next())
+			args = append(args, e)
+		case int64:
+			if e > int64(types.MaxSafeDouble) || e < -int64(types.MaxSafeDouble) {
+				return "", nil, false
+			}
+
+			placeholders = append(placeholders, p.Next())
+			args = append(args, e)
+		default:
+			return "", nil, false
+		}
+	}
+
+	var arms []string
+
+	if len(placeholders) > 0 {
+		arms = append(arms, fmt.Sprintf(`%s IN (%s)`, expr, strings.Join(placeholders, ", ")))
+
+		if field != "_id" {
+			contains := make([]string, len(placeholders))
+			for i, ph := range placeholders {
+				contains[i] = fmt.Sprintf(`%s @> %s`, expr, ph)
+			}
+
+			arms = append(arms, fmt.Sprintf(`(%[1]s >= '[null]'::jsonb AND %[1]s < '{}'::jsonb AND (%[2]s))`,
+				expr, strings.Join(contains, " OR ")))
+		}
+	}
+
+	if hasNull {
+		arms = append(arms, fmt.Sprintf(`(%[1]s IS NULL OR %[1]s = 'null'::jsonb)`, expr))
+	}
+
+	if len(arms) == 0 {
+		return "", nil, false
+	}
+
+	return "(" + strings.Join(arms, " OR ") + ")", args, true
+}
+
 func filterIn(p *metadata.Placeholder, key any, keyOperator string, arr *types.Array) (string, []any, bool) {
+	if field, ok := key.(string); ok && keyOperator == "->" {
+		return filterInIndexed(p, field, arr)
+	}
+
 	var arms []string
 	var args []any
 	hasNull := false
@@ -407,7 +480,69 @@ func numericBoundPG(v any) (any, bool) {
 
 // filterEqual returns the proper SQL filter with arguments that filters documents
 // where the value under k is equal to v.
+// filterEqualIndexed is filterEqual for a top-level field and a scalar value,
+// written so that PostgreSQL can answer it from the field's index.
+//
+// filterEqual's `_jsonb->$1 @> $2` passes the field NAME as a parameter, and an
+// expression index on `_jsonb->'boardId'` cannot match an expression whose key
+// is only known at run time - nor can a btree index serve @>. So every pushed
+// down equality, an _id lookup included, read the whole table.
+//
+// Here the field is a literal, as in the index, and MongoDB's "equal, or an
+// array that contains it" is `= $n`, or a non-empty array that @> $n: two index
+// ranges PostgreSQL can combine. In jsonb's order non-empty arrays sort from
+// '[null]' (the shortest, with the smallest element) to before '{}' - and not
+// from '[]', which for historical reasons sorts below null and would make the
+// range everything but objects. _id is never an array, so it is a plain
+// equality.
+func filterEqualIndexed(p *metadata.Placeholder, field string, v any) (string, []any, bool) {
+	var arg any
+
+	switch v := v.(type) {
+	case string, types.ObjectID, time.Time:
+		arg = string(must.NotFail(sjson.MarshalSingleValue(v)))
+	case bool, int32:
+		arg = v
+	case float64:
+		if v > types.MaxSafeDouble || v < -types.MaxSafeDouble {
+			return "", nil, false
+		}
+
+		arg = v
+	case int64:
+		if v > int64(types.MaxSafeDouble) || v < -int64(types.MaxSafeDouble) {
+			return "", nil, false
+		}
+
+		arg = v
+	default:
+		return "", nil, false
+	}
+
+	expr := metadata.DefaultColumn + `->` + quoteLiteral(field)
+	ph := p.Next()
+
+	if field == "_id" {
+		return fmt.Sprintf(`%s = %s`, expr, ph), []any{arg}, true
+	}
+
+	return fmt.Sprintf(`(%[1]s = %[2]s OR (%[1]s >= '[null]'::jsonb AND %[1]s < '{}'::jsonb AND %[1]s @> %[2]s))`, expr, ph),
+		[]any{arg}, true
+}
+
+// quoteLiteral quotes a field name as a string literal, the same way the
+// registry quotes it in an index expression - so the two expressions match.
+func quoteLiteral(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
 func filterEqual(p *metadata.Placeholder, k any, v any, operator string) (filter string, args []any) {
+	if field, ok := k.(string); ok && operator == "->" {
+		if f, a, ok := filterEqualIndexed(p, field, v); ok {
+			return f, a
+		}
+	}
+
 	// Select if value under the key is equal to provided value.
 	sql := `%[1]s%[2]s%[3]s @> %[4]s`
 
