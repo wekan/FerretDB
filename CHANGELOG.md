@@ -6,6 +6,29 @@
 
 ### New Features 🎉
 
+- **`ferretdb-sqlite-<arch>` release binaries**: every platform now has a
+  second binary beside `ferretdb-<arch>[.exe]`, `ferretdb-sqlite-<arch>[.exe]`,
+  built with `-tags ferretdb_no_postgresql,ferretdb_no_mysql` and without
+  `ferretdb_hana`, so the "sqlite" handler is the only one in it (no pgx,
+  MySQL or go-hdb driver); linux/amd64 is 35.8 MB instead of 41.2 MB. Each has
+  its own `.sha256sum`, and `ferretdb-<arch>` still has every handler.
+  `release-all-missing.yml` checks the two separately, so it can add the
+  SQLite-only binaries to a release made before them. `./build.sh
+  build-sqlite` builds the same binary as `bin/ferretdb-sqlite`. by @xet7.
+  Thanks to xet7.
+- **`ferretdb-sqlite` Docker image**: `docker.yml` publishes
+  `wekanteam/ferretdb-sqlite`, `quay.io/wekan/ferretdb-sqlite` and
+  `ghcr.io/wekan/ferretdb-sqlite` beside the `ferretdb` images, multi-arch on
+  the platforms its `ferretdb-sqlite-<arch>` binaries and mongosh exist for,
+  from the same `Dockerfile.release` (`FERRETDB_ASSET` picks the binary). A
+  release without those binaries publishes only `ferretdb`, with a warning; one
+  image or registry failing does not stop the others. by @xet7. Thanks to
+  xet7.
+- **A build without PostgreSQL defaults to its own handler**: `--handler`
+  defaulted to "postgresql" even in a build that leaves it out, so the
+  SQLite-only binary refused to start without `--handler=sqlite`. The default
+  is now "postgresql" when it is built in and otherwise the first handler the
+  build has. by @xet7. Thanks to xet7.
 - **`ferretdb_no_mysql` build tag**: the "mysql" handler and its
   `--mysql-url` flag can now be left out of a build, the same way
   `ferretdb_no_postgresql` and `ferretdb_no_sqlite` already leave out theirs.
