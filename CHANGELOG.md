@@ -1849,6 +1849,11 @@
 
 ### Fixed 🐛
 
+- **`release-all-missing.yml` stopped before building anything**: its
+  self-tests inherited the job's `FERRETDB_DIST_SKIP_LIST`, so their fixture
+  builds skipped every platform already on the release and the telemetry test
+  failed; the tests now drop the job's build controls. by @xet7. Thanks to xet7.
+
 - **A new Quay repository refused the first push**: Docker publication pushed
   five of six images and stopped on `quay.io/wekan/ferretdb-sqlite` with "401
   UNAUTHORIZED", because a Quay robot account cannot create a repository. The
