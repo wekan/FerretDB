@@ -141,7 +141,7 @@ func (h *Handler) MsgFind(connCtx context.Context, msg *wire.OpMsg) (*wire.OpMsg
 	// closer accumulates all things that should be closed / canceled.
 	closer := iterator.NewMultiCloser(iterator.CloserFunc(cancel))
 
-	iter, err := h.makeFindIter(queryRes.Iter, closer, params)
+	iter, err := h.makeFindIter(queryRes.Iter, closer, params, queryRes.Ordered)
 	if err != nil {
 		return nil, handleMaxTimeMSError(err, params.MaxTimeMS, "find")
 	}
@@ -322,6 +322,11 @@ func (h *Handler) makeFindQueryParams(ctx context.Context, params *common.FindPa
 		qp.Sort = params.Sort
 	}
 
+	// The backend may apply the client's sort itself (backends.QueryResult.Ordered).
+	if !h.DisablePushdown && params.Sort.Len() > 0 && qp.Sort.Len() == 0 && params.Sort.Keys()[0] != "$natural" {
+		qp.OrderBy = params.Sort
+	}
+
 	// Limit pushdown is not applied if:
 	//  - pushdown is disabled;
 	//  - `filter` is set, it must fetch all documents to filter them in memory;
@@ -371,7 +376,9 @@ func collectDecodeFields(doc *types.Document, fields map[string]struct{}) {
 // and the returned iterator is wrapped with it.
 //
 //nolint:lll // for readability
-func (h *Handler) makeFindIter(iter types.DocumentsIterator, closer *iterator.MultiCloser, params *common.FindParams) (types.DocumentsIterator, error) {
+//
+// ordered says the backend applied the sort (backends.QueryResult.Ordered).
+func (h *Handler) makeFindIter(iter types.DocumentsIterator, closer *iterator.MultiCloser, params *common.FindParams, ordered bool) (types.DocumentsIterator, error) { //nolint:lll // for readability
 	closer.Add(iter)
 
 	iter = common.FilterIterator(iter, closer, params.Filter)
@@ -384,9 +391,19 @@ func (h *Handler) makeFindIter(iter types.DocumentsIterator, closer *iterator.Mu
 		sortDoc = nil
 	}
 	var err error
-	if sortDoc.Len() != 0 && params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit {
+	switch {
+	case ordered && sortDoc.Len() != 0:
+		// The backend sorted it: stream, unless a document it could not sort
+		// comes first (common.OrderedSortIterator).
+		keep := int64(0)
+		if params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit {
+			keep = params.Skip + params.Limit
+		}
+
+		iter, err = common.OrderedSortIterator(iter, closer, sortDoc, keep)
+	case sortDoc.Len() != 0 && params.Limit > 0 && params.Skip <= math.MaxInt64-params.Limit:
 		iter, err = common.SortLimitIterator(iter, closer, sortDoc, params.Skip+params.Limit)
-	} else {
+	default:
 		iter, err = common.SortIterator(iter, closer, sortDoc)
 	}
 	if err != nil {

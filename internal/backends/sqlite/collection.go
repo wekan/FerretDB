@@ -127,6 +127,19 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		}
 	}
 
+	// The client's sort, applied by SQLite when it can be (query_ordered.go).
+	if params.OrderBy.Len() > 0 && params.Sort.Len() == 0 && params.Limit == 0 &&
+		!meta.Capped() && !params.OnlyRecordIDs && !distinctPushdown {
+		if orderBy := orderByClause(params.OrderBy); orderBy != "" {
+			iter, err := queryOrdered(ctx, db, meta.TableName, indexClause+whereClause+orderBy, args, params.DecodeFields)
+			if err != nil {
+				return nil, lazyerrors.Error(err)
+			}
+
+			return &backends.QueryResult{Iter: iter, Ordered: true}, nil
+		}
+	}
+
 	suffix := indexClause + whereClause + prepareOrderByClause(params.Sort)
 
 	if params.Limit != 0 {

@@ -17,7 +17,9 @@ package common
 import (
 	"container/heap"
 	"errors"
+	"math"
 	"sort"
+	"time"
 
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/iterator"
@@ -108,4 +110,72 @@ func (h *documentsMaxHeap) Pop() any {
 	value := h.docs[last]
 	h.docs = h.docs[:last]
 	return value
+}
+
+// OrderedSortIterator sorts documents a backend has already sorted
+// (backends.QueryResult.Ordered): every document whose sort values are simple
+// comes in order, and any other comes BEFORE them. So the first document is
+// enough to decide: when it is simple, no document the backend could not sort
+// follows, and the documents stream as they are - a query that keeps ten reads
+// ten, instead of all of them. When it is not, everything is sorted as before.
+// keep is SortLimitIterator's, or 0 for no limit.
+func OrderedSortIterator(iter types.DocumentsIterator, closer *iterator.MultiCloser, sortDoc *types.Document, keep int64) (types.DocumentsIterator, error) { //nolint:lll // arguments document the iterator pipeline
+	_, first, err := iter.Next()
+	if err != nil {
+		if errors.Is(err, iterator.ErrIteratorDone) {
+			res := iterator.Values(iterator.ForSlice([]*types.Document{}))
+			closer.Add(res)
+
+			return res, nil
+		}
+
+		return nil, lazyerrors.Error(err)
+	}
+
+	pending := first
+	rest := iterator.ForFunc(func() (struct{}, *types.Document, error) {
+		if pending != nil {
+			doc := pending
+			pending = nil
+
+			return struct{}{}, doc, nil
+		}
+
+		return iter.Next()
+	})
+	closer.Add(rest)
+
+	if simpleSortValues(first, sortDoc) {
+		return rest, nil
+	}
+
+	if keep > 0 {
+		return SortLimitIterator(rest, closer, sortDoc, keep)
+	}
+
+	return SortIterator(rest, closer, sortDoc)
+}
+
+// simpleSortValues reports whether every sort field of doc is missing, null, a
+// finite number, a string, an ObjectID, a bool or a date - the values a backend
+// orders exactly.
+func simpleSortValues(doc *types.Document, sortDoc *types.Document) bool {
+	for _, key := range sortDoc.Keys() {
+		v, err := doc.Get(key)
+		if err != nil {
+			continue // missing
+		}
+
+		switch v := v.(type) {
+		case types.NullType, int32, int64, string, types.ObjectID, bool, time.Time:
+		case float64:
+			if math.IsNaN(v) || math.IsInf(v, 0) {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+
+	return true
 }

@@ -230,7 +230,7 @@ func (h *Handler) MsgGetMore(connCtx context.Context, msg *wire.OpMsg) (*wire.Op
 			closer := iterator.NewMultiCloser()
 			defer closer.Close()
 
-			iter, err := h.makeFindIter(queryRes.Iter, closer, data.findParams)
+			iter, err := h.makeFindIter(queryRes.Iter, closer, data.findParams, queryRes.Ordered)
 			if err != nil {
 				return nil, lazyerrors.Error(err)
 			}
@@ -359,7 +359,7 @@ func (h *Handler) awaitData(ctx context.Context, params *awaitDataParams) (resBa
 
 		var iter types.DocumentsIterator
 
-		iter, err = h.makeFindIter(queryRes.Iter, closer, data.findParams)
+		iter, err = h.makeFindIter(queryRes.Iter, closer, data.findParams, queryRes.Ordered)
 		if err != nil {
 			return
 		}

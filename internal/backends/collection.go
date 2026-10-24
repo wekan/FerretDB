@@ -95,11 +95,25 @@ type QueryParams struct {
 
 	OnlyRecordIDs bool
 	Comment       string
+
+	// OrderBy is the client's sort (top-level fields, 1 or -1), which a
+	// backend MAY apply; Sort above is the one it must. A backend that applies it
+	// says so in QueryResult.Ordered.
+	OrderBy *types.Document
 }
 
 // QueryResult represents the results of Collection.Query method.
 type QueryResult struct {
 	Iter types.DocumentsIterator
+
+	// Ordered is set when the backend applied QueryParams.OrderBy, in this
+	// sense: every document whose OrderBy fields are all simple values - missing,
+	// null, a number (not NaN or an infinity), a string, an ObjectID, a bool or a
+	// date - comes in MongoDB's order for them, with ties in storage order, and
+	// every other document comes BEFORE all of those. So the handler may stream
+	// the documents in order once the first one it keeps is simple, and must sort
+	// as before when it is not (common.OrderedSortIterator).
+	Ordered bool
 }
 
 // Query executes a query against the collection.

@@ -44,7 +44,7 @@ func TestNaturalFindRemainsLazy(t *testing.T) {
 			result, err := h.makeFindIter(input, closer, &common.FindParams{
 				Filter: must.NotFail(types.NewDocument("matches", true)),
 				Sort:   must.NotFail(types.NewDocument("$natural", int64(-1))), Limit: 1,
-			})
+			}, false)
 			require.NoError(t, err)
 			got, err := iterator.ConsumeValues(result)
 			require.NoError(t, err)
