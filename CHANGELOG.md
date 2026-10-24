@@ -43,9 +43,10 @@
   (`{members: {$elemMatch: {userId: X}}}`, alone or in an `$or` whose other
   branches name `_id`s) reads only the matching documents instead of parsing
   the array of nearly every row. Existing databases get the tables once when
-  opened (index format 3). On wekan/wekan's database speed test, the All Boards
-  count of a user on hundreds of boards went from 6.2 s to milliseconds. by
-  @xet7. Thanks to xet7.
+  opened (index format 3). On wekan/wekan's database speed test (615,070
+  cards, 92,306 boards), the All Boards count of an ordinary user went from 6.2
+  s to 2 ms; for the busiest, a member of 6,399 boards, from 8 to 4.6 s - the
+  rest is decoding and sorting those boards. by @xet7. Thanks to xet7.
 
 ### Fixed 🐛
 
