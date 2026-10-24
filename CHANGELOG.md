@@ -4,8 +4,33 @@
 
 ## Upcoming FerretDB release
 
+### New Features 🎉
+
+- **SQLite sorts in the database**: a sorted query read, decoded and sorted
+  every matching document in Go to return a few - ten newest users, the first
+  page of a list. SQLite now orders by a key that reproduces MongoDB's order for
+  simple values, and fetches documents a batch at a time in that order; a
+  document whose sort field holds an array, a document, NaN or an infinity
+  comes first, and then everything is sorted in Go as before. by @xet7. Thanks
+  to xet7.
+- **PostgreSQL answers membership tests from a GIN index**: an index whose
+  leading key is `ARRAY.FIELD` (`members.userId`) also gets a `jsonb_path_ops`
+  GIN index of the array, and `{members: {$elemMatch: {userId: X}}}`, alone or
+  in an `$or` of indexed branches, uses it instead of reading the whole table.
+  by @xet7. Thanks to xet7.
+
 ### Fixed 🐛
 
+- **MySQL and MariaDB reads did not use their indexes**: an equality or `$in`
+  on an indexed field read the whole table - a card by `_id` took 3.4 s on
+  MySQL and 18.7 s on MariaDB among 615,070. It now narrows through the index's
+  generated column and takes 1.8 ms. Generated columns are `VIRTUAL`, so adding
+  the 44 indexes of a 600,000-document database takes 157 s instead of 20
+  minutes; an index of four or more fields indexes prefixes, so it fits the
+  3,072-byte key limit; and a field path with a dash or a digit
+  (`services.accounts-lockout.unlockTime`, `profile.emailBuffer.0`) no longer
+  fails with "Invalid JSON path expression". Those indexes used to be missing.
+  by @xet7. Thanks to xet7.
 - **A new Quay repository refused the first push**: Docker publication pushed
   five of six images and stopped on `quay.io/wekan/ferretdb-sqlite` with "401
   UNAUTHORIZED", because a Quay robot account cannot create a repository. The
