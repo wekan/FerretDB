@@ -39,6 +39,14 @@
   (`services.accounts-lockout.unlockTime`, `profile.emailBuffer.0`) no longer
   fails with "Invalid JSON path expression". Those indexes used to be missing.
   by @xet7. Thanks to xet7.
+- **A top-level `$and` read the whole table on PostgreSQL, MySQL and MariaDB**:
+  their pushdown skipped it, so a query that wraps its conditions - WeKan's due
+  cards, `{$and: [{boardId: {$in: [...]}}, ...]}` - read every document. Each
+  branch is now pushed down, as on SQLite. by @xet7. Thanks to xet7.
+- **MySQL and MariaDB ran a membership subquery once per row under `$or`**: All
+  Boards for a user with a starred board took 900 ms on MySQL and 5.7 s on
+  MariaDB among 92,000 boards. An `$or` of `_id` sets is now one `UNION ALL`
+  the database joins, and takes 6-7 ms. by @xet7. Thanks to xet7.
 - **A new Quay repository refused the first push**: Docker publication pushed
   five of six images and stopped on `quay.io/wekan/ferretdb-sqlite` with "401
   UNAUTHORIZED", because a Quay robot account cannot create a repository. The
