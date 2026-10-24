@@ -246,6 +246,16 @@ func (r *Registry) initCollections(ctx context.Context, dbName string, p *pgxpoo
 		return lazyerrors.Error(err)
 	}
 
+	rows.Close()
+
+	// An index created by a version without multikey indexes gets its GIN index
+	// once, here; for one that has it, CREATE INDEX IF NOT EXISTS does nothing.
+	for _, c := range colls {
+		if err = ensureMultikey(ctx, p, dbName, c.TableName, c.Indexes); err != nil {
+			return lazyerrors.Error(err)
+		}
+	}
+
 	r.colls[dbName] = colls
 
 	return nil
@@ -877,6 +887,13 @@ func (r *Registry) indexesCreate(ctx context.Context, p *pgxpool.Pool, dbName, c
 			return lazyerrors.Error(err)
 		}
 
+		// ARRAY.FIELD: the GIN index on the array, for membership tests
+		// (multikey.go).
+		if err = ensureMultikey(ctx, p, dbName, c.TableName, []IndexInfo{index}); err != nil {
+			_ = r.indexesDrop(ctx, p, dbName, collectionName, append(created, index.Name))
+			return lazyerrors.Error(err)
+		}
+
 		created = append(created, index.Name)
 		c.Indexes = append(c.Indexes, index)
 		allIndexes[index.Name] = collectionName
@@ -941,6 +958,8 @@ func (r *Registry) indexesDrop(ctx context.Context, p *pgxpool.Pool, dbName, col
 		return nil
 	}
 
+	var dropped []IndexInfo
+
 	for _, name := range indexNames {
 		i := slices.IndexFunc(c.Indexes, func(i IndexInfo) bool { return name == i.Name })
 		if i < 0 {
@@ -952,7 +971,13 @@ func (r *Registry) indexesDrop(ctx context.Context, p *pgxpool.Pool, dbName, col
 			return lazyerrors.Error(err)
 		}
 
+		dropped = append(dropped, c.Indexes[i])
 		c.Indexes = slices.Delete(c.Indexes, i, i+1)
+	}
+
+	// An array no remaining index leads with keeps no GIN index (multikey.go).
+	if err := dropUnusedMultikey(ctx, p, dbName, c.TableName, dropped, c.Indexes); err != nil {
+		return lazyerrors.Error(err)
 	}
 
 	b, err := sjson.Marshal(c.marshal())

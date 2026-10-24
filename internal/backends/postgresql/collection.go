@@ -92,6 +92,17 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		return nil, lazyerrors.Error(err)
 	}
 
+	// Membership tests through the arrays' GIN indexes (query_multikey.go).
+	if mk, mkArgs := multikeyWhere(&placeholder, meta, params.Filter); mk != "" {
+		if where == "" {
+			where = ` WHERE ` + mk
+		} else {
+			where += ` AND ` + mk
+		}
+
+		args = append(args, mkArgs...)
+	}
+
 	q += where
 
 	sort, sortArgs := prepareOrderByClause(params.Sort)
@@ -337,6 +348,17 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 	where, args, err := prepareWhereClause(&placeholder, params.Filter)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
+	}
+
+	// The same membership narrowing as Query.
+	if mk, mkArgs := multikeyWhere(&placeholder, meta, params.Filter); mk != "" {
+		if where == "" {
+			where = ` WHERE ` + mk
+		} else {
+			where += ` AND ` + mk
+		}
+
+		args = append(args, mkArgs...)
 	}
 
 	res.FilterPushdown = where != ""
