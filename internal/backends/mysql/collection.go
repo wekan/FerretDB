@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"slices"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -89,19 +90,44 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		return nil, lazyerrors.Error(err)
 	}
 
-	q += where
-
 	sort, sortArgs := prepareOrderByClause(params.Sort)
 
-	q += sort
-	args = append(args, sortArgs...)
+	build := func(narrow string, narrowArgs []any) (string, []any) {
+		w, a := where, slices.Clone(args)
+		if narrow != "" {
+			if w == "" {
+				w = ` WHERE ` + narrow
+			} else {
+				w += ` AND ` + narrow
+			}
+			a = append(a, narrowArgs...)
+		}
 
-	if params.Limit != 0 {
-		q += ` LIMIT ?`
-		args = append(args, params.Limit)
+		query := q + w + sort
+		a = append(a, sortArgs...)
+
+		if params.Limit != 0 {
+			query += ` LIMIT ?`
+			a = append(a, params.Limit)
+		}
+
+		return query, a
 	}
 
-	rows, err := p.QueryContext(ctx, q, args...)
+	// The field indexes answer equalities through their generated columns
+	// (query.go, indexedNarrowing). A table created before those columns had
+	// their current names has them under another (error 1054): it is queried
+	// without the narrowing, as before.
+	narrow, narrowArgs := indexedNarrowing(params.Filter, indexedFields(meta.Indexes))
+
+	query, queryArgs := build(narrow, narrowArgs)
+
+	rows, err := p.QueryContext(ctx, query, queryArgs...)
+	if narrow != "" && unknownColumn(err) {
+		query, queryArgs = build("", nil)
+		rows, err = p.QueryContext(ctx, query, queryArgs...)
+	}
+
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

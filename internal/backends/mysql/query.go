@@ -530,3 +530,135 @@ func filterEqual(k string, v any) (filter string, args []any) {
 
 	return
 }
+
+// indexedNarrowing returns a condition that lets MySQL and MariaDB answer an
+// equality or $in on an indexed top-level field from that field's index, to be
+// ANDed with prepareWhereClause's.
+//
+// The pushed-down equality is JSON_CONTAINS(JSON_EXTRACT(doc, ?), ...), which no
+// index can serve: a document by _id was found by reading the whole table (3.4 s
+// on MySQL and 18.7 s on MariaDB for one of 600,000), and so was every update,
+// which reads its document first. An index's key is a generated column holding
+// JSON_EXTRACT(doc, '$.field') as text, so `column = '"value"'` is an index
+// lookup. It narrows to a SUPERSET of the matches, and JSON_CONTAINS still
+// decides: MongoDB's {field: value} also matches an array that contains value,
+// so every array (its text starts with '[') stays a candidate; a column of an
+// older table that is case-insensitive only widens the candidates.
+//
+// Only values whose stored text is certain are used: an ObjectID, and a string
+// of plain printable ASCII with nothing JSON or the encoder escapes. A number is
+// not - MySQL renders 5.0 where the client sent 5 - and neither is any other
+// string; they keep the previous, unindexed condition.
+func indexedNarrowing(filter *types.Document, indexed map[string]struct{}) (string, []any) {
+	if filter == nil || len(indexed) == 0 {
+		return "", nil
+	}
+
+	var conds []string
+	var args []any
+
+	for _, key := range filter.Keys() {
+		if _, ok := indexed[key]; !ok || key == "" || strings.HasPrefix(key, "$") || strings.ContainsRune(key, '.') {
+			continue
+		}
+
+		values, ok := narrowableValues(must.NotFail(filter.Get(key)))
+		if !ok {
+			continue
+		}
+
+		col := metadata.QuoteIdent(metadata.SafeColumnName(key))
+		placeholders := make([]string, len(values))
+
+		for i, v := range values {
+			placeholders[i] = "?"
+			args = append(args, jsonValue(v))
+		}
+
+		arm := fmt.Sprintf("%s = ?", col)
+		if len(values) > 1 {
+			arm = fmt.Sprintf("%s IN (%s)", col, strings.Join(placeholders, ", "))
+		}
+
+		if key == "_id" {
+			conds = append(conds, arm) // _id is never an array
+		} else {
+			conds = append(conds, fmt.Sprintf("(%s OR %s LIKE '[%%')", arm, col))
+		}
+	}
+
+	return strings.Join(conds, " AND "), args
+}
+
+// narrowableValues returns the values of {field: v}, {field: {$eq: v}} or
+// {field: {$in: [...]}} when every one of them has a certain stored text.
+func narrowableValues(v any) ([]any, bool) {
+	switch v := v.(type) {
+	case string, types.ObjectID:
+		return []any{v}, certainText(v)
+
+	case *types.Document:
+		if v.Len() != 1 {
+			return nil, false
+		}
+
+		switch v.Keys()[0] {
+		case "$eq":
+			e := must.NotFail(v.Get("$eq"))
+			return []any{e}, certainText(e)
+
+		case "$in":
+			arr, ok := must.NotFail(v.Get("$in")).(*types.Array)
+			if !ok || arr.Len() == 0 {
+				return nil, false
+			}
+
+			values := make([]any, arr.Len())
+			for i := range values {
+				values[i] = must.NotFail(arr.Get(i))
+				if !certainText(values[i]) {
+					return nil, false
+				}
+			}
+
+			return values, true
+		}
+	}
+
+	return nil, false
+}
+
+// certainText reports a value whose JSON text MySQL and MariaDB render exactly
+// as jsonValue does.
+func certainText(v any) bool {
+	switch v := v.(type) {
+	case types.ObjectID:
+		return true
+	case string:
+		for i := 0; i < len(v); i++ {
+			c := v[i]
+			if c < 0x20 || c > 0x7e || c == '"' || c == '\\' || c == '<' || c == '>' || c == '&' {
+				return false
+			}
+		}
+
+		return true
+	default:
+		return false
+	}
+}
+
+// indexedFields returns the top-level fields that have a generated index column.
+func indexedFields(indexes metadata.Indexes) map[string]struct{} {
+	res := map[string]struct{}{}
+
+	for _, index := range indexes {
+		for _, key := range index.Key {
+			if !strings.ContainsRune(key.Field, '.') {
+				res[key.Field] = struct{}{}
+			}
+		}
+	}
+
+	return res
+}

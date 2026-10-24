@@ -962,10 +962,15 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 					// accent-insensitive (utf8mb4_uca1400_ai_ci, utf8mb4_0900_ai_ci), and
 					// a unique index on such a column refused _id "A" beside "a" - a
 					// duplicate key error for two different MongoDB values.
-					`ADD COLUMN %s VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS ((JSON_EXTRACT(%s, %s))) STORED`,
+					// VIRTUAL: a STORED generated column is written into every row, so
+					// adding one rebuilt the whole table - 20 minutes on MySQL and 40 on
+					// MariaDB for a client's 44 indexes over 600,000 documents. A
+					// VIRTUAL column costs nothing to add; its index still stores the
+					// value, which is all the queries read.
+					`ADD COLUMN %s VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS ((JSON_EXTRACT(%s, %s))) VIRTUAL`,
 					QuoteIdent(columnName),
 					DefaultColumn,
-					QuoteString("$."+key.Field),
+					QuoteString(IndexJSONPath(key.Field)),
 				))
 
 				// Within one createIndexes call the same field may appear twice; the
@@ -990,6 +995,17 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 			if _, err = p.ExecContext(ctx, q); err != nil {
 				return lazyerrors.Error(err)
 			}
+		}
+
+		// An index key is at most 3,072 bytes, and each VARCHAR(255) utf8mb4 column
+		// is 1,020 of them: a compound index of four or more fields was refused
+		// ("Specified key was too long"). A non-unique index then indexes a prefix
+		// of each value instead - an equality still finds every match through the
+		// prefix, and the query's own condition keeps only the exact ones. A unique
+		// index keeps whole values: on prefixes, two different values would be
+		// duplicates.
+		if !index.Unique {
+			columns = PrefixedKeyColumns(columns)
 		}
 
 		q = "CREATE "
@@ -1170,3 +1186,50 @@ func (r *Registry) Collect(ch chan<- prometheus.Metric) {
 var (
 	_ prometheus.Collector = (*Registry)(nil)
 )
+
+// maxKeyBytes is InnoDB's largest index key, and keyColumnBytes what one
+// VARCHAR(255) utf8mb4 generated column takes of it.
+const (
+	maxKeyBytes    = 3072
+	keyColumnBytes = 255 * 4
+)
+
+// PrefixedKeyColumns returns the key columns of a non-unique index, each limited
+// to a prefix when the whole key would exceed maxKeyBytes. A column may carry
+// " DESC" after its quoted name.
+func PrefixedKeyColumns(columns []string) []string {
+	if len(columns)*keyColumnBytes <= maxKeyBytes {
+		return columns
+	}
+
+	chars := maxKeyBytes / 4 / len(columns)
+	res := make([]string, len(columns))
+
+	for i, c := range columns {
+		name, desc, _ := strings.Cut(c, " ")
+		res[i] = fmt.Sprintf("%s(%d)", name, chars)
+
+		if desc != "" {
+			res[i] += " " + desc
+		}
+	}
+
+	return res
+}
+
+// IndexJSONPath returns the MySQL JSON path of an index key's field path, every
+// member quoted. `$.` followed by the dotted path itself was refused for any
+// member that is not a plain identifier - "Invalid JSON path expression" for
+// `services.accounts-lockout.unlockTime` (a dash) and `profile.emailBuffer.0`
+// (a digit) - so those indexes were never created at all. A quote or a
+// backslash inside a member is escaped, so it cannot end the member early.
+func IndexJSONPath(field string) string {
+	escape := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	parts := strings.Split(field, ".")
+
+	for i, part := range parts {
+		parts[i] = `"` + escape.Replace(part) + `"`
+	}
+
+	return "$." + strings.Join(parts, ".")
+}
