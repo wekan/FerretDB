@@ -2,6 +2,19 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **A new Quay repository refused the first push**: Docker publication pushed
+  five of six images and stopped on `quay.io/wekan/ferretdb-sqlite` with "401
+  UNAUTHORIZED", because a Quay robot account cannot create a repository. The
+  error now says what to set up on quay.io. by @xet7. Thanks to xet7.
+- **`release-all-missing.yml` stopped before building anything**: its
+  self-tests inherited the job's `FERRETDB_DIST_SKIP_LIST`, so their fixture
+  builds skipped every platform already on the release and the telemetry test
+  failed; the tests now drop the job's build controls. by @xet7. Thanks to xet7.
+
 ## [v1.99.0](https://github.com/wekan/FerretDB/releases/tag/v1.99.0) (2026-10-24)
 
 ### New Features 🎉
@@ -1848,16 +1861,6 @@
 ## [v1.37.0](https://github.com/wekan/FerretDB/releases/tag/v1.37.0) (2026-07-21)
 
 ### Fixed 🐛
-
-- **`release-all-missing.yml` stopped before building anything**: its
-  self-tests inherited the job's `FERRETDB_DIST_SKIP_LIST`, so their fixture
-  builds skipped every platform already on the release and the telemetry test
-  failed; the tests now drop the job's build controls. by @xet7. Thanks to xet7.
-
-- **A new Quay repository refused the first push**: Docker publication pushed
-  five of six images and stopped on `quay.io/wekan/ferretdb-sqlite` with "401
-  UNAUTHORIZED", because a Quay robot account cannot create a repository. The
-  error now says what to set up on quay.io. by @xet7. Thanks to xet7.
 
 - OpLog: keep tailable cursors OPEN on an empty first batch, so an idle tail is resumed with `getMore` instead of re-issuing `find` every ~100ms (wekan/wekan#6480). A tailable/awaitData `find` whose first batch was under-full — which for an idle tail is always (0 documents) — closed the cursor and returned `id: 0`, so a client tailing an otherwise-idle capped collection (e.g. a Meteor 3 driver tailing `local.oplog.rs`) had to re-issue `find` continuously, each time re-scanning the collection — a residual constant CPU load even after the v1.36.0 awaitData poll fix. Now only a Normal cursor (or an explicit `singleBatch`) is exhausted there; a tailable cursor stays registered with its non-zero id so the client resumes with `getMore`. This required fixing `Cursor.Reset` for the not-yet-consumed case (`lastRecordID == 0`, the empty-first-batch tail), which previously scanned the new iterator for record id 0, never found it, exhausted the iterator and errored — the very reason an empty tailable cursor could not be kept open before; it now iterates from the beginning in that case. Covered by `internal/clientconn/cursor/cursor_test.go` (`TestCursor/Tailable/ResetFromEmpty`) and a real-backend integration test `internal/handler/msg_find_test.go` (`TestFindTailableKeepsCursorOpenOnEmptyCapped`: a tailable find on an empty capped collection returns a non-zero cursor id, while a normal find is still exhausted) by @xet7. Thanks to bluetopaz1204, mueschel, crochu and xet7.
 
