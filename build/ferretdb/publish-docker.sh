@@ -13,8 +13,11 @@
 # an empty SQLITE_PLATFORMS publishes only the ferretdb image and says so.
 #
 # A repository that does not exist yet is created by its first push with the
-# registry's default visibility - Quay and GHCR make it PRIVATE - so the first
-# ferretdb-sqlite push has to be followed by making that package public.
+# registry's default visibility - GHCR makes it PRIVATE - so the first
+# ferretdb-sqlite push has to be followed by making that package public. Quay
+# does not create it at all for a robot account, which may write only to the
+# repositories it was given: the push is refused with 401 UNAUTHORIZED, and the
+# error says what to set up (quay_hint below).
 set +x
 set -euo pipefail
 : "${VERSION:?release version required}"
@@ -25,6 +28,16 @@ cd "$root"
 failed=0
 published=0
 total=0
+out="$(mktemp "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/publish-docker.XXXXXX")"
+trap 'rm -f "$out"' EXIT
+
+# A Quay robot account cannot create a repository, and its push to one that does
+# not exist - or that it was not given write access to - fails with 401
+# UNAUTHORIZED, after the login and every other push succeeded.
+quay_hint() {
+  local repository="$1" repo="${1#quay.io/}"
+  echo "::error::$repository: Quay refused the push (401 UNAUTHORIZED). A Quay robot account cannot create a repository: create $repo on quay.io (public), and in its Settings -> User and Robot Permissions give the robot account Docker uses here Write. Then run the Docker workflow again for $VERSION."
+}
 
 # "<image name> <FERRETDB_ASSET> <platforms>"
 images=("ferretdb ferretdb $PLATFORMS")
@@ -65,11 +78,14 @@ publish() {
         repository="$namespace/$name"
         if docker buildx build --file Dockerfile.release --platform "$platforms" \
             --build-arg "FERRETDB_ASSET=$asset" \
-            -t "$repository:$VERSION" -t "$repository:latest" --push .; then
+            -t "$repository:$VERSION" -t "$repository:latest" --push . 2>&1 | tee "$out"; then
           echo "$repository: published $VERSION and latest"
           published=$((published + 1))
         else
           echo "::error::$repository build/push failed; continuing with the other images and registries"
+          if [ "$host" = quay.io ] && grep -q '401 UNAUTHORIZED' "$out"; then
+            quay_hint "$repository"
+          fi
           failed=1
         fi
       done

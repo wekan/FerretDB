@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class PublishTests(unittest.TestCase):
     def run_publish(self, *, offline='', broken='', transient='', credentials=None, version='v1.82.0',
-                    sqlite_platforms='linux/amd64,linux/arm64'):
+                    sqlite_platforms='linux/amd64,linux/arm64', unauthorized=''):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
             docker = directory / 'docker'
@@ -32,6 +32,9 @@ if args[0] == 'login':
     sys.exit(1 if host in os.environ['MOCK_OFFLINE'].split(',') or transient else 0)
 assert args[:2] == ['buildx', 'build']
 repository = args[args.index('-t') + 1].split(':')[0]
+if repository in os.environ.get('MOCK_UNAUTHORIZED', '').split(','):
+    print('ERROR: failed to push ' + repository + ':v1.82.0: unexpected status from HEAD request: 401 UNAUTHORIZED', file=sys.stderr)
+    sys.exit(1)
 sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
 ''')
             docker.chmod(0o755)
@@ -45,7 +48,7 @@ sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
                        SQLITE_PLATFORMS=sqlite_platforms,
                        DOCKERHUB_AUTH=auth, QUAY_AUTH=auth, GHCR_AUTH=auth,
                        MOCK_DOCKER_LOG=str(directory / 'calls'), MOCK_OFFLINE=offline,
-                       MOCK_BROKEN=broken, MOCK_TRANSIENT=transient)
+                       MOCK_BROKEN=broken, MOCK_TRANSIENT=transient, MOCK_UNAUTHORIZED=unauthorized)
             env.update(credentials or {})
             result = subprocess.run(['bash', str(ROOT / 'build/ferretdb/publish-docker.sh')],
                                     env=env, text=True, capture_output=True, timeout=15)
@@ -73,6 +76,27 @@ sys.exit(1 if repository in os.environ['MOCK_BROKEN'].split(',') else 0)
             self.assertIn(repo + ':latest', row)
             self.assertIn('--push', row)
         self.assertIn('Published 6 of 6 images', result.stdout)
+
+    def test_quay_refusing_a_new_repository_says_what_to_set_up(self):
+        # A Quay robot account cannot create quay.io/wekan/ferretdb-sqlite: the
+        # login and every other push succeed, that one gets 401 UNAUTHORIZED.
+        result, calls = self.run_publish(unauthorized='quay.io/wekan/ferretdb-sqlite')
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(self.repositories(calls), self.BOTH, 'the other registries are still published')
+        self.assertIn('Published 5 of 6 images', result.stdout)
+        self.assertIn('create wekan/ferretdb-sqlite on quay.io', result.stdout)
+        self.assertIn('Write', result.stdout)
+        self.assertIn('run the Docker workflow again for v1.82.0', result.stdout)
+
+    def test_other_failures_do_not_blame_quay_permissions(self):
+        # Negative: a build that broke, or a 401 from another registry, is not
+        # the Quay repository setup.
+        result, _ = self.run_publish(broken='quay.io/wekan/ferretdb-sqlite')
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn('cannot create a repository', result.stdout)
+        result, _ = self.run_publish(unauthorized='ghcr.io/wekan/ferretdb-sqlite')
+        self.assertEqual(result.returncode, 1)
+        self.assertNotIn('cannot create a repository', result.stdout)
 
     def test_each_image_is_made_of_its_own_binaries(self):
         # ferretdb from ferretdb-<arch> on its platforms, ferretdb-sqlite from
