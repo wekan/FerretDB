@@ -17,6 +17,7 @@ package postgresql
 import (
 	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -436,5 +437,49 @@ func TestPrepareOrderByClause(t *testing.T) {
 			assert.Equal(t, tc.orderBy, orderBy)
 			assert.Equal(t, tc.args, args)
 		})
+	}
+}
+
+func TestPrepareWhereClauseAnd(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	// The due cards shape: the board ids inside an $and, beside an $or that
+	// cannot be pushed down. The $in still reaches the boardId index.
+	filter := doc("archived", false, "$and", arr(
+		doc("boardId", doc("$in", arr("b1", "b2"))),
+		doc("$or", arr(doc("members", "u1"), doc("userId", "u1"))),
+	))
+	where, args, err := prepareWhereClause(new(metadata.Placeholder), filter)
+	require.NoError(t, err)
+	assert.Contains(t, where, `(_jsonb->'boardId' IN ($`)
+	assert.Contains(t, where, ` AND ((_jsonb->'boardId' IN (`)
+	assert.Contains(t, args, `"b1"`)
+	assert.Contains(t, args, `"b2"`)
+
+	// The same condition as without the wrapper.
+	flat, flatArgs, err := prepareWhereClause(new(metadata.Placeholder), doc("boardId", doc("$in", arr("b1", "b2"))))
+	require.NoError(t, err)
+	wrapped, wrappedArgs, err := prepareWhereClause(new(metadata.Placeholder),
+		doc("$and", arr(doc("boardId", doc("$in", arr("b1", "b2"))))))
+	require.NoError(t, err)
+	assert.Equal(t, ` WHERE (`+strings.TrimPrefix(flat, ` WHERE `)+`)`, wrapped)
+	assert.Equal(t, flatArgs, wrappedArgs)
+
+	// Negative: an $and with nothing to push down adds nothing, and one that is
+	// not an array of documents is left to the Go filter.
+	for name, f := range map[string]*types.Document{
+		"only an $or":     doc("$and", arr(doc("$or", arr(doc("a", "x"))))),
+		"not an array":    doc("$and", "x"),
+		"empty branches":  doc("$and", arr(doc(), "x")),
+		"an empty $and":   doc("$and", arr()),
+		"regex in branch": doc("$and", arr(doc("a", types.Regex{Pattern: "x"}))),
+	} {
+		where, args, err := prepareWhereClause(new(metadata.Placeholder), f)
+		require.NoError(t, err, name)
+		assert.Empty(t, where, name)
+		assert.Empty(t, args, name)
 	}
 }

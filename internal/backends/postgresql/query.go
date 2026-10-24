@@ -115,6 +115,38 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 		// that path doesn't handle empty keys.
 		var key any = rootKey
 
+		// A top-level $and is pushed down branch by branch, as the SQLite
+		// backend does: every branch must hold, so ANDing what each branch pushes
+		// down is still a superset, and an ordinary client wrapper such as
+		// {$and: [{boardId: {$in: [...]}}, {$or: [...]}]} uses the boardId index
+		// instead of reading the whole table (90 s for a due cards query among
+		// 615,070 cards). A branch with nothing to push down only widens it.
+		if rootKey == "$and" {
+			branches, ok := rootVal.(*types.Array)
+			if !ok {
+				continue
+			}
+
+			for i := 0; i < branches.Len(); i++ {
+				branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+				if !ok || branch.Len() == 0 {
+					continue
+				}
+
+				where, branchArgs, err := prepareWhereClause(p, branch)
+				if err != nil {
+					return "", nil, lazyerrors.Error(err)
+				}
+
+				if where != "" {
+					filters = append(filters, `(`+strings.TrimPrefix(where, ` WHERE `)+`)`)
+					args = append(args, branchArgs...)
+				}
+			}
+
+			continue
+		}
+
 		// don't pushdown $comment, as it's attached to query with select clause
 		//
 		// all of the other top-level operators such as `$or` do not support pushdown yet

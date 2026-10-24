@@ -49,11 +49,32 @@ func multikeyWhere(p *metadata.Placeholder, meta *metadata.Collection, filter *t
 		}
 	}
 
+	return multikeyConds(p, arrays, indexed, filter)
+}
+
+// multikeyConds is multikeyWhere for one conjunction: the filter itself, or a
+// branch of a top-level $and, which must hold just the same.
+func multikeyConds(p *metadata.Placeholder, arrays map[string][]string, indexed map[string]struct{}, filter *types.Document) (string, []any) {
 	var conds []string
 	var args []any
 
 	for _, key := range filter.Keys() {
 		value := must.NotFail(filter.Get(key))
+
+		if key == "$and" {
+			if branches, ok := value.(*types.Array); ok {
+				for i := 0; i < branches.Len(); i++ {
+					if branch, ok := must.NotFail(branches.Get(i)).(*types.Document); ok {
+						if cond, condArgs := multikeyConds(p, arrays, indexed, branch); cond != "" {
+							conds = append(conds, cond)
+							args = append(args, condArgs...)
+						}
+					}
+				}
+			}
+
+			continue
+		}
 
 		if key == "$or" {
 			if cond, condArgs, ok := orCandidates(p, arrays, indexed, value); ok {

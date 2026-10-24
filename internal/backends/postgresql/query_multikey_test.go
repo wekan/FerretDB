@@ -52,6 +52,11 @@ func TestMultikeyWhere(t *testing.T) {
 	assert.Equal(t, `(`+contains+` OR (_jsonb->'_id' IN ($3, $4)))`, cond)
 	assert.Equal(t, []any{`[{"userId":"u1"}]`, `[{"userId":["u1"]}]`, `"b1"`, `"b2"`}, args)
 
+	// Inside an $and, the same.
+	cond, args = multikeyWhere(new(metadata.Placeholder), meta, doc("$and", arr(member("u1"), doc("archived", false))))
+	assert.Equal(t, contains, cond)
+	assert.Equal(t, []any{`[{"userId":"u1"}]`, `[{"userId":["u1"]}]`}, args)
+
 	// Negative: nothing narrows what may match outside it.
 	for name, filter := range map[string]*types.Document{
 		"a branch with no indexed condition": doc("$or", arr(member("u1"), doc("permission", "public"))),
