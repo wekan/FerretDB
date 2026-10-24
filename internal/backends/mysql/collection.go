@@ -189,10 +189,10 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 	}
 
 	q := fmt.Sprintf(
-		`UPDATE %s.%s SET %s = ? WHERE %s = JSON_EXTRACT(?, '$')`,
+		`UPDATE %s.%s SET %s = ? WHERE %s`,
 		metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
 		metadata.DefaultColumn,
-		metadata.IDColumn,
+		idEquals(),
 	)
 
 	err = p.InTransaction(ctx, func(tx *fsql.Tx) error {
@@ -211,7 +211,17 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 
 			var stats sql.Result
 
-			stats, err = tx.ExecContext(ctx, q, b, arg)
+			stats, err = tx.ExecContext(ctx, q, b, string(arg), string(arg))
+			if unknownColumn(err) {
+				// A table made before the generated column had its current name.
+				q = fmt.Sprintf(
+					`UPDATE %s.%s SET %s = ? WHERE %s = JSON_EXTRACT(?, '$')`,
+					metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
+					metadata.DefaultColumn, metadata.IDColumn,
+				)
+				stats, err = tx.ExecContext(ctx, q, b, string(arg))
+			}
+
 			if err != nil {
 				return lazyerrors.Error(err)
 			}
@@ -292,22 +302,37 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 		column = metadata.RecordIDColumn
 	}
 
-	castPlaceholders := placeholders
-	if column == metadata.IDColumn {
-		castPlaceholders = make([]string, len(placeholders))
-		for i := range placeholders {
-			castPlaceholders[i] = "JSON_EXTRACT(?, '$')"
-		}
-	}
-
 	q := fmt.Sprintf(
 		`DELETE FROM %s.%s WHERE %s IN (%s)`,
 		metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
 		column,
-		strings.Join(castPlaceholders, ", "),
+		strings.Join(placeholders, ", "),
 	)
 
+	legacy := ""
+	if column == metadata.IDColumn {
+		legacyPlaceholders := make([]string, len(placeholders))
+		for i := range placeholders {
+			legacyPlaceholders[i] = "JSON_EXTRACT(?, '$')"
+		}
+
+		legacy = fmt.Sprintf(
+			`DELETE FROM %s.%s WHERE %s IN (%s)`,
+			metadata.QuoteIdent(c.dbName), metadata.QuoteIdent(meta.TableName),
+			column, strings.Join(legacyPlaceholders, ", "),
+		)
+	}
+
+	legacyArgs := args
+	if column == metadata.IDColumn {
+		q, args = deleteByIDs(c.dbName, meta.TableName, args)
+	}
+
 	res, err := p.ExecContext(ctx, q, args...)
+	if legacy != "" && unknownColumn(err) {
+		// A table made before the generated column had its current name.
+		res, err = p.ExecContext(ctx, legacy, legacyArgs...)
+	}
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -659,3 +684,52 @@ func (c *collection) DropIndexes(ctx context.Context, params *backends.DropIndex
 var (
 	_ backends.Collection = (*collection)(nil)
 )
+
+// The _id of a stored document is matched through the generated column its
+// unique index is built on (SafeColumnName("_id"), JSON_EXTRACT(doc, '$._id')
+// as VARCHAR), compared with the id's sjson text as a plain string.
+//
+// It used to be `JSON_EXTRACT(doc, '$._id') = JSON_EXTRACT(?, '$')`. MariaDB
+// 12.3 answers that comparison of two equal JSON strings with FALSE, so every
+// update and delete by _id matched nothing - and the handler reported the
+// update as made: on MariaDB, edits were silently lost. MySQL compared them
+// correctly, but could not use the _id index for that expression, so each
+// update read the whole table.
+//
+// The generated column has the table's collation, which is case- and
+// accent-insensitive by default on both, so the index finds the candidates and
+// a BINARY comparison keeps only the exact _id.
+func idEquals() string {
+	col := metadata.QuoteIdent(metadata.SafeColumnName("_id"))
+
+	return fmt.Sprintf(`%[1]s = ? AND CAST(%[1]s AS BINARY) = CAST(? AS BINARY)`, col)
+}
+
+// unknownColumn reports MySQL error 1054: a table created before the _id
+// generated column was named by SafeColumnName has it under its old name, and
+// is matched with the previous expression instead.
+func unknownColumn(err error) bool {
+	var mysqlErr *mysql.MySQLError
+	return errors.As(err, &mysqlErr) && mysqlErr.Number == 1054
+}
+
+// deleteByIDs returns the DELETE of the documents with the given _ids (their
+// sjson texts), matched like idEquals.
+func deleteByIDs(dbName, table string, ids []any) (string, []any) {
+	col := metadata.QuoteIdent(metadata.SafeColumnName("_id"))
+
+	plain := make([]string, len(ids))
+	binary := make([]string, len(ids))
+	for i := range ids {
+		plain[i] = "?"
+		binary[i] = "CAST(? AS BINARY)"
+	}
+
+	q := fmt.Sprintf(
+		`DELETE FROM %s.%s WHERE %[3]s IN (%[4]s) AND CAST(%[3]s AS BINARY) IN (%[5]s)`,
+		metadata.QuoteIdent(dbName), metadata.QuoteIdent(table),
+		col, strings.Join(plain, ", "), strings.Join(binary, ", "),
+	)
+
+	return q, append(append([]any{}, ids...), ids...)
+}

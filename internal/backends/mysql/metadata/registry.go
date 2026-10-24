@@ -958,7 +958,11 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 			// ensure that the column hasn't already been extracted
 			if !slices.Contains(allColumns, columnName) {
 				adds = append(adds, fmt.Sprintf(
-					`ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((JSON_EXTRACT(%s, %s))) STORED`,
+					// utf8mb4_bin: the table's default collation is case- and
+					// accent-insensitive (utf8mb4_uca1400_ai_ci, utf8mb4_0900_ai_ci), and
+					// a unique index on such a column refused _id "A" beside "a" - a
+					// duplicate key error for two different MongoDB values.
+					`ADD COLUMN %s VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin GENERATED ALWAYS AS ((JSON_EXTRACT(%s, %s))) STORED`,
 					QuoteIdent(columnName),
 					DefaultColumn,
 					QuoteString("$."+key.Field),
