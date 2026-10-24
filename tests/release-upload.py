@@ -19,6 +19,18 @@ import unittest
 sys.dont_write_bytecode = True
 ROOT = Path(__file__).resolve().parents[1]
 PUBLISH = ROOT / 'build/ferretdb/publish-release-asset.sh'
+
+# The release workflows run these tests in the job that then builds the release,
+# whose environment steers build.sh: FERRETDB_DIST_SKIP_LIST names the assets
+# already on the release, FERRETDB_DIST_PUBLISH uploads each binary. Inherited,
+# they made a fixture build skip or upload what the test did not ask for, and
+# release-all-missing.yml failed here before building anything. Every fixture
+# run starts from the environment without them; a test sets what it tests.
+STEERING = ('FERRETDB_DIST_SKIP_LIST', 'FERRETDB_DIST_PUBLISH', 'FERRETDB_RELEASE_VERSION')
+
+
+def clean_env():
+    return {k: v for k, v in os.environ.items() if k not in STEERING}
 WORKFLOWS = ('release-all.yml', 'release-all-missing.yml')
 ALWAYS = "if: ${{ always() && steps.create.outcome == 'success' }}"
 spec = importlib.util.spec_from_file_location('audit', ROOT / 'build/ferretdb/check-telemetry.py')
@@ -109,7 +121,7 @@ class BuildAttachesEachBinary(unittest.TestCase):
             publisher = fixture(root, events)
             result = subprocess.run(
                 ['bash', str(root / 'build.sh'), mode], cwd=root,
-                env={**os.environ, 'FERRETDB_DIST_PUBLISH': str(publisher),
+                env={**clean_env(), 'FERRETDB_DIST_PUBLISH': str(publisher),
                      'FAIL_PUBLISH': fail},
                 capture_output=True, text=True, timeout=120)
             lines = events.read_text().splitlines() if events.exists() else []
@@ -147,7 +159,7 @@ class BuildAttachesEachBinary(unittest.TestCase):
             root = Path(tmp) / 'repo'
             fixture(root, Path(tmp) / 'events')
             result = subprocess.run(['bash', str(root / 'build.sh'), 'dist-seq'], cwd=root,
-                                    capture_output=True, text=True, timeout=120)
+                                    env=clean_env(), capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             built = (root / 'tmp/ferretdb-dist/built.list').read_text().split()
             self.assertIn('amd64', built)
@@ -173,7 +185,7 @@ class BuildAttachesEachBinary(unittest.TestCase):
                 names += [f'ferretdb-{name}{exe}', f'ferretdb-{name}{exe}.sha256sum']
             skip.write_text('\n'.join(names) + '\n')
             result = subprocess.run(['bash', str(root / 'build.sh'), 'dist-seq'], cwd=root,
-                                    env={**os.environ, 'FERRETDB_DIST_SKIP_LIST': str(skip)},
+                                    env={**clean_env(), 'FERRETDB_DIST_SKIP_LIST': str(skip)},
                                     capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             built = [l.split()[1] for l in events.read_text().splitlines() if l.startswith('build ')]
@@ -200,7 +212,7 @@ class BuildAttachesEachBinary(unittest.TestCase):
             root = Path(tmp) / 'repo'
             events = Path(tmp) / 'events'
             fixture(root, events)
-            env = {k: v for k, v in os.environ.items() if k != 'FERRETDB_DIST_PUBLISH'}
+            env = clean_env()
             result = subprocess.run(['bash', str(root / 'build.sh'), 'dist-seq'], cwd=root,
                                     env=env, capture_output=True, text=True, timeout=120)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -229,7 +241,7 @@ n=$(cat '{counter}'); n=$((n + 1)); echo "$n" > '{counter}'
             p = base / 'dist' / name
             p.write_text(content)
             paths.append(str(p))
-        env = {**os.environ, 'PATH': f"{base / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        env = {**clean_env(), 'PATH': f"{base / 'bin'}{os.pathsep}{os.environ['PATH']}",
                'FERRETDB_RELEASE_TAG': 'v1.99.0', 'FERRETDB_UPLOAD_ATTEMPTS': attempts,
                'FERRETDB_UPLOAD_DELAY': '0'}
         result = subprocess.run(['bash', str(PUBLISH), *paths], env=env,
@@ -267,7 +279,7 @@ n=$(cat '{counter}'); n=$((n + 1)); echo "$n" > '{counter}'
         self.assertIn('after 2 attempts', result.stderr)
 
     def test_requires_a_tag(self):
-        env = {k: v for k, v in os.environ.items() if k != 'FERRETDB_RELEASE_TAG'}
+        env = {k: v for k, v in clean_env().items() if k != 'FERRETDB_RELEASE_TAG'}
         result = subprocess.run(['bash', str(PUBLISH), 'x'], env=env,
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
@@ -377,7 +389,7 @@ if [ "$1 $2" = 'release view' ]; then cat '{base / 'assets'}'; exit 0; fi
 echo "$*" >> '{calls}'
 """)
         gh.chmod(0o755)
-        env = {**os.environ, 'PATH': f"{base / 'bin'}{os.pathsep}{os.environ['PATH']}",
+        env = {**clean_env(), 'PATH': f"{base / 'bin'}{os.pathsep}{os.environ['PATH']}",
                'FERRETDB_RELEASE_TAG': 'v1.99.0', 'FERRETDB_UPLOAD_DELAY': '0'}
         result = subprocess.run(['bash', str(root / 'build/ferretdb/attach-finished.sh'), *args],
                                 env=env, capture_output=True, text=True, timeout=60)
@@ -423,6 +435,25 @@ echo "$*" >> '{calls}'
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(uploaded, [])
 
+
+
+
+class Environment(unittest.TestCase):
+    def test_fixture_runs_ignore_the_release_jobs_build_controls(self):
+        saved = dict(os.environ)
+        try:
+            os.environ.update(FERRETDB_DIST_SKIP_LIST='/release/existing.txt', FERRETDB_DIST_PUBLISH='/bin/false',
+                              FERRETDB_RELEASE_VERSION='v1.99.0')
+            env = clean_env()
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        self.assertEqual([k for k in STEERING if k in env], [])
+        self.assertIn('PATH', env)
+        # Negative: no fixture run in this file builds its environment from
+        # os.environ directly any more.
+        source = Path(__file__).read_text()
+        self.assertNotIn('{**' + 'os.environ,', source)
 
 if __name__ == '__main__':
     unittest.main()

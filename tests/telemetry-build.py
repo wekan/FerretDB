@@ -16,7 +16,37 @@ audit = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(audit)
 
 
+def fixture_env(marker):
+    """The environment of a fixture build: this process's, minus FERRETDB_*.
+
+    The release workflows run this test in a job whose environment steers the
+    real build - FERRETDB_DIST_SKIP_LIST names the assets already on the release,
+    FERRETDB_DIST_PUBLISH uploads each binary, FERRETDB_RELEASE_TAG and
+    FERRETDB_RELEASE_VERSION set the version. Inherited, they made the fixture
+    build skip every platform as "already on the release": it built nothing, so it
+    found no telemetry, and "telemetry is fatal" failed - which stopped
+    release-all-missing.yml before it built or published anything.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith('FERRETDB_')}
+    env['TEST_BINARY_CONTENT'] = marker
+    return env
+
+
 class Matrix(unittest.TestCase):
+    def test_fixture_builds_ignore_the_release_jobs_environment(self):
+        saved = dict(os.environ)
+        try:
+            os.environ.update(FERRETDB_DIST_SKIP_LIST='/release/existing.txt', FERRETDB_DIST_PUBLISH='/bin/false',
+                              FERRETDB_RELEASE_TAG='v1.99.0', FERRETDB_RELEASE_VERSION='v1.99.0')
+            env = fixture_env('clean binary')
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        self.assertEqual([k for k in env if k.startswith('FERRETDB_')], [])
+        self.assertEqual(env['TEST_BINARY_CONTENT'], 'clean binary')
+        self.assertIn('PATH', env, 'everything else is kept')
+
+
     def test_telemetry_is_fatal_in_both_matrix_modes(self):
         for mode, marker, expected in [('dist-seq', 'clean binary', 0),
                                        ('dist-seq', 'beacon.ferretdb.com', 1),
@@ -53,7 +83,7 @@ printf '%s' "$TEST_BINARY_CONTENT" > "$out"
 """)
                 go.chmod(0o755)
                 result = subprocess.run(['bash', str(root / 'build.sh'), mode], cwd=root,
-                                        env={**os.environ, 'TEST_BINARY_CONTENT': marker},
+                                        env=fixture_env(marker),
                                         capture_output=True, text=True, timeout=60)
                 if expected == 0:
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
