@@ -51,10 +51,18 @@ const orderedBatch = 100
 // orderableField is a top-level field name the ORDER BY may name.
 var orderableField = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]*$`)
 
-// simpleTypes are the sjson types the ORDER BY sorts; anything else is complex.
-const simpleTypes = `('null', 'int', 'long', 'double', 'string', 'objectId', 'bool', 'date')`
-
 // orderByClause returns the ORDER BY for sort, or "" when it cannot be applied.
+//
+// Each field's sort key is two expressions, evaluated once per row: its type
+// CLASS and its value. A value SQLite cannot order (complexClass) gets the class
+// that sorts FIRST in that field's direction - 0 ascending, 10 descending - so a
+// single-field sort needs nothing more. A compound sort puts every document with
+// such a value in ANY of its fields before the rest, which takes one more term.
+//
+// Each expression reads its own JSON path in one step: a chain of -> writes
+// each step's JSON back out as text for the next to parse again, and the first
+// version of this - a chain, and the type read three times - made the ten
+// newest of 30,000 users take three times as long as decoding all of them in Go.
 func orderByClause(sort *types.Document) string {
 	if sort == nil || sort.Len() == 0 {
 		return ""
@@ -67,30 +75,35 @@ func orderByClause(sort *types.Document) string {
 			return ""
 		}
 
-		dir := ""
+		dir, complexClass := "", 0
 
 		switch must.NotFail(sort.Get(field)) {
 		case int64(1), int32(1), float64(1):
 		case int64(-1), int32(-1), float64(-1):
-			dir = " DESC"
+			dir, complexClass = " DESC", 10
 		default:
 			return ""
 		}
 
-		t := `COALESCE(` + metadata.SchemaPathExpr(field) + `->>'t', 'null')`
+		t := `COALESCE(` + metadata.DefaultColumn + `->>'$."$s"."p"."` + field + `"."t"', 'null')`
 		value := metadata.DefaultColumn + `->>` + metadata.LabelLiteral(field)
 
-		complexes = append(complexes,
-			fmt.Sprintf(`%[1]s NOT IN %[2]s OR (%[1]s = 'double' AND json_type(%[3]s->%[4]s) = 'text')`,
-				t, simpleTypes, metadata.DefaultColumn, metadata.LabelLiteral(field)))
-		keys = append(keys,
-			fmt.Sprintf(`CASE %s WHEN 'int' THEN 2 WHEN 'long' THEN 2 WHEN 'double' THEN 2 WHEN 'string' THEN 3 `+
-				`WHEN 'objectId' THEN 7 WHEN 'bool' THEN 8 WHEN 'date' THEN 9 ELSE 1 END%s`, t, dir),
-			value+dir)
+		// NaN and the infinities are doubles stored as JSON strings.
+		class := fmt.Sprintf(`(CASE %[1]s WHEN 'null' THEN 1 WHEN 'int' THEN 2 WHEN 'long' THEN 2 `+
+			`WHEN 'double' THEN (CASE WHEN json_type(%[2]s, '$."%[3]s"') = 'text' THEN %[4]d ELSE 2 END) `+
+			`WHEN 'string' THEN 3 WHEN 'objectId' THEN 7 WHEN 'bool' THEN 8 WHEN 'date' THEN 9 ELSE %[4]d END)`,
+			t, metadata.DefaultColumn, field, complexClass)
+
+		complexes = append(complexes, fmt.Sprintf(`%s = %d`, class, complexClass))
+		keys = append(keys, class+dir, value+dir)
 	}
 
-	return ` ORDER BY (CASE WHEN ` + strings.Join(complexes, ` OR `) + ` THEN 0 ELSE 1 END), ` +
-		strings.Join(keys, `, `) + `, rowid`
+	order := ` ORDER BY `
+	if len(complexes) > 1 {
+		order += `(` + strings.Join(complexes, ` OR `) + `) DESC, `
+	}
+
+	return order + strings.Join(keys, `, `) + `, rowid`
 }
 
 // orderedIterator returns the documents of the given rowids, in that order,
