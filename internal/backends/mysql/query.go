@@ -558,6 +558,23 @@ func indexedNarrowing(filter *types.Document, indexed map[string]struct{}) (stri
 	var args []any
 
 	for _, key := range filter.Keys() {
+		// Every branch of a top-level $and must hold, so what each narrows to is
+		// ANDed too: {$and: [{boardId: {$in: [...]}}, ...]} uses the index.
+		if key == "$and" {
+			if branches, ok := must.NotFail(filter.Get(key)).(*types.Array); ok {
+				for i := 0; i < branches.Len(); i++ {
+					if branch, ok := must.NotFail(branches.Get(i)).(*types.Document); ok {
+						if cond, condArgs := indexedNarrowing(branch, indexed); cond != "" {
+							conds = append(conds, "("+cond+")")
+							args = append(args, condArgs...)
+						}
+					}
+				}
+			}
+
+			continue
+		}
+
 		if _, ok := indexed[key]; !ok || key == "" || strings.HasPrefix(key, "$") || strings.ContainsRune(key, '.') {
 			continue
 		}

@@ -118,10 +118,21 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	// (query.go, indexedNarrowing). A table created before those columns had
 	// their current names has them under another (error 1054): it is queried
 	// without the narrowing, as before.
-	narrow, narrowArgs := indexedNarrowing(params.Filter, indexedFields(meta.Indexes))
+	//
+	// A membership test from a multikey side table (query_multikey.go) is
+	// the selective condition when there is one - a user is a member of a few
+	// boards of 92,000 - and the other field indexes are then left out, all but
+	// _id's: given `type = 'board'` too, which every board matches, MySQL read
+	// the whole table through that index and All Boards took 1.3 s.
+	indexed := indexedFields(meta.Indexes)
 
-	// And a membership test from a multikey side table (query_multikey.go).
-	if mk, mkArgs := multikeyWhere(c.dbName, meta, c.r.MultikeyReady, params.Filter); mk != "" {
+	mk, mkArgs := multikeyWhere(c.dbName, meta, c.r.MultikeyReady, params.Filter)
+	if mk != "" {
+		indexed = map[string]struct{}{"_id": {}}
+	}
+
+	narrow, narrowArgs := indexedNarrowing(params.Filter, indexed)
+	if mk != "" {
 		if narrow != "" {
 			narrow += " AND "
 		}

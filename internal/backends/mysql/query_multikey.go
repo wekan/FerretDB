@@ -57,6 +57,12 @@ func multikeyWhere(dbName string, meta *metadata.Collection, ready func(string) 
 	m := &multikey{dbName: dbName, table: meta.TableName, arrays: arrays, indexed: indexedFields(meta.Indexes)}
 	m.indexed["_id"] = struct{}{}
 
+	return m.conds(filter)
+}
+
+// conds is multikeyWhere for one conjunction: the filter itself, or a branch of
+// a top-level $and, which must hold just the same.
+func (m *multikey) conds(filter *types.Document) (string, []any) {
 	var conds []string
 	var args []any
 
@@ -66,6 +72,21 @@ func multikeyWhere(dbName string, meta *metadata.Collection, ready func(string) 
 		var cond string
 		var condArgs []any
 		var ok bool
+
+		if key == "$and" {
+			if branches, isArray := value.(*types.Array); isArray {
+				for i := 0; i < branches.Len(); i++ {
+					if branch, isDoc := must.NotFail(branches.Get(i)).(*types.Document); isDoc {
+						if c, a := m.conds(branch); c != "" {
+							conds = append(conds, c)
+							args = append(args, a...)
+						}
+					}
+				}
+			}
+
+			continue
+		}
 
 		if key == "$or" {
 			cond, condArgs, ok = m.or(value)
@@ -92,15 +113,27 @@ type multikey struct {
 
 // or is the OR of each branch's first indexable condition, or ok=false when a
 // branch has none.
+//
+// When every branch is a set of _ids - a side table lookup, or _id itself -
+// the sets are one UNION ALL, in a derived table: `_id IN (SELECT id FROM
+// (... UNION ALL ...) AS mkids)`. MySQL makes a semijoin of an IN subquery only
+// when it is not under an OR, and All Boards with a starred board -
+// `_id IN (SELECT id FROM side ...) OR _id IN (...)` - ran the subquery for each
+// of 92,000 boards: 800 ms instead of 4.
 func (m *multikey) or(v any) (string, []any, bool) {
 	branches, ok := v.(*types.Array)
 	if !ok || branches.Len() == 0 {
 		return "", nil, false
 	}
 
-	ors := make([]string, 0, branches.Len())
+	type arm struct {
+		ids  string // a SELECT of _id texts, or ""
+		cond string // otherwise, a condition
+		args []any
+	}
 
-	var args []any
+	arms := make([]arm, 0, branches.Len())
+	allIDs := true
 
 	for i := 0; i < branches.Len(); i++ {
 		branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
@@ -108,40 +141,103 @@ func (m *multikey) or(v any) (string, []any, bool) {
 			return "", nil, false
 		}
 
-		found := false
+		var a arm
 
 		for _, key := range branch.Keys() {
-			value := must.NotFail(branch.Get(key))
-
-			cond, condArgs, ok := m.elemMatch(key, value)
-			if !ok {
-				single := must.NotFail(types.NewDocument(key, value))
-				if cond, condArgs = indexedNarrowing(single, m.indexed); cond != "" {
-					ok = true
-				}
-			}
-
-			if ok {
-				ors = append(ors, cond)
-				args = append(args, condArgs...)
-				found = true
-
+			if a.ids, a.args, ok = m.idSet(key, must.NotFail(branch.Get(key))); ok {
 				break
 			}
 		}
 
-		if !found {
-			return "", nil, false
+		if a.ids == "" {
+			for _, key := range branch.Keys() {
+				single := must.NotFail(types.NewDocument(key, must.NotFail(branch.Get(key))))
+				if a.cond, a.args = indexedNarrowing(single, m.indexed); a.cond != "" {
+					break
+				}
+			}
+
+			if a.cond == "" {
+				return "", nil, false
+			}
+
+			allIDs = false
 		}
+
+		arms = append(arms, a)
+	}
+
+	var args []any
+
+	if allIDs {
+		selects := make([]string, len(arms))
+		for i, a := range arms {
+			selects[i] = a.ids
+			args = append(args, a.args...)
+		}
+
+		return fmt.Sprintf(`%s IN (SELECT id FROM (%s) AS mkids)`, idColumn(), strings.Join(selects, " UNION ALL ")), args, true
+	}
+
+	ors := make([]string, len(arms))
+	for i, a := range arms {
+		ors[i] = a.cond
+		if a.ids != "" {
+			ors[i] = fmt.Sprintf(`%s IN (%s)`, idColumn(), a.ids)
+		}
+		args = append(args, a.args...)
 	}
 
 	return "(" + strings.Join(ors, " OR ") + ")", args, true
 }
 
+// idColumn is the _id generated column.
+func idColumn() string {
+	return metadata.QuoteIdent(metadata.SafeColumnName("_id"))
+}
+
+// idSet returns a SELECT of the _id texts {key: v} can match, when it is
+// one: an $elemMatch a side table answers, or an equality or $in on _id.
+func (m *multikey) idSet(key string, v any) (string, []any, bool) {
+	if key == "_id" {
+		values, ok := narrowableValues(v)
+		if !ok {
+			return "", nil, false
+		}
+
+		selects := make([]string, len(values))
+		args := make([]any, len(values))
+
+		for i, value := range values {
+			selects[i] = "SELECT ?"
+			args[i] = jsonValue(value)
+		}
+
+		// The first SELECT names the column, and gives it the side table's type.
+		selects[0] = "SELECT CAST(? AS CHAR CHARACTER SET utf8mb4) AS id"
+
+		return strings.Join(selects, " UNION ALL "), args, true
+	}
+
+	return m.elemMatchIDs(key, v)
+}
+
 // elemMatch is the side table condition of
-// {array: {$elemMatch: {field: v | {$in: [...]}}}} for the first inner field
-// with a complete side table whose values are all strings it can hold.
+// {array: {$elemMatch: {field: v | {$in: [...]}}}}, as elemMatchIDs.
 func (m *multikey) elemMatch(array string, v any) (string, []any, bool) {
+	ids, args, ok := m.elemMatchIDs(array, v)
+	if !ok {
+		return "", nil, false
+	}
+
+	return fmt.Sprintf(`%s IN (%s)`, idColumn(), ids), args, true
+}
+
+// elemMatchIDs is the SELECT of the _ids of
+// {array: {$elemMatch: {field: v | {$in: [...]}}}} from the side table of the
+// first inner field that has a complete one, when its values are all strings
+// the table can hold.
+func (m *multikey) elemMatchIDs(array string, v any) (string, []any, bool) {
 	fields, ok := m.arrays[array]
 	if !ok {
 		return "", nil, false
@@ -197,8 +293,7 @@ func (m *multikey) elemMatch(array string, v any) (string, []any, bool) {
 		}
 
 		return fmt.Sprintf(
-			`%s IN (SELECT id FROM %s.%s WHERE v IN (%s))`,
-			metadata.QuoteIdent(metadata.SafeColumnName("_id")),
+			`SELECT id FROM %s.%s WHERE v IN (%s)`,
 			metadata.QuoteIdent(m.dbName),
 			metadata.QuoteIdent(metadata.MultikeyTableName(m.table, array, field)),
 			strings.Join(placeholders, ", "),

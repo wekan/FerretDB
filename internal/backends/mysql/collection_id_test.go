@@ -119,3 +119,31 @@ func TestIndexJSONPath(t *testing.T) {
 		assert.Equal(t, expected, metadata.IndexJSONPath(field), field)
 	}
 }
+
+func TestIndexedNarrowingAnd(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+	indexed := map[string]struct{}{"_id": {}, "boardId": {}}
+	col := metadata.QuoteIdent(metadata.SafeColumnName("boardId"))
+
+	// The due cards shape: the board ids inside an $and.
+	cond, args := indexedNarrowing(doc("archived", false, "$and", arr(
+		doc("boardId", doc("$in", arr("b1", "b2"))),
+		doc("$or", arr(doc("members", "u1"))),
+	)), indexed)
+	assert.Equal(t, "(("+col+" IN (?, ?) OR "+col+" LIKE '[%'))", cond)
+	assert.Equal(t, []any{`"b1"`, `"b2"`}, args)
+
+	// Negative: nothing indexed in the branches, or no branches, adds nothing.
+	for name, f := range map[string]*types.Document{
+		"not indexed":  doc("$and", arr(doc("title", "x"))),
+		"not an array": doc("$and", "x"),
+		"only an $or":  doc("$and", arr(doc("$or", arr(doc("boardId", "b1"))))),
+	} {
+		cond, args := indexedNarrowing(f, indexed)
+		assert.Empty(t, cond, name)
+		assert.Empty(t, args, name)
+	}
+}

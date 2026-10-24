@@ -57,8 +57,26 @@ func TestMultikeyWhere(t *testing.T) {
 	cond, args = multikeyWhere("db", meta, ready, doc("archived", false, "$or", arr(
 		member("u1"), doc("_id", doc("$in", arr("b1", "b2")), "permission", "public"),
 	)))
-	assert.Equal(t, "("+side+" OR "+id+" IN (?, ?))", cond)
+	// Every branch a set of _ids: one UNION ALL in a derived table, which MySQL
+	// joins - under an OR it ran the subquery once per row.
+	sideSelect := "SELECT id FROM `db`.`" + mk + "` WHERE v IN (?)"
+	assert.Equal(t, id+" IN (SELECT id FROM ("+sideSelect+
+		" UNION ALL SELECT CAST(? AS CHAR CHARACTER SET utf8mb4) AS id UNION ALL SELECT ?) AS mkids)", cond)
 	assert.Equal(t, []any{`"u1"`, `"b1"`, `"b2"`}, args)
+	assert.NotContains(t, cond, " OR ")
+
+	// A branch on another indexed field is not a set of _ids: the OR stays.
+	meta.Indexes = append(meta.Indexes, metadata.IndexInfo{Name: "permission_1", Key: []metadata.IndexKeyPair{{Field: "permission"}}})
+	cond, args = multikeyWhere("db", meta, ready, doc("$or", arr(member("u1"), doc("permission", "public"))))
+	perm := metadata.QuoteIdent(metadata.SafeColumnName("permission"))
+	assert.Equal(t, "("+side+" OR ("+perm+" = ? OR "+perm+" LIKE '[%'))", cond)
+	assert.Equal(t, []any{`"u1"`, `"public"`}, args)
+	meta.Indexes = meta.Indexes[:len(meta.Indexes)-1]
+
+	// Inside an $and, the same.
+	cond, args = multikeyWhere("db", meta, ready, doc("$and", arr(member("u1"), doc("archived", false))))
+	assert.Equal(t, side, cond)
+	assert.Equal(t, []any{`"u1"`}, args)
 
 	// Negative: nothing narrows what may match outside it.
 	for name, filter := range map[string]*types.Document{
