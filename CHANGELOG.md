@@ -6,13 +6,14 @@
 
 ### New Features 🎉
 
-- **SQLite sorts in the database**: a sorted query read, decoded and sorted
-  every matching document in Go to return a few - ten newest users, the first
-  page of a list. SQLite now orders by a key that reproduces MongoDB's order for
-  simple values, and fetches documents a batch at a time in that order; a
-  document whose sort field holds an array, a document, NaN or an infinity
-  comes first, and then everything is sorted in Go as before. by @xet7. Thanks
-  to xet7.
+- **SQLite sorts in the database**: a sorted query read, decoded and kept every
+  matching document in Go to return a few - ten newest users, the first page of
+  a list. SQLite now orders the row ids by a key that reproduces MongoDB's order
+  for simple values, and documents are fetched a batch at a time in that order:
+  the ten newest of 30,000 users allocate 2.6 MB instead of 264 MB in the same
+  time, and the first batch of an unlimited sort comes 30% sooner. A document
+  whose sort field holds an array, a document, NaN or an infinity comes first,
+  and then everything is sorted in Go as before. by @xet7. Thanks to xet7.
 - **PostgreSQL answers membership tests from a GIN index**: an index whose
   leading key is `ARRAY.FIELD` (`members.userId`) also gets a `jsonb_path_ops`
   GIN index of the array, and `{members: {$elemMatch: {userId: X}}}`, alone or
