@@ -120,6 +120,16 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	// without the narrowing, as before.
 	narrow, narrowArgs := indexedNarrowing(params.Filter, indexedFields(meta.Indexes))
 
+	// And a membership test from a multikey side table (query_multikey.go).
+	if mk, mkArgs := multikeyWhere(c.dbName, meta, c.r.MultikeyReady, params.Filter); mk != "" {
+		if narrow != "" {
+			narrow += " AND "
+		}
+
+		narrow += mk
+		narrowArgs = append(narrowArgs, mkArgs...)
+	}
+
 	query, queryArgs := build(narrow, narrowArgs)
 
 	rows, err := p.QueryContext(ctx, query, queryArgs...)

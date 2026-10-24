@@ -81,6 +81,9 @@ type Registry struct {
 	// TODO https://github.com/FerretDB/FerretDB/issues/2755
 	rw    sync.RWMutex
 	colls map[string]map[string]*Collection // database name -> collection name -> collection
+
+	// multikey holds the names of the complete multikey side tables (multikey.go).
+	multikey map[string]struct{}
 }
 
 // NewRegistry creates a registry for the MySQL databases with a given base URI.
@@ -236,6 +239,10 @@ func (r *Registry) initCollections(ctx context.Context, dbName string, p *fsql.D
 	}
 
 	r.colls[dbName] = colls
+
+	for _, c := range colls {
+		r.ensureMultikey(ctx, p, dbName, c.TableName, c.Indexes)
+	}
 
 	return nil
 }
@@ -742,6 +749,11 @@ func (r *Registry) collectionDrop(ctx context.Context, p *fsql.DB, dbName, colle
 		return false, lazyerrors.Error(err)
 	}
 
+	// The table's triggers went with it; its side tables did not.
+	if err := r.dropMultikey(ctx, p, dbName, c.TableName, c.Indexes, nil); err != nil {
+		return false, lazyerrors.Error(err)
+	}
+
 	q = fmt.Sprintf(
 		`DELETE FROM %s.%s WHERE %s IN (?)`,
 		dbName, metadataTableName,
@@ -1057,6 +1069,8 @@ func (r *Registry) indexesCreate(ctx context.Context, p *fsql.DB, dbName, collec
 
 	r.colls[dbName][collectionName] = c
 
+	r.ensureMultikey(ctx, p, dbName, c.TableName, c.Indexes)
+
 	return nil
 }
 
@@ -1093,6 +1107,8 @@ func (r *Registry) indexesDrop(ctx context.Context, p *fsql.DB, dbName, collecti
 		return nil
 	}
 
+	var dropped []IndexInfo
+
 	// find the collection in the list of collections
 	for _, name := range indexNames {
 		i := slices.IndexFunc(c.Indexes, func(i IndexInfo) bool { return name == i.Name })
@@ -1113,7 +1129,12 @@ func (r *Registry) indexesDrop(ctx context.Context, p *fsql.DB, dbName, collecti
 			return lazyerrors.Error(err)
 		}
 
+		dropped = append(dropped, c.Indexes[i])
 		c.Indexes = slices.Delete(c.Indexes, i, i+1)
+	}
+
+	if err := r.dropMultikey(ctx, p, dbName, c.TableName, dropped, c.Indexes); err != nil {
+		return lazyerrors.Error(err)
 	}
 
 	b, err := sjson.Marshal(c.marshal())
