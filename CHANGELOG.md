@@ -49,6 +49,14 @@
 
 ### Fixed 🐛
 
+- **MariaDB lost every update and delete by a string `_id`**: MariaDB 12.3
+  compares two equal JSON strings as different, so `updateOne({_id: "a"})`
+  matched nothing and was still reported as made. Updates and deletes now use
+  the `_id` index's generated column with an exact comparison - on MySQL too,
+  where each one used to read the whole table (an edit took 8.6 s on 600,000
+  documents). New generated columns are `utf8mb4_bin`, so `_id` `"A"` and `"a"`
+  are no longer a duplicate key. by @xet7. Thanks to xet7.
+
 - **PostgreSQL answers equality and `$in` from the field's index**: the
   field name was a query parameter (`_jsonb->$1 @> $2`), which no expression
   index can match, so every query read the whole table - one document by `_id`
