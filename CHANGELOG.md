@@ -18,6 +18,13 @@
   GIN index of the array, and `{members: {$elemMatch: {userId: X}}}`, alone or
   in an `$or` of indexed branches, uses it instead of reading the whole table.
   by @xet7. Thanks to xet7.
+- **Multikey side tables for MySQL and MariaDB**: as on SQLite, an index whose
+  leading key is `ARRAY.FIELD` gets a side table of element values and `_id`s,
+  kept current by triggers, so a membership test reads only the matching
+  documents. MariaDB has no multi-valued indexes, so both use the same table.
+  If the account may not create triggers (MySQL with binary logging and no
+  SUPER), nothing is created and queries read the collection as before. by
+  @xet7. Thanks to xet7.
 
 ### Fixed 🐛
 
