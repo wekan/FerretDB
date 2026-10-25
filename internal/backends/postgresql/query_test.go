@@ -455,7 +455,7 @@ func TestPrepareWhereClauseAnd(t *testing.T) {
 	where, args, err := prepareWhereClause(new(metadata.Placeholder), filter)
 	require.NoError(t, err)
 	assert.Contains(t, where, `(_jsonb->'boardId' IN ($`)
-	assert.Contains(t, where, ` AND ((_jsonb->'boardId' IN (`)
+	assert.Contains(t, where, ` AND (((_jsonb->'boardId' IN (`)
 	assert.Contains(t, args, `"b1"`)
 	assert.Contains(t, args, `"b2"`)
 
@@ -465,13 +465,13 @@ func TestPrepareWhereClauseAnd(t *testing.T) {
 	wrapped, wrappedArgs, err := prepareWhereClause(new(metadata.Placeholder),
 		doc("$and", arr(doc("boardId", doc("$in", arr("b1", "b2"))))))
 	require.NoError(t, err)
-	assert.Equal(t, ` WHERE (`+strings.TrimPrefix(flat, ` WHERE `)+`)`, wrapped)
+	assert.Equal(t, ` WHERE ((`+strings.TrimPrefix(flat, ` WHERE `)+`))`, wrapped)
 	assert.Equal(t, flatArgs, wrappedArgs)
 
 	// Negative: an $and with nothing to push down adds nothing, and one that is
 	// not an array of documents is left to the Go filter.
 	for name, f := range map[string]*types.Document{
-		"only an $or":     doc("$and", arr(doc("$or", arr(doc("a", "x"))))),
+		"an $or with a branch that cannot be pushed": doc("$and", arr(doc("$or", arr(doc("a", "x"), doc("b", types.Regex{Pattern: "y"}))))),
 		"not an array":    doc("$and", "x"),
 		"empty branches":  doc("$and", arr(doc(), "x")),
 		"an empty $and":   doc("$and", arr()),
@@ -482,4 +482,101 @@ func TestPrepareWhereClauseAnd(t *testing.T) {
 		assert.Empty(t, where, name)
 		assert.Empty(t, args, name)
 	}
+}
+
+func TestPrepareWhereClauseOr(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	// The due cards $or: each branch an equality the database answers, so the
+	// database returns only the user's cards instead of every card of the boards.
+	or := doc("$or", arr(doc("members", "u1"), doc("assignees", "u1"), doc("userId", "u1")))
+	where, args, err := prepareWhereClause(new(metadata.Placeholder), or)
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(where, ` WHERE ((`), where)
+	assert.Equal(t, 2, strings.Count(where, ") OR ("), where)
+	assert.Equal(t, []any{`"u1"`, `"u1"`, `"u1"`}, args, "one value per branch")
+	for _, field := range []string{"members", "assignees", "userId"} {
+		assert.Contains(t, where, `_jsonb->'`+field+`' = $`, field)
+	}
+
+	// Inside an $and, beside the board ids.
+	where, _, err = prepareWhereClause(new(metadata.Placeholder), doc("$and", arr(
+		doc("boardId", doc("$in", arr("b1"))), or)))
+	require.NoError(t, err)
+	assert.Contains(t, where, `_jsonb->'boardId' IN (`)
+	assert.Contains(t, where, ") OR (")
+
+	// Negative: one branch with nothing to push down could match anything, so
+	// the whole $or stays in Go - and gives its placeholders back: the next
+	// condition is still $1.
+	p := new(metadata.Placeholder)
+	where, args, err = prepareWhereClause(p, doc(
+		"$or", arr(doc("members", "u1"), doc("title", types.Regex{Pattern: "x"})),
+		"type", "card",
+	))
+	require.NoError(t, err)
+	assert.NotContains(t, where, "members", where)
+	assert.Contains(t, where, `_jsonb->'type' = $1`, where)
+	assert.NotContains(t, where, "$2", where)
+	assert.Equal(t, []any{`"card"`}, args)
+	assert.Equal(t, metadata.Placeholder(1), *p)
+}
+
+func TestPrepareWhereClauseElemMatch(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	// The visible boards of due cards: an $or of the open permissions and a
+	// membership. Every branch now reaches the database.
+	where, args, err := prepareWhereClause(new(metadata.Placeholder), doc("$or", arr(
+		doc("permission", "public"),
+		doc("members", doc("$elemMatch", doc("userId", "u1", "isActive", true))),
+	)))
+	require.NoError(t, err)
+	assert.Contains(t, where, `(_jsonb->'members' @> $2 OR _jsonb->'members' @> $3)`)
+	assert.Contains(t, where, `(_jsonb->'members' @> $4 OR _jsonb->'members' @> $5)`)
+	assert.Equal(t, []any{`"public"`, `[{"userId":"u1"}]`, `[{"userId":["u1"]}]`, `[{"isActive":true}]`, `[{"isActive":[true]}]`}, args)
+
+	// Negative: nothing usable in the $elemMatch, or a dotted array, pushes
+	// nothing - and so the $or around it stays in Go.
+	for name, f := range map[string]*types.Document{
+		"an operator":    doc("members", doc("$elemMatch", doc("userId", doc("$ne", "u1")))),
+		"a document":     doc("members", doc("$elemMatch", doc("user", doc("id", "u1")))),
+		"a dotted array": doc("a.members", doc("$elemMatch", doc("userId", "u1"))),
+		"NaN":            doc("members", doc("$elemMatch", doc("n", math.NaN()))),
+		"in an $or":      doc("$or", arr(doc("permission", "public"), doc("members", doc("$elemMatch", doc("userId", doc("$gt", "u")))))),
+	} {
+		where, args, err := prepareWhereClause(new(metadata.Placeholder), f)
+		require.NoError(t, err, name)
+		assert.Empty(t, where, name)
+		assert.Empty(t, args, name)
+	}
+}
+
+func TestPrepareWhereClauseOrDotted(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	// Negative: a dotted branch cannot be answered in SQL across an array of
+	// documents - the conformance case `$or across dotted array fields`
+	// returned nothing on PostgreSQL - so the $or stays in Go.
+	where, args, err := prepareWhereClause(new(metadata.Placeholder),
+		doc("$or", arr(doc("items.k", "b"), doc("items.missing", "x"))))
+	require.NoError(t, err)
+	assert.Empty(t, where)
+	assert.Empty(t, args)
+
+	// In an $and, the dotted key is left out and the rest still goes.
+	where, _, err = prepareWhereClause(new(metadata.Placeholder),
+		doc("$and", arr(doc("items.k", "b", "type", "card"))))
+	require.NoError(t, err)
+	assert.Contains(t, where, `_jsonb->'type'`)
+	assert.NotContains(t, where, "items")
 }

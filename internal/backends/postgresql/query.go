@@ -121,27 +121,21 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 		// {$and: [{boardId: {$in: [...]}}, {$or: [...]}]} uses the boardId index
 		// instead of reading the whole table (90 s for a due cards query among
 		// 615,070 cards). A branch with nothing to push down only widens it.
-		if rootKey == "$and" {
-			branches, ok := rootVal.(*types.Array)
-			if !ok {
-				continue
+		//
+		// A top-level $or is pushed down when EVERY branch pushes something: the
+		// OR of supersets is a superset. One branch with nothing could match any
+		// row, and then the whole $or stays in Go. The due cards query's
+		// {$or: [{members: u}, {assignees: u}, ...]} made the database return every
+		// card of the user's boards for Go to throw nearly all of them away.
+		if rootKey == "$and" || rootKey == "$or" {
+			cond, condArgs, err := logicalWhere(p, rootKey, rootVal)
+			if err != nil {
+				return "", nil, lazyerrors.Error(err)
 			}
 
-			for i := 0; i < branches.Len(); i++ {
-				branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
-				if !ok || branch.Len() == 0 {
-					continue
-				}
-
-				where, branchArgs, err := prepareWhereClause(p, branch)
-				if err != nil {
-					return "", nil, lazyerrors.Error(err)
-				}
-
-				if where != "" {
-					filters = append(filters, `(`+strings.TrimPrefix(where, ` WHERE `)+`)`)
-					args = append(args, branchArgs...)
-				}
+			if cond != "" {
+				filters = append(filters, cond)
+				args = append(args, condArgs...)
 			}
 
 			continue
@@ -195,6 +189,25 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 					if f, a := filterEqual(p, key, v, keyOperator); f != "" {
 						filters = append(filters, f)
 						args = append(args, a...)
+					}
+
+				case "$elemMatch":
+					// {members: {$elemMatch: {userId: u, ...}}}: the array contains an
+					// element with each field - `@> '[{"userId": u}]'`, or that field an
+					// array holding u. Each field on its own, so a superset; the field a
+					// literal, so the array's GIN index applies. All Boards and due
+					// cards' visible boards, in an $or with the open permissions, read
+					// every board without it.
+					if keyOperator != "->" {
+						continue
+					}
+
+					if fields, ok := elemMatchFields(v); ok {
+						expr := metadata.DefaultColumn + `->` + quoteLiteral(rootKey)
+						for _, f := range fields {
+							filters = append(filters, fmt.Sprintf(`(%[1]s @> %[2]s OR %[1]s @> %[3]s)`, expr, p.Next(), p.Next()))
+							args = append(args, `[{`+f[0]+`:`+f[1]+`}]`, `[{`+f[0]+`:[`+f[1]+`]}]`)
+						}
 					}
 
 				case "$in":
@@ -334,6 +347,127 @@ func prepareWhereClause(p *metadata.Placeholder, sqlFilters *types.Document) (st
 	}
 
 	return filter, args, nil
+}
+
+// elemMatchFields returns the stored JSON of FIELD and value, one pair per field of an
+// $elemMatch {FIELD: value, ...} whose value is a plain scalar - the shape of
+// every membership test. A field with an operator or another kind of value is
+// left out: the condition only has to be a superset. ok=false when none is left.
+func elemMatchFields(v any) ([][2]string, bool) {
+	doc, ok := v.(*types.Document)
+	if !ok || doc.Len() == 0 {
+		return nil, false
+	}
+
+	var res [][2]string
+
+	for _, field := range doc.Keys() {
+		if field == "" || strings.HasPrefix(field, "$") || strings.ContainsRune(field, '.') {
+			continue
+		}
+
+		switch value := must.NotFail(doc.Get(field)).(type) {
+		case string, types.ObjectID, bool, int32:
+		case int64:
+			if value > int64(types.MaxSafeDouble) || value < -int64(types.MaxSafeDouble) {
+				continue
+			}
+		case float64:
+			if math.IsNaN(value) || math.IsInf(value, 0) || value > types.MaxSafeDouble || value < -types.MaxSafeDouble {
+				continue
+			}
+		default:
+			continue
+		}
+
+		res = append(res, [2]string{
+			string(must.NotFail(sjson.MarshalSingleValue(field))),
+			string(must.NotFail(sjson.MarshalSingleValue(must.NotFail(doc.Get(field))))),
+		})
+	}
+
+	return res, len(res) > 0
+}
+
+// withoutDottedKeys returns the branch without its dotted keys. The handler
+// removes those from the top level of a filter, because a dotted path does not
+// cross an array of documents in SQL (`items.k` against items: [{k: "b"}]); a
+// branch of $and or $or reached here with them, and an $or of `items.k` lost
+// the matches. Without them an $and branch only widens, and an $or branch left
+// with nothing makes the whole $or stay in Go.
+func withoutDottedKeys(doc *types.Document) *types.Document {
+	dotted := false
+	for _, k := range doc.Keys() {
+		dotted = dotted || strings.ContainsRune(k, '.')
+	}
+
+	if !dotted {
+		return doc
+	}
+
+	res := doc.DeepCopy()
+	for _, k := range doc.Keys() {
+		if strings.ContainsRune(k, '.') {
+			res.Remove(k)
+		}
+	}
+
+	return res
+}
+
+// logicalWhere is the pushdown of a top-level $and or $or (prepareWhereClause),
+// or "" when there is nothing to push down. An $or that cannot be pushed down
+// gives its placeholders back, so the numbering stays dense.
+func logicalWhere(p *metadata.Placeholder, op string, v any) (string, []any, error) {
+	branches, ok := v.(*types.Array)
+	if !ok || branches.Len() == 0 {
+		return "", nil, nil
+	}
+
+	saved := *p
+
+	var conds []string
+	var args []any
+
+	for i := 0; i < branches.Len(); i++ {
+		branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+		if ok {
+			branch = withoutDottedKeys(branch)
+		}
+
+		var where string
+		var branchArgs []any
+
+		if ok && branch.Len() > 0 {
+			var err error
+			if where, branchArgs, err = prepareWhereClause(p, branch); err != nil {
+				return "", nil, lazyerrors.Error(err)
+			}
+		}
+
+		if where == "" {
+			if op == "$or" {
+				*p = saved
+				return "", nil, nil
+			}
+
+			continue
+		}
+
+		conds = append(conds, `(`+strings.TrimPrefix(where, ` WHERE `)+`)`)
+		args = append(args, branchArgs...)
+	}
+
+	if len(conds) == 0 {
+		return "", nil, nil
+	}
+
+	joiner := " AND "
+	if op == "$or" {
+		joiner = " OR "
+	}
+
+	return `(` + strings.Join(conds, joiner) + `)`, args, nil
 }
 
 // prepareOrderByClause returns ORDER BY clause with arguments for given sort document.
