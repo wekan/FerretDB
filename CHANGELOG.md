@@ -2,6 +2,25 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **`$or` and `$elemMatch` answered in PostgreSQL and MySQL**: an `$or` whose
+  every branch can be pushed down, and `{array: {$elemMatch: {field: value}}}`,
+  are now conditions in the database (PostgreSQL through the array's GIN index)
+  instead of reading every candidate for Go to filter. WeKan's due cards query
+  went from 2,031 to 815 ms on PostgreSQL and from 1,957 to 750 ms on MySQL on
+  61,507 cards. MariaDB, whose JSON is text that every JSON function parses
+  again, keeps only what an index answers. by @xet7. Thanks to xet7.
+
+### Fixed 🐛
+
+- **A long `$in` ran for minutes on MySQL and MariaDB**: it was an OR of one
+  `JSON_CONTAINS` per value, and 2,596 board ids over 20,000 cards made 52
+  million comparisons. More than 32 strings are now one plain `IN`. by @xet7.
+  Thanks to xet7.
+
 ## [v1.100.0](https://github.com/wekan/FerretDB/releases/tag/v1.100.0) (2026-10-25)
 
 ### New Features 🎉
