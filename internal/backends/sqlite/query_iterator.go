@@ -181,6 +181,11 @@ func (iter *queryIterator) Next() (struct{}, *types.Document, error) {
 
 	if !iter.onlyRecordIDs {
 		decodeStarted := time.Now()
+		// Text or SQLite JSONB (jsonb.go).
+		if b, err = storedJSON(b); err != nil {
+			iter.close()
+			return unused, nil, lazyerrors.Error(err)
+		}
 		if len(iter.decodeFields) == 0 {
 			doc, err = sjson.Unmarshal(b)
 		} else {

@@ -180,6 +180,10 @@ func (iter *orderedIterator) fetch() error {
 			continue // deleted between the two statements
 		}
 
+		if b, err = storedJSON(b); err != nil {
+			return lazyerrors.Error(err)
+		}
+
 		var doc *types.Document
 		if len(iter.decodeFields) == 0 {
 			doc, err = sjson.Unmarshal(b)
