@@ -70,6 +70,12 @@ type Collection struct {
 	Settings  Settings
 }
 
+// JSONB reports whether the collection's documents are stored as SQLite JSONB,
+// written with jsonb(?) - a table that is not holds sjson text (storage.go).
+func (c Collection) JSONB() bool {
+	return c.Settings.Storage == StorageJSONB
+}
+
 // Capped returns true if collection is capped.
 func (c Collection) Capped() bool {
 	return c.Settings.CappedSize > 0

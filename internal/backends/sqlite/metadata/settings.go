@@ -30,6 +30,9 @@ type Settings struct {
 	CappedSize      int64       `json:"cappedSize"`
 	CappedDocuments int64       `json:"cappedDocuments"`
 	IndexFormat     int         `json:"indexFormat,omitempty"`
+	// Storage is StorageJSONB when the documents are stored as SQLite JSONB
+	// (storage.go), empty for the sjson text every older table holds.
+	Storage string `json:"storage,omitempty"`
 }
 
 // IndexInfo represents information about a single index.
@@ -115,6 +118,7 @@ func (s Settings) deepCopy() Settings {
 		CappedSize:      s.CappedSize,
 		CappedDocuments: s.CappedDocuments,
 		IndexFormat:     s.IndexFormat,
+		Storage:         s.Storage,
 	}
 }
 

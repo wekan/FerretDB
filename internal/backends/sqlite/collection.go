@@ -222,7 +222,7 @@ func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllPa
 			i := min(batchSize, len(docs))
 			batch, docs = docs[:i], docs[i:]
 
-			q, args, err := prepareInsertStatement(meta.TableName, meta.Capped(), batch)
+			q, args, err := prepareInsertStatement(meta.TableName, meta.Capped(), meta.JSONB(), batch)
 			if err != nil {
 				return lazyerrors.Error(err)
 			}
@@ -259,7 +259,12 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 		return &res, nil
 	}
 
-	q := fmt.Sprintf(`UPDATE %q SET %s = ? WHERE %s = ?`, meta.TableName, metadata.DefaultColumn, metadata.IDColumn)
+	value := "?"
+	if meta.JSONB() {
+		value = "jsonb(?)"
+	}
+
+	q := fmt.Sprintf(`UPDATE %q SET %s = %s WHERE %s = ?`, meta.TableName, metadata.DefaultColumn, value, metadata.IDColumn)
 
 	err := db.InTransaction(ctx, func(tx *fsql.Tx) error {
 		for _, doc := range params.Docs {

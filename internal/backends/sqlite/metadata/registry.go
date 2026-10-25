@@ -92,6 +92,11 @@ func NewRegistry(u string, batchSize int, l *slog.Logger, sp *state.Provider) (*
 			return nil, lazyerrors.Error(err)
 		}
 	}
+	if err = r.upgradeStorage(context.Background(), initDBs); err != nil {
+		r.Close()
+		return nil, lazyerrors.Error(err)
+	}
+
 	if err = r.upgradeIndexFormats(context.Background(), initDBs); err != nil {
 		r.Close()
 		return nil, lazyerrors.Error(err)
@@ -491,9 +496,17 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 		q += fmt.Sprintf("%s INTEGER PRIMARY KEY, ", RecordIDColumn)
 	}
 
-	q += fmt.Sprintf("%[1]s TEXT NOT NULL CHECK(%[1]s != '')) STRICT", DefaultColumn)
+	// SQLite JSONB (storage.go). A STRICT BLOB column refuses text, so nothing
+	// can write the old form into it.
+	q += fmt.Sprintf("%s BLOB NOT NULL) STRICT", DefaultColumn)
 
 	if _, err = db.ExecContext(ctx, q); err != nil {
+		return false, lazyerrors.Error(err)
+	}
+
+	// An adopted orphan keeps the form its column has.
+	storage, err := tableStorage(ctx, db, tableName)
+	if err != nil {
 		return false, lazyerrors.Error(err)
 	}
 
@@ -514,6 +527,7 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 			CappedSize:      params.CappedSize,
 			CappedDocuments: params.CappedDocuments,
 			IndexFormat:     CurrentIndexFormat,
+			Storage:         storage,
 		},
 	}
 

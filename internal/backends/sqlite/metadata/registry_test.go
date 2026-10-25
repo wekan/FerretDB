@@ -79,7 +79,7 @@ func testCollection(t *testing.T, ctx context.Context, r *Registry, db *fsql.DB,
 	require.NoError(t, err)
 	require.Contains(t, list, c)
 
-	q := fmt.Sprintf("INSERT INTO %q (%s) VALUES(?)", c.TableName, DefaultColumn)
+	q := fmt.Sprintf("INSERT INTO %q (%s) VALUES(jsonb(?))", c.TableName, DefaultColumn) // collections are JSONB (storage.go)
 	doc := `{"$s": {"p": {"_id": {"t": "int"}}, "$k": ["_id"]}, "_id": 42}`
 	_, err = db.ExecContext(ctx, q, doc)
 	require.NoError(t, err)
@@ -179,7 +179,7 @@ func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	require.Equal(t, tableName, c.TableName, "must re-adopt the SAME deterministic table")
 
 	// And the adopted collection must be usable (insert + read back).
-	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (%s) VALUES (?)", tableName, DefaultColumn), `{"_id":"x"}`)
+	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (%s) VALUES (jsonb(?))", tableName, DefaultColumn), `{"_id":"x"}`)
 	require.NoError(t, err)
 }
 
@@ -474,7 +474,7 @@ func TestCreateSameStress(t *testing.T) {
 				require.NoError(t, err)
 				require.Contains(t, list, c)
 
-				q := fmt.Sprintf("INSERT INTO %q (%s) VALUES(?)", c.TableName, DefaultColumn)
+				q := fmt.Sprintf("INSERT INTO %q (%s) VALUES(jsonb(?))", c.TableName, DefaultColumn) // collections are JSONB (storage.go)
 				doc := fmt.Sprintf(`{"$s": {"p": {"_id": {"t": "int"}}, "$k": ["_id"]}, "_id": %d}`, id)
 				_, err = db.ExecContext(ctx, q, doc)
 				require.NoError(t, err)

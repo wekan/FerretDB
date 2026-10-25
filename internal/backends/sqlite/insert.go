@@ -27,9 +27,16 @@ import (
 // prepareInsertStatement returns a statement and arguments for inserting the given documents.
 //
 // If capped is true, it returns a statement and arguments for inserting record IDs and documents.
-func prepareInsertStatement(tableName string, capped bool, docs []*types.Document) (string, []any, error) {
+func prepareInsertStatement(tableName string, capped, jsonb bool, docs []*types.Document) (string, []any, error) {
 	var args []any
 	rows := make([]string, len(docs))
+
+	// A JSONB table is given the sjson text through jsonb(), which SQLite
+	// stores in its binary form; reading it back gives the same text (jsonb.go).
+	value := "?"
+	if jsonb {
+		value = "jsonb(?)"
+	}
 
 	for i, doc := range docs {
 		b, err := sjson.Marshal(doc)
@@ -38,13 +45,13 @@ func prepareInsertStatement(tableName string, capped bool, docs []*types.Documen
 		}
 
 		if capped {
-			rows[i] = "(?, ?)"
+			rows[i] = "(?, " + value + ")"
 			args = append(args, doc.RecordID(), string(b))
 
 			continue
 		}
 
-		rows[i] = "(?)"
+		rows[i] = "(" + value + ")"
 		args = append(args, string(b))
 	}
 
