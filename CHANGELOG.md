@@ -6,6 +6,15 @@
 
 ### New Features 🎉
 
+- **SQLite stores documents as SQLite JSONB**: every filter, sort key, index
+  and multikey trigger used to parse a document's JSON text again. New
+  collections are stored in SQLite's binary JSONB, and an existing database is
+  converted once when it is opened, table by table in a transaction - 204,212
+  documents took 81 s; a table that fails stays text and keeps working.
+  Documents are turned back into the same text in Go. On 61,507 cards, due cards
+  went from 1,003 to 519 ms, All Boards from 95 to 42 ms and creating the 44
+  indexes from 107 to 70 s; nothing got slower. After the conversion an older
+  FerretDB cannot read the database. by @xet7. Thanks to xet7.
 - **`$or` and `$elemMatch` answered in PostgreSQL and MySQL**: an `$or` whose
   every branch can be pushed down, and `{array: {$elemMatch: {field: value}}}`,
   are now conditions in the database (PostgreSQL through the array's GIN index)
