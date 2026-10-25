@@ -154,8 +154,142 @@ func schemaTypePath(field string) string {
 	return `$."$s"."p"."` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(field) + `"."t"`
 }
 
+// elemMatchFields returns the stored JSON of FIELD and value, one pair per field of an
+// $elemMatch {FIELD: value, ...} whose value is a plain scalar - the shape of
+// every membership test. A field with an operator or another kind of value is
+// left out: the condition only has to be a superset. ok=false when none is left.
+func elemMatchFields(v any) ([][2]string, bool) {
+	doc, ok := v.(*types.Document)
+	if !ok || doc.Len() == 0 {
+		return nil, false
+	}
+
+	var res [][2]string
+
+	for _, field := range doc.Keys() {
+		if field == "" || strings.HasPrefix(field, "$") || strings.ContainsRune(field, '.') {
+			continue
+		}
+
+		switch value := must.NotFail(doc.Get(field)).(type) {
+		case string, types.ObjectID, bool, int32:
+		case int64:
+			if value > int64(types.MaxSafeDouble) || value < -int64(types.MaxSafeDouble) {
+				continue
+			}
+		case float64:
+			if math.IsNaN(value) || math.IsInf(value, 0) || value > types.MaxSafeDouble || value < -types.MaxSafeDouble {
+				continue
+			}
+		default:
+			continue
+		}
+
+		res = append(res, [2]string{
+			string(must.NotFail(sjson.MarshalSingleValue(field))),
+			string(must.NotFail(sjson.MarshalSingleValue(must.NotFail(doc.Get(field))))),
+		})
+	}
+
+	return res, len(res) > 0
+}
+
+// withoutDottedKeys returns the branch without its dotted keys. The handler
+// removes those from the top level of a filter, because a dotted path does not
+// cross an array of documents in SQL (`items.k` against items: [{k: "b"}]); a
+// branch of $and or $or reached here with them, and an $or of `items.k` lost
+// the matches. Without them an $and branch only widens, and an $or branch left
+// with nothing makes the whole $or stay in Go.
+func withoutDottedKeys(doc *types.Document) *types.Document {
+	dotted := false
+	for _, k := range doc.Keys() {
+		dotted = dotted || strings.ContainsRune(k, '.')
+	}
+
+	if !dotted {
+		return doc
+	}
+
+	res := doc.DeepCopy()
+	for _, k := range doc.Keys() {
+		if strings.ContainsRune(k, '.') {
+			res.Remove(k)
+		}
+	}
+
+	return res
+}
+
+// logicalWhere is the pushdown of a top-level $and or $or, or "" when there is
+// nothing to push down: an $or only when every branch pushes something.
+func logicalWhere(op string, v any) (string, []any, error) {
+	branches, ok := v.(*types.Array)
+	if !ok || branches.Len() == 0 {
+		return "", nil, nil
+	}
+
+	var conds []string
+	var args []any
+
+	for i := 0; i < branches.Len(); i++ {
+		branch, ok := must.NotFail(branches.Get(i)).(*types.Document)
+		if ok {
+			branch = withoutDottedKeys(branch)
+		}
+
+		var where string
+		var branchArgs []any
+
+		if ok && branch.Len() > 0 {
+			var err error
+			if where, branchArgs, err = prepareWhereClause(branch); err != nil {
+				return "", nil, lazyerrors.Error(err)
+			}
+		}
+
+		if where == "" {
+			if op == "$or" {
+				return "", nil, nil
+			}
+
+			continue
+		}
+
+		conds = append(conds, "("+strings.TrimPrefix(where, " WHERE ")+")")
+		args = append(args, branchArgs...)
+	}
+
+	if len(conds) == 0 {
+		return "", nil, nil
+	}
+
+	joiner := " AND "
+	if op == "$or" {
+		joiner = " OR "
+	}
+
+	return "(" + strings.Join(conds, joiner) + ")", args, nil
+}
+
 // prepareWhereClause adds WHERE clause with given filters to the query and returns the query and arguments.
 func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
+	return prepareWhereClauseWith(sqlFilters, whereOptions{})
+}
+
+// whereOptions are what prepareWhereClauseWith needs to know about the server.
+type whereOptions struct {
+	// textJSON: the server keeps JSON as text (MariaDB, where JSON is LONGTEXT),
+	// so every JSON function call parses the whole document again. MySQL keeps
+	// it binary. Measured on due cards, 61,507 cards: pushing the $and, $or and
+	// $elemMatch conditions took MySQL from 1,957 to 904 ms, and MariaDB from
+	// 1,651 to 3,406 - five JSON calls a row cost it more than decoding the
+	// document once in Go. MariaDB keeps what an index answers (indexed
+	// narrowing, the multikey side tables) and the top-level comparisons.
+	textJSON bool
+}
+
+// prepareWhereClauseWith is prepareWhereClause for a server of the given kind.
+func prepareWhereClauseWith(sqlFilters *types.Document, opts whereOptions) (string, []any, error) {
 	var filters []string
 	var args []any
 
@@ -173,9 +307,27 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 			return "", nil, lazyerrors.Error(err)
 		}
 
+		// A top-level $and is pushed down branch by branch, and an $or when every
+		// branch pushes something - see the PostgreSQL backend's prepareWhereClause.
+		if rootKey == "$and" || rootKey == "$or" {
+			if opts.textJSON {
+				continue
+			}
+
+			cond, condArgs, err := logicalWhere(rootKey, rootVal)
+			if err != nil {
+				return "", nil, lazyerrors.Error(err)
+			}
+
+			if cond != "" {
+				filters = append(filters, cond)
+				args = append(args, condArgs...)
+			}
+
+			continue
+		}
+
 		// don't pushdown $comment, as it's attached to query with select clause
-		//
-		// all of the other top-level operators such as `$or` do not support pushdown yet
 		if strings.HasPrefix(rootKey, "$") {
 			continue
 		}
@@ -220,6 +372,19 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 					if f, a := filterEqual(rootKey, v); f != "" {
 						filters = append(filters, f)
 						args = append(args, a...)
+					}
+
+				case "$elemMatch":
+					// {members: {$elemMatch: {userId: u, ...}}}: JSON_CONTAINS of
+					// {"userId": u} - an object is contained in an array when it is in
+					// one of its elements, and u in a FIELD that is an array holding it.
+					// Each field on its own, so a superset. Without it, an $or of a
+					// membership and the open permissions read every board.
+					if fields, ok := elemMatchFields(v); ok && !opts.textJSON {
+						for _, f := range fields {
+							filters = append(filters, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'))`, metadata.DefaultColumn))
+							args = append(args, jsonPath(rootKey), `{`+f[0]+`:`+f[1]+`}`)
+						}
 					}
 
 				case "$in":
@@ -340,29 +505,74 @@ func prepareWhereClause(sqlFilters *types.Document) (string, []any, error) {
 	return filter, args, nil
 }
 
-// filterIn pushes down {field: {$in: [...]}} as an OR of JSON_CONTAINS arms (one per
-// pushable element, same shape as equality) plus, for a `null` element, a
-// null-or-missing arm. A SUPERSET; the Go filter re-applies the exact $in. Returns
-// ok=false when any element has no safe arm (nested doc/array/binary/regex/Timestamp).
+// maxJSONInValues is the longest $in list compared with JSON functions.
+const maxJSONInValues = 32
+
+// filterIn pushes down {field: {$in: [...]}} as JSON_CONTAINS for one value, one
+// JSON_OVERLAPS for a few, or a plain IN of the unquoted value for many strings,
+// plus, for a `null` element, a null-or-missing arm. A SUPERSET; the Go filter
+// re-applies the exact $in. Returns ok=false when any element has no safe arm
+// (nested doc/array/binary/regex/Timestamp), or for a long list of non-strings.
 func filterIn(k string, arr *types.Array) (string, []any, bool) {
 	var arms []string
 	var args []any
+	var values []string
+	var plain []any // the values as plain strings, when every value is one
+	allStrings := true
 	hasNull := false
 
 	for i := 0; i < arr.Len(); i++ {
 		e := must.NotFail(arr.Get(i))
 
-		switch e.(type) {
+		switch e := e.(type) {
 		case types.NullType:
 			hasNull = true
 
-		case string, types.ObjectID, time.Time, float64, bool, int32, int64:
-			arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'), '$')`, metadata.DefaultColumn))
-			args = append(args, jsonPath(k), jsonValue(e))
+		case string:
+			values = append(values, jsonValue(e))
+			plain = append(plain, e)
+
+		case types.ObjectID, time.Time, float64, bool, int32, int64:
+			values = append(values, jsonValue(e))
+			allStrings = false
 
 		default:
 			return "", nil, false
 		}
+	}
+
+	// A long list of strings is a plain IN of the unquoted value - MySQL sorts the
+	// list once and binary-searches it for each row - with every array a
+	// candidate. JSON_OVERLAPS compares each row with every value: the due cards
+	// query's 2,596 board ids over 20,000 cards made 52 million comparisons.
+	if allStrings && len(plain) > maxJSONInValues {
+		placeholders := strings.TrimSuffix(strings.Repeat("?, ", len(plain)), ", ")
+		arms = append(arms, fmt.Sprintf(
+			`(JSON_UNQUOTE(JSON_EXTRACT(%[1]s, ?)) IN (%[2]s) OR JSON_TYPE(JSON_EXTRACT(%[1]s, ?)) = 'ARRAY')`,
+			metadata.DefaultColumn, placeholders))
+		args = append(args, jsonPath(k))
+		args = append(args, plain...)
+		args = append(args, jsonPath(k))
+		values = nil
+	} else if len(values) > maxJSONInValues {
+		// A long list of anything else is left to the Go filter: one JSON
+		// comparison per value per row costs more than it saves.
+		return "", nil, false
+	}
+
+	// One value is a JSON_CONTAINS; more are ONE JSON_OVERLAPS of the field and
+	// the list - true when the field is one of the values or an array holding
+	// one. The OR of a JSON_CONTAINS per value made every candidate row evaluate
+	// all of them: the due cards query's 2,596 board ids, for each of 17,000
+	// cards, ran for minutes.
+	switch len(values) {
+	case 0:
+	case 1:
+		arms = append(arms, fmt.Sprintf(`JSON_CONTAINS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'), '$')`, metadata.DefaultColumn))
+		args = append(args, jsonPath(k), values[0])
+	default:
+		arms = append(arms, fmt.Sprintf(`JSON_OVERLAPS(JSON_EXTRACT(%s, ?), JSON_EXTRACT(?, '$'))`, metadata.DefaultColumn))
+		args = append(args, jsonPath(k), "["+strings.Join(values, ",")+"]")
 	}
 
 	if hasNull {

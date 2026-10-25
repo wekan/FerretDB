@@ -193,13 +193,14 @@ func TestPrepareWhereClause(t *testing.T) {
 				must.NotFail(types.NewDocument("$gt", "abc")))),
 		},
 
-		// $in pushdown: an OR of JSON_CONTAINS arms, plus a null-or-missing arm.
+		// $in pushdown: one JSON_OVERLAPS of the field and the list (not a
+		// JSON_CONTAINS per value, which made each row evaluate every one), plus a
+		// null-or-missing arm.
 		"InPushed": {
 			filter: must.NotFail(types.NewDocument("labelIds",
 				must.NotFail(types.NewDocument("$in", must.NotFail(types.NewArray("a", "b")))))),
-			expected: ` WHERE (JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), JSON_EXTRACT(?, '$'), '$') ` +
-				`OR JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), JSON_EXTRACT(?, '$'), '$'))`,
-			args: []any{`$."labelIds"`, `"a"`, `$."labelIds"`, `"b"`},
+			expected: ` WHERE (JSON_OVERLAPS(JSON_EXTRACT(_ferretdb_sjson, ?), JSON_EXTRACT(?, '$')))`,
+			args:     []any{`$."labelIds"`, `["a","b"]`},
 		},
 		"InWithNullPushed": {
 			filter: must.NotFail(types.NewDocument("boardId",

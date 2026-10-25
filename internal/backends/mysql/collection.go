@@ -85,7 +85,7 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 	var where string
 	var args []any
 
-	where, args, err = prepareWhereClause(params.Filter)
+	where, args, err = prepareWhereClauseWith(params.Filter, whereOptions{textJSON: c.r.TextJSON()})
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
@@ -430,7 +430,7 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 
 	q := `EXPLAIN FORMAT=JSON ` + prepareSelectClause(opts)
 
-	where, args, err := prepareWhereClause(params.Filter)
+	where, args, err := prepareWhereClauseWith(params.Filter, whereOptions{textJSON: c.r.TextJSON()})
 	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}

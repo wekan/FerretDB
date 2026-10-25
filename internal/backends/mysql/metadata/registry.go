@@ -84,6 +84,9 @@ type Registry struct {
 
 	// multikey holds the names of the complete multikey side tables (multikey.go).
 	multikey map[string]struct{}
+
+	// textJSON is set for a server that keeps JSON as text (MariaDB); see TextJSON.
+	textJSON bool
 }
 
 // NewRegistry creates a registry for the MySQL databases with a given base URI.
@@ -147,6 +150,12 @@ func (r *Registry) getPool(ctx context.Context) (*fsql.DB, error) {
 	dbNames, err := r.initDBs(ctx, p)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
+	}
+
+	// MariaDB answers VERSION() with "...-MariaDB...": its JSON is LONGTEXT.
+	var version string
+	if err = p.QueryRowContext(ctx, `SELECT VERSION()`).Scan(&version); err == nil {
+		r.textJSON = strings.Contains(strings.ToLower(version), "mariadb")
 	}
 
 	r.colls = make(map[string]map[string]*Collection, len(dbNames))
@@ -1253,4 +1262,14 @@ func IndexJSONPath(field string) string {
 	}
 
 	return "$." + strings.Join(parts, ".")
+}
+
+// TextJSON reports whether the server keeps JSON as text (MariaDB), so that
+// every JSON function call parses a document again; queries then push down
+// only what an index answers (query.go, whereOptions).
+func (r *Registry) TextJSON() bool {
+	r.rw.RLock()
+	defer r.rw.RUnlock()
+
+	return r.textJSON
 }

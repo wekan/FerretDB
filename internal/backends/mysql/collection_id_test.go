@@ -147,3 +147,76 @@ func TestIndexedNarrowingAnd(t *testing.T) {
 		assert.Empty(t, args, name)
 	}
 }
+
+func TestPrepareWhereClauseLogical(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	// The due cards filter: the board ids in an $and, beside an $or of the
+	// user's fields. Both reach the database.
+	where, args, err := prepareWhereClause(doc("$and", arr(
+		doc("boardId", "b1"),
+		doc("$or", arr(doc("members", "u1"), doc("userId", "u1"))),
+	)))
+	assert.NoError(t, err)
+	assert.Contains(t, where, " OR ")
+	assert.Equal(t, 3, strings.Count(where, "JSON_CONTAINS"), where)
+	assert.Len(t, args, 6)
+
+	// Negative: an $or with a branch that pushes nothing stays in Go.
+	where, args, err = prepareWhereClause(doc("$or", arr(doc("members", "u1"), doc("title", types.Regex{Pattern: "x"}))))
+	assert.NoError(t, err)
+	assert.Empty(t, where)
+	assert.Empty(t, args)
+}
+
+func TestPrepareWhereClauseElemMatchAndTextJSON(t *testing.T) {
+	t.Parallel()
+
+	doc := func(pairs ...any) *types.Document { return must.NotFail(types.NewDocument(pairs...)) }
+	arr := func(values ...any) *types.Array { return must.NotFail(types.NewArray(values...)) }
+
+	visible := doc("$or", arr(
+		doc("permission", "public"),
+		doc("members", doc("$elemMatch", doc("userId", "u1", "isActive", true))),
+	))
+
+	where, args, err := prepareWhereClause(visible)
+	assert.NoError(t, err)
+	assert.Contains(t, where, " OR ")
+	assert.Equal(t, 2, strings.Count(where, "JSON_CONTAINS(JSON_EXTRACT(_ferretdb_sjson, ?), JSON_EXTRACT(?, '$'))"), where)
+	assert.Contains(t, args, `{"userId":"u1"}`)
+	assert.Contains(t, args, `{"isActive":true}`)
+
+	// MariaDB keeps JSON as text: no $or, $and or $elemMatch is pushed there,
+	// the top-level comparisons still are.
+	where, args, err = prepareWhereClauseWith(doc("type", "card", "$and", arr(doc("archived", false)), "members",
+		doc("$elemMatch", doc("userId", "u1"))), whereOptions{textJSON: true})
+	assert.NoError(t, err)
+	assert.Equal(t, 1, strings.Count(where, "JSON_CONTAINS"), where)
+	assert.Equal(t, []any{`$."type"`, `"card"`}, args)
+	where, _, err = prepareWhereClauseWith(visible, whereOptions{textJSON: true})
+	assert.NoError(t, err)
+	assert.Empty(t, where)
+
+	// A long $in of strings is one plain IN, not a JSON comparison per value.
+	ids := make([]any, 40)
+	for i := range ids {
+		ids[i] = "b" + strings.Repeat("x", i%3) + string(rune('a'+i%26))
+	}
+	where, args, err = prepareWhereClause(doc("boardId", doc("$in", must.NotFail(types.NewArray(ids...)))))
+	assert.NoError(t, err)
+	assert.Contains(t, where, "JSON_UNQUOTE(JSON_EXTRACT(_ferretdb_sjson, ?)) IN (")
+	assert.NotContains(t, where, "JSON_OVERLAPS")
+	assert.Len(t, args, 42)
+	// Negative: a long list of numbers is left to Go.
+	nums := make([]any, 40)
+	for i := range nums {
+		nums[i] = int32(i)
+	}
+	where, _, err = prepareWhereClause(doc("n", doc("$in", must.NotFail(types.NewArray(nums...)))))
+	assert.NoError(t, err)
+	assert.Empty(t, where)
+}
