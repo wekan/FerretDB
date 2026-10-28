@@ -9,7 +9,7 @@ require (
 	github.com/google/go-github/v70 v70.0.1-0.20250402125210-3a3f51bc7c5d
 	github.com/goreleaser/nfpm/v2 v2.48.0
 	github.com/kisielk/godepgraph v1.0.0
-	github.com/oapi-codegen/oapi-codegen/v2 v2.8.0
+	github.com/oapi-codegen/oapi-codegen/v2 v2.8.1
 	github.com/quasilyte/go-consistent v0.6.2
 	github.com/rogpeppe/go-internal v1.16.0
 	github.com/sethvargo/go-githubactions v1.4.0
