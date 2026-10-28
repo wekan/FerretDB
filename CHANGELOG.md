@@ -2,6 +2,43 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **go-jose 4.1.6 in the tools module**: go-jose/v4 4.1.4, required
+  indirectly through golang.org/x/pkgsite, golang.org/x/perf and go-task,
+  validated the RSA modulus and primes of a JWK without bounds, so a crafted
+  key took cubic CPU time (Dependabot alert #55). It is only in the tools
+  module, so the released binary does not change. `tests/dependency-floors.py`
+  now checks every go.mod against the first patched version of each fixed
+  advisory, with a negative test for the alerted version, in both release
+  workflows. by @xet7. Thanks to xet7.
+- **The Go toolchain's own telemetry is off**: `GOTELEMETRY=off` in the
+  environment did not change it - `go env GOTELEMETRY` still said `local`, and
+  every go command wrote counters under the user's config directory (nothing
+  was uploaded). The mode is read only from the file `go telemetry off`
+  writes, so `build.sh` runs it before any other go command. by @xet7. Thanks
+  to xet7.
+- **A SQLite unit test failed now and then**: `TestOrderedQueryNotUsed` left
+  two query iterators open, and the debug build panics on one when the GC
+  finalizes it, failing the whole package. It closes them. by @xet7. Thanks to
+  xet7.
+
+### Other Changes 🤖
+
+- **Sync the integration module with the main module after #51**: go-hdb
+  1.19.3 was in the main module only, so `tests/integration-module-sync.py`
+  failed. The unit tests, vet, the SQLite integration suite, the telemetry
+  audits and govulncheck (no reachable vulnerability) pass. by @xet7. Thanks to
+  xet7.
+- **Bump SAP go-hdb from 1.19.2 to 1.19.3** in the main module (#51) by
+  @dependabot. Thanks to dependabot.
+- **Bump oapi-codegen from 2.8.0 to 2.8.1** in the tools module (#50) by
+  @dependabot. Thanks to dependabot.
+- **Bump markdownlint-cli2 to v0.24.0, MySQL to 26.10.0 and Trivy to 0.76.1**
+  build dependencies images (#49) by @dependabot. Thanks to dependabot.
+
 ## [v1.101.0](https://github.com/wekan/FerretDB/releases/tag/v1.101.0) (2026-10-25)
 
 ### New Features 🎉
