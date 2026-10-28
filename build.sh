@@ -88,16 +88,26 @@ install_go() {
 }
 
 ensure_go() {
-  if detect_go; then
-    return 0
+  if ! detect_go; then
+    warn "Go not found on PATH."
+    printf "Install a local Go %s toolchain under ./.goroot ? [Y/n] " "$GO_VERSION"
+    read -r ans
+    case "${ans:-Y}" in
+      [nN]*) err "Go is required. Aborting."; exit 1 ;;
+      *) install_go || exit 1 ;;
+    esac
   fi
-  warn "Go not found on PATH."
-  printf "Install a local Go %s toolchain under ./.goroot ? [Y/n] " "$GO_VERSION"
-  read -r ans
-  case "${ans:-Y}" in
-    [nN]*) err "Go is required. Aborting."; exit 1 ;;
-    *) install_go || exit 1 ;;
-  esac
+  go_telemetry_off
+}
+
+# The Go toolchain's own telemetry defaults to "local": every go command writes
+# counters under os.UserConfigDir()/go/telemetry. GOTELEMETRY=off in the
+# environment does NOT change that - `go env GOTELEMETRY` still says "local" -
+# because the mode is read only from the mode file there, which `go telemetry
+# off` writes. So it is run here, before any other go command.
+go_telemetry_off() {
+  [ "$(go env GOTELEMETRY 2>/dev/null)" = "off" ] && return 0
+  go telemetry off || { err "::error::Could not turn off Go toolchain telemetry."; return 1; }
 }
 
 go_env() {

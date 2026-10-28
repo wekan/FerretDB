@@ -18,7 +18,9 @@ recorded in the indicator baseline without comprehensive review or AI approval.
 
 Tests: `python3 -B tests/release-telemetry.py`,
 `python3 -B tests/telemetry-build.py`, and `go test ./internal/util/telemetry`.
-Use a repository-local TMPDIR and `GOTELEMETRY=off`.
+Use a repository-local TMPDIR, and turn off the Go toolchain's own telemetry
+with `go telemetry off` (build.sh does): `GOTELEMETRY=off` in the environment
+does not change it, as `go env GOTELEMETRY` still reports `local`.
 A native macOS ARM64 binary was built and passed the artifact check; the complete
 cross-platform matrix was tested with a compiler fixture, not cross-compiled.
 
