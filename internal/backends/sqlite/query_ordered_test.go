@@ -208,11 +208,15 @@ func TestOrderedQueryNotUsed(t *testing.T) {
 	coll := orderedTestCollection(t, orderedValues(), "v")
 	ctx := testutil.Ctx(t)
 
+	// Each iterator is closed: one left open panics in the debug build's
+	// finalizer, failing the whole package whenever the GC happens to run.
 	res, err := coll.Query(ctx, &backends.QueryParams{OrderBy: must.NotFail(types.NewDocument("v.x", int64(1)))})
 	require.NoError(t, err)
+	res.Iter.Close()
 	assert.False(t, res.Ordered)
 
 	res, err = coll.Query(ctx, &backends.QueryParams{OrderBy: must.NotFail(types.NewDocument("v", int64(1))), Limit: 2})
 	require.NoError(t, err)
+	res.Iter.Close()
 	assert.False(t, res.Ordered)
 }
