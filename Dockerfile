@@ -25,7 +25,9 @@ ENV GOMODCACHE=/cache/gomodcache
 
 # do not download a newer toolchain than the one in this image
 ENV GOTOOLCHAIN=local
-ENV GOTELEMETRY=off
+# GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
+# telemetry - the mode file that `go telemetry off` writes does.
+RUN go telemetry off
 
 RUN apt-get update && apt-get install -y --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/*

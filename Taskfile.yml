@@ -33,8 +33,19 @@ tasks:
       - task: fmt-yaml
       - task: docs
 
+  # GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
+  # telemetry - the mode file that `go telemetry off` writes does. Every task
+  # here that runs go depends on this one; integration/ and tools/ Taskfiles
+  # run through bin/task, which init-tools builds only after it, and the mode
+  # is kept per user.
+  go-telemetry-off:
+    run: once
+    cmds:
+      - go telemetry off
+
   init-tools:
     dir: tools
+    deps: [go-telemetry-off]
     cmds:
       - go mod tidy
       - go mod verify
@@ -42,6 +53,7 @@ tasks:
 
   init-tools-golangci:
     dir: tools/golangci
+    deps: [go-telemetry-off]
     cmds:
       - go mod tidy
       - go mod verify
@@ -49,13 +61,14 @@ tasks:
 
   init-integration:
     dir: integration
+    deps: [go-telemetry-off]
     cmds:
       - go mod tidy
       - go mod verify
 
   init:
     desc: "Install development tools"
-    deps: [init-tools, init-tools-golangci, init-integration]
+    deps: [go-telemetry-off, init-tools, init-tools-golangci, init-integration]
     cmds:
       - go mod tidy
       - go mod verify
@@ -135,6 +148,7 @@ tasks:
 
   gen-version:
     run: once
+    deps: [go-telemetry-off]
     cmds:
       # those two should always be in sync
       - go generate -x ./build/version
@@ -143,7 +157,7 @@ tasks:
   build-host:
     desc: "Build bin/ferretdb{{exeExt}} on the host for development"
     run: once
-    deps: [gen-version]
+    deps: [go-telemetry-off, gen-version]
     cmds:
       - echo 'build-host' > build/version/package.txt
       - go build -v -o=bin/ferretdb{{exeExt}} {{.RACE_FLAG}} -tags={{.BUILD_TAGS}} -coverpkg=./... ./cmd/ferretdb
@@ -151,6 +165,7 @@ tasks:
 
   gen:
     desc: "Generate (and format) Go code"
+    deps: [go-telemetry-off]
     cmds:
       - go generate -x ./...
       - bin/task{{exeExt}} -d integration integration-gen
@@ -172,12 +187,14 @@ tasks:
 
   test-unit-short:
     desc: "Run short unit tests (with caching)"
+    deps: [go-telemetry-off]
     cmds:
       - go test -short -timeout={{.TEST_TIMEOUT}} {{.RACE_FLAG}} -tags={{.BUILD_TAGS}} -shuffle=on -coverpkg=./... -coverprofile=cover.txt ./...
       - bin/task{{exeExt}} -d tools tools-test-short
 
   test-unit:
     desc: "Run all unit tests"
+    deps: [go-telemetry-off]
     cmds:
       - go test -count=1 -timeout={{.TEST_TIMEOUT}} {{.RACE_FLAG}} -tags={{.BUILD_TAGS}} -shuffle=on -coverpkg=./... -coverprofile=cover.txt ./...
       - go test -count=1 -timeout={{.TEST_TIMEOUT}} {{.RACE_FLAG}} -tags={{.BUILD_TAGS}} -shuffle=on -bench=. -benchtime=1x ./...
@@ -320,6 +337,7 @@ tasks:
 
   bench-unit:
     desc: "Run unit benchmarks"
+    deps: [go-telemetry-off]
     cmds:
       - go test -list='Benchmark.*' ./...
       - go test -count=10 -bench=BenchmarkDocument -benchtime={{.BENCH_TIME}} ./internal/bson/ | tee -a new.txt
@@ -446,6 +464,7 @@ tasks:
 
   lint:
     desc: "Run linters"
+    deps: [go-telemetry-off]
     cmds:
       - bin/envtool{{exeExt}} shell rmdir tmp/githubcache
       - bin/envtool{{exeExt}} shell mkdir tmp/githubcache

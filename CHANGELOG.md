@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Go telemetry is off in the Dockerfiles, the Taskfile and the release
+  workflows too**: v1.102.0 turned the Go toolchain's own telemetry off in
+  `build.sh` only. `ENV GOTELEMETRY=off` in the Dockerfile does not do it, and
+  the Dockerfiles under `build/ferretdb`, the Taskfile and the workflows'
+  `setup-go` steps had nothing at all. Each golang build stage now runs `go
+  telemetry off`, every Taskfile task that runs go depends on a
+  `go-telemetry-off` task, and the workflows run it right after `setup-go`.
+  `tests/go-telemetry-off.py` fails when something runs go without it, with a
+  negative test for the environment variable alone. by @xet7. Thanks to xet7.
+
 ## [v1.102.0](https://github.com/wekan/FerretDB/releases/tag/v1.102.0) (2026-10-28)
 
 ### Fixed 🐛

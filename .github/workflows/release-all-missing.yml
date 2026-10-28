@@ -73,6 +73,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      # GOTELEMETRY=off does not turn off the Go toolchain's own telemetry - the
+      # mode file that `go telemetry off` writes does.
+      - name: Turn off Go toolchain telemetry
+        run: go telemetry off
+
       - name: Resolve release version
         id: ver
         env:
@@ -139,6 +144,7 @@ jobs:
           python3 -B tests/release-upload.py
           python3 -B tests/integration-module-sync.py
           python3 -B tests/dependency-floors.py
+          python3 -B tests/go-telemetry-off.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       # Runs even when the run is cancelled or the build failed part-way: every

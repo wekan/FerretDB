@@ -19,6 +19,10 @@ ENV GOPATH=/cache/gopath
 ENV GOCACHE=/cache/gocache
 ENV GOMODCACHE=/cache/gomodcache
 
+# GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
+# telemetry - the mode file that `go telemetry off` writes does.
+RUN go telemetry off
+
 # remove ",direct"
 ENV GOPROXY=https://proxy.golang.org
 
@@ -50,6 +54,10 @@ RUN test -n "$LABEL_COMMIT"
 ENV GOPATH=/cache/gopath
 ENV GOCACHE=/cache/gocache
 ENV GOMODCACHE=/cache/gomodcache
+
+# GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
+# telemetry - the mode file that `go telemetry off` writes does.
+RUN go telemetry off
 
 # modules are already downloaded
 ENV GOPROXY=off
@@ -113,6 +121,10 @@ ENV GOCOVERDIR=/tmp/cover
 ENV GORACE=halt_on_error=1,history_size=2
 
 RUN mkdir /tmp/cover
+
+# GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
+# telemetry - the mode file that `go telemetry off` writes does.
+RUN go telemetry off
 
 COPY --from=development-build /src/bin/ferretdb /ferretdb
 
