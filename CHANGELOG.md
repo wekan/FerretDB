@@ -2,6 +2,25 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **`distinct` works when some documents do not have the fields it reads**:
+  on SQLite, a `distinct` whose key or filter names a field that older
+  documents never had failed with `sjson.UnmarshalFields: missing schema for
+  key`. The pushdown builds each row with `json_object`, and for a document
+  without the field both its schema and its value are SQL NULL, which became
+  `"key":null` in the schema - a shape the decoders refused. A null schema
+  with a null value now means the field is absent, as MongoDB treats it:
+  `distinct` skips it and `{$nin: [null]}` excludes it, while an explicit
+  `null` is still `null`. A database migrated from MongoDB 3 hit this on its
+  first start, and a startup repair that needed the `distinct` could not run
+  (wekan/wekan Sandstorm grain). `TestDistinctPushdownAbsentField` runs the
+  generated SQL on SQLite and decodes the rows; `TestAbsentField` checks every
+  decoder, and that anything else without a schema is still refused. by
+  @xet7. Thanks to xet7.
+
 ## [v1.104.0](https://github.com/wekan/FerretDB/releases/tag/v1.104.0) (2026-10-30)
 
 ### Fixed 🐛

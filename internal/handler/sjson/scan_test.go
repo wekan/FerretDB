@@ -219,3 +219,42 @@ func FuzzFastPath(f *testing.F) {
 		}
 	})
 }
+
+// A schema entry that is JSON null marks a field the source document did not
+// have (the SQLite distinct pushdown writes one); every decoder leaves it out.
+// Anything else without a schema is still refused.
+func TestAbsentField(t *testing.T) {
+	t.Parallel()
+
+	absent := `{"$s":{"p":{"a":{"t":"string"},"b":null},"$k":["a","b"]},"a":"x","b":null}`
+	// the same document not in canonical order, for the slow decoders
+	absentSlow := `{"a":"x","b":null,"$s":{"p":{"a":{"t":"string"},"b":null},"$k":["a","b"]}}`
+
+	for _, data := range []string{absent, absentSlow} {
+		for name, decode := range map[string]func([]byte) (*types.Document, error){
+			"Unmarshal":       Unmarshal,
+			"UnmarshalFields": func(b []byte) (*types.Document, error) { return UnmarshalFields(b, []string{"a", "b"}) },
+		} {
+			doc, err := decode([]byte(data))
+			require.NoError(t, err, "%s %s", name, data)
+			assert.Equal(t, []string{"a"}, doc.Keys(), "%s %s", name, data)
+		}
+	}
+
+	// A null schema is only "absent" for a null value.
+	nullSchemaValue := `{"$s":{"p":{"a":{"t":"string"},"b":null},"$k":["a","b"]},"a":"x","b":1}`
+	_, err := Unmarshal([]byte(nullSchemaValue))
+	assert.Error(t, err)
+	_, err = UnmarshalFields([]byte(nullSchemaValue), []string{"a", "b"})
+	assert.Error(t, err)
+
+	// A key with no schema entry at all is not the pushdown's shape: it is not
+	// dropped. UnmarshalFields refuses it; Unmarshal has always decoded a null
+	// value before looking at the schema, and still returns it as null.
+	noEntry := `{"$s":{"p":{"a":{"t":"string"},"c":{"t":"int"}},"$k":["a","b"]},"a":"x","b":null}`
+	_, err = UnmarshalFields([]byte(noEntry), []string{"a", "b"})
+	assert.Error(t, err)
+	doc, err := Unmarshal([]byte(noEntry))
+	require.NoError(t, err)
+	assert.Equal(t, types.Null, must.NotFail(doc.Get("b")))
+}

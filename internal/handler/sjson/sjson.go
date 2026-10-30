@@ -289,6 +289,25 @@ func toSJSON(v any) sjsontype {
 	panic(fmt.Sprintf("not reached: %T", v)) // for sumtype to work
 }
 
+// absentField reports whether key stands for a field the source document did
+// not have. Marshal never writes one: every value it stores has a schema, a null
+// value {"t":"null"}. The distinct pushdown (prepareDistinctSelectClause in the
+// SQLite backend) builds its documents with json_object from the fields it
+// reads, and for a document without one of them both the schema and the value
+// are SQL NULL, which json_object writes as "key":null in "p" and as the value.
+// MongoDB treats such a field as missing - distinct skips it and {$nin: [null]}
+// excludes it - so it is left out of the decoded document rather than refused
+// ("missing schema for key") or turned into an explicit null.
+func absentField(sch *schema, key string, value []byte) bool {
+	fieldSchema, exists := sch.Properties[key]
+	return exists && fieldSchema == nil && isJSONNull(value)
+}
+
+// isJSONNull reports whether b is the JSON literal null.
+func isJSONNull(b []byte) bool {
+	return bytes.Equal(bytes.TrimSpace(b), []byte("null"))
+}
+
 // Unmarshal decodes the top-level document.
 // It decodes document's schema from the `$s` field and uses it to decode the data of the document.
 func Unmarshal(data []byte) (*types.Document, error) {
@@ -299,6 +318,10 @@ func Unmarshal(data []byte) (*types.Document, error) {
 			d := types.MakeDocument(len(sch.Keys))
 
 			for i, key := range sch.Keys {
+				if absentField(sch, key, fields[i+1].value) {
+					continue
+				}
+
 				v, err := unmarshalSingleValue(fields[i+1].value, sch.Properties[key])
 				if err != nil {
 					return nil, lazyerrors.Error(err)
@@ -356,6 +379,10 @@ func unmarshalSlow(data []byte) (*types.Document, error) {
 			return nil, lazyerrors.Errorf("sjson.Unmarshal: missing key %q", key)
 		}
 
+		if absentField(sch, key, b) {
+			continue
+		}
+
 		v, err := unmarshalSingleValue(b, sch.Properties[key])
 		if err != nil {
 			return nil, lazyerrors.Error(err)
@@ -381,6 +408,10 @@ func UnmarshalFields(data []byte, fields []string) (*types.Document, error) {
 
 			for i, key := range sch.Keys {
 				if !slices.Contains(fields, key) {
+					continue
+				}
+
+				if absentField(sch, key, raw[i+1].value) {
 					continue
 				}
 
@@ -439,6 +470,9 @@ func unmarshalFieldsSlow(data []byte, fields []string) (*types.Document, error) 
 		rawElem, exists := sch.Properties[key]
 		if !exists {
 			return nil, lazyerrors.Errorf("sjson.UnmarshalFields: missing schema for key %q", key)
+		}
+		if isJSONNull(rawElem) && isJSONNull(value) {
+			continue // absent in the source document; see absentField
 		}
 		var fieldSchema elem
 		if err := json.Unmarshal(rawElem, &fieldSchema); err != nil {
