@@ -149,6 +149,7 @@ jobs:
           python3 -B tests/integration-module-sync.py
           python3 -B tests/dependency-floors.py
           python3 -B tests/go-telemetry-off.py
+          python3 -B tests/mptcp-off.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       # Runs even when the run is cancelled or the build failed part-way, as

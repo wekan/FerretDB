@@ -2,6 +2,11 @@ module github.com/FerretDB/FerretDB
 
 go 1.27.3
 
+// CVE-2026-98432 (a Linux kernel TCP use-after-free, reachable through an
+// MPTCP listener): Go turns MPTCP on for every Linux listen socket by default
+// since Go 1.24. Off in every build; GODEBUG=multipathtcp=1 still turns it on.
+godebug multipathtcp=0
+
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/FerretDB/wire v0.1.7
