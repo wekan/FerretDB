@@ -2,6 +2,20 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **No MPTCP listener by default**: CVE-2026-98432 is a Linux kernel
+  use-after-free in IPv4 TCP connection handling, shown to give remote code
+  execution through an MPTCP listener, and since Go 1.24 every Linux listen
+  socket of a Go program is MPTCP unless the program says otherwise. `go.mod`
+  sets `godebug multipathtcp=0`, so every build has it off by default
+  (`DefaultGODEBUG=multipathtcp=0` in `go version -m`), and
+  `GODEBUG=multipathtcp=1` still turns it on. The real fix is a patched kernel.
+  `tests/mptcp-off.py`, run by both release workflows, fails without the
+  setting or when something turns MPTCP back on. by @xet7. Thanks to xet7.
+
 ## [v1.103.0](https://github.com/wekan/FerretDB/releases/tag/v1.103.0) (2026-10-28)
 
 ### Fixed 🐛
