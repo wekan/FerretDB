@@ -714,3 +714,49 @@ func TestLongIndexNames(t *testing.T) {
 		})
 	}
 }
+
+// PostgreSQL has statistics for an expression index (`_jsonb->'field'`) only
+// after the table is ANALYZEd; creating the index must do it, or the planner
+// guesses one row for every condition until autovacuum gets there.
+func TestIndexesCreateAnalyzesTheTable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping in -short mode")
+	}
+
+	t.Parallel()
+
+	ctx := conninfo.Ctx(testutil.Ctx(t), conninfo.New())
+	r, p, dbName := createDatabase(t, ctx)
+	collectionName := testutil.CollectionName(t)
+
+	created, err := r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
+	require.NoError(t, err)
+	require.True(t, created)
+
+	c, err := r.CollectionGet(ctx, dbName, collectionName)
+	require.NoError(t, err)
+
+	for i := 0; i < 300; i++ {
+		doc := fmt.Sprintf(`{"$s": {"p": {"_id": {"t": "int"}, "v": {"t": "string"}}, "$k": ["_id", "v"]}, "_id": %d, "v": "x%d"}`, i, i%7)
+		_, err = p.Exec(ctx, fmt.Sprintf(`INSERT INTO %s (%s) VALUES($1)`, pgx.Identifier{dbName, c.TableName}.Sanitize(), DefaultColumn), doc)
+		require.NoError(t, err)
+	}
+
+	statistics := func() int {
+		var n int
+		// The index on v is named <table, shortened>_v___<hash>_idx; its expression
+		// column is the one with statistics.
+		require.NoError(t, p.QueryRow(ctx,
+			`SELECT count(*) FROM pg_stats WHERE schemaname = $1 AND attname = 'expr' AND tablename LIKE $2`,
+			dbName, `%\_v\_\_\_%\_idx`).Scan(&n))
+
+		return n
+	}
+
+	require.Zero(t, statistics(), "no statistics before the index exists")
+
+	err = r.IndexesCreate(ctx, dbName, collectionName, []IndexInfo{{Name: "v_1", Key: []IndexKeyPair{{Field: "v"}}}})
+	require.NoError(t, err)
+
+	assert.Positive(t, statistics(), "the table was analyzed when its index was created")
+}

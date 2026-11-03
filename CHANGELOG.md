@@ -2,6 +2,21 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **PostgreSQL: a table is analyzed once its indexes are created**: PostgreSQL
+  gathers statistics for an expression index (`_jsonb->'field'`) only when the
+  table is `ANALYZE`d, and autovacuum does that a minute or more after a bulk
+  load. Until then the planner had no estimate, guessed one row for a query that
+  returns 2,000, and chose a plan with no parallelism: a due cards query over
+  15,377 cards took 400 ms, and 80 ms once the table was analyzed. Creating
+  indexes now ends with an `ANALYZE` of the table (a failure is logged, never
+  the caller's). `TestIndexesCreateAnalyzesTheTable` checks that the index has
+  statistics when `createIndexes` returns, and fails without it. by @xet7.
+  Thanks to xet7.
+
 ## [v1.105.0](https://github.com/wekan/FerretDB/releases/tag/v1.105.0) (2026-10-31)
 
 ### Fixed 🐛

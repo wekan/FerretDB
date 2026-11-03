@@ -900,6 +900,25 @@ func (r *Registry) indexesCreate(ctx context.Context, p *pgxpool.Pool, dbName, c
 		allPgIndexes[index.PgIndex] = collectionName
 	}
 
+	// PostgreSQL gathers statistics for an expression index (`_jsonb->'field'`) only
+	// when the table is ANALYZEd, and autovacuum does that a minute or more after a
+	// bulk load. Until then the planner has no estimate for any of these conditions,
+	// guesses one row, and picks a plan with no parallelism and no use of the best
+	// index: WeKan's due cards query took 400 ms with it and 80 ms after the
+	// analyze, on 15,000 cards. So the table is analyzed once its indexes exist.
+	// It is only a better plan, so a failure is not the caller's.
+	if len(created) > 0 {
+		q := fmt.Sprintf(`ANALYZE %s`, pgx.Identifier{dbName, c.TableName}.Sanitize())
+		if _, err = p.Exec(ctx, q); err != nil {
+			r.l.WarnContext(
+				ctx,
+				"ANALYZE after creating indexes failed; the planner keeps its default estimates until autovacuum analyzes the table",
+				slog.String("sql", q),
+				slog.Any("error", err),
+			)
+		}
+	}
+
 	b, err := sjson.Marshal(c.marshal())
 	if err != nil {
 		return lazyerrors.Error(err)
