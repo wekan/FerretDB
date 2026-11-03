@@ -379,8 +379,8 @@ func (r *Registry) databaseGetOrCreate(ctx context.Context, p *fsql.DB, dbName s
 	// https://dev.mysql.com/doc/refman/5.7/en/create-table-secondary-indexes.html#json-column-indirect-index
 	q = fmt.Sprintf(
 		`ALTER TABLE %s.%s
-		 ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s)) STORED,
-    	 ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s)) STORED
+		 ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s)) VIRTUAL,
+    	 ADD COLUMN %s VARCHAR(255) GENERATED ALWAYS AS ((%s)) VIRTUAL
 		`,
 		dbName, metadataTableName,
 		IDIndexColumn, IDColumn,

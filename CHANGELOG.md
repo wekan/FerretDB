@@ -6,6 +6,13 @@
 
 ### Fixed 🐛
 
+- **MySQL: the metadata table's generated columns are VIRTUAL**: they were
+  `STORED`, and TiDB refuses `ALTER TABLE ... ADD COLUMN ... STORED`, so FerretDB
+  on it failed at its first database. The table has one row per collection, so
+  MySQL and MariaDB lose nothing. `TestMetadataGeneratedColumnsAreVirtual` reads
+  the statements and fails on a `STORED` one. With it the WeKan speed test runs on
+  TiDB 7.5 (Apache-2.0, one process, its own storage) and gets the same answers
+  as MongoDB. by @xet7. Thanks to xet7.
 - **PostgreSQL: a table is analyzed once its indexes are created**: PostgreSQL
   gathers statistics for an expression index (`_jsonb->'field'`) only when the
   table is `ANALYZE`d, and autovacuum does that a minute or more after a bulk
