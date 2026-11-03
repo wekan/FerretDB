@@ -226,13 +226,15 @@ func TestPrepareWhereClause(t *testing.T) {
 	arrayArm := func(field string) string {
 		return fmt.Sprintf(`(%[1]s = ? OR (%[1]s >= '[' AND %[1]s < '\'))`, expr(field))
 	}
+	// The array is read from the column by path, not as the text of ->, which would
+	// render the whole array as JSON text for json_each to parse again.
 	elemMatch := func(field string, conditions ...string) string {
-		fieldExpr := expr(field)
+		arrayArgs := fmt.Sprintf(`%s, '$."%s"'`, metadata.DefaultColumn, field)
 		return fmt.Sprintf(
 			`(json_type(%[1]s) = 'array' AND EXISTS (`+
 				`SELECT 1 FROM json_each(%[1]s) AS element `+
 				`WHERE element.type = 'object' AND %s))`,
-			fieldExpr,
+			arrayArgs,
 			strings.Join(conditions, " AND "),
 		)
 	}

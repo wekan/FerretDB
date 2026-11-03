@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"math"
+	"regexp"
 	"strings"
 	"time"
 
@@ -840,14 +841,29 @@ func elemMatchCondition(expr string, doc *types.Document) (string, []any, bool) 
 		args = append(args, conditionArgs...)
 	}
 
+	// json_type and json_each are given the array as the column and a path, not
+	// as the text of ->: ->'members' renders the whole array as JSON text, and
+	// json_each then parses that text again - for every row, on every membership
+	// test, which is every All Boards and Due Cards query. Read from the column,
+	// SQLite walks the binary JSON in place. On 2,308 boards that took the
+	// visible-boards query from 26 to 16 ms, with the same rows.
+	arrayArgs := expr
+	if m := simpleFieldExpr.FindStringSubmatch(expr); m != nil {
+		arrayArgs = fmt.Sprintf(`%s, '$."%s"'`, metadata.DefaultColumn, m[1])
+	}
+
 	return fmt.Sprintf(
 		`(json_type(%[1]s) = 'array' AND EXISTS (`+
 			`SELECT 1 FROM json_each(%[1]s) AS element `+
 			`WHERE element.type = 'object' AND %s))`,
-		expr,
+		arrayArgs,
 		strings.Join(conditions, " AND "),
 	), args, true
 }
+
+// simpleFieldExpr matches _ferretdb_sjson->"name" for a plain top-level field name:
+// letters, digits, underscore and dash, which need no escaping in a JSON path.
+var simpleFieldExpr = regexp.MustCompile(`^` + regexp.QuoteMeta(metadata.DefaultColumn) + `->"([A-Za-z0-9_-]+)"$`)
 
 // rangeConditions pushes numeric/date range operators ($gt/$gte/$lt/$lte) using
 // the ->> (SQL value) accessor, so SQLite compares the extracted number

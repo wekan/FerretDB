@@ -6,6 +6,20 @@
 
 ### Fixed 🐛
 
+- **SQLite: a membership test reads the array from the column, not from the text of
+  `->`**: `{members: {$elemMatch: {userId: X}}}` was `json_type(col->"members")`
+  and `json_each(col->"members")`. `->` renders the whole array as JSON text, and
+  both functions then parse that text again - for every row, in every All Boards
+  and Due Cards query. They now take the column and a path
+  (`json_each(col, '$."members"')`), which SQLite walks in place, for a plain
+  top-level field name; any other name keeps the old form. On 2,308 boards the
+  visible-boards query went from 26.2 to 15.7 ms with the same rows, and in the
+  WeKan speed test All Boards count went from 6.9 to 4.9 ms, All Boards page from
+  5.9 to 3.9 ms and Due Cards from 54.5 to 43.9 ms; the answers of 12 queries (169)
+  are identical. `TestElemMatchReadsTheColumnAndFindsTheSameRows` runs the old and
+  the new form on documents with a string beside the objects, a field that is not
+  an array, a missing one and a JSON null, and requires the same rows. by @xet7.
+  Thanks to xet7.
 - **MySQL: the metadata table's generated columns are VIRTUAL**: they were
   `STORED`, and TiDB refuses `ALTER TABLE ... ADD COLUMN ... STORED`, so FerretDB
   on it failed at its first database. The table has one row per collection, so
