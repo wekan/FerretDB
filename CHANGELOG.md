@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **The integration module follows the main module again**: the dependency bumps
+  of #52 and #53 (go-hdb 1.20.2, pgx 5.12.0, puddle 2.2.3, prometheus/common
+  0.73.1, modernc sqlite 1.61.1) updated only the main `go.mod`, so
+  `tests/integration-module-sync.py` failed and the v1.106.0 release job stopped
+  before it built any binary. `go mod tidy` in `integration/` brings its
+  requirements up to the main module's. by @xet7. Thanks to xet7.
+
 ## [v1.106.0](https://github.com/wekan/FerretDB/releases/tag/v1.106.0) (2026-11-04)
 
 ### Fixed 🐛
