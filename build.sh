@@ -521,12 +521,12 @@ act_test_all() {
   local logdir="${WEKAN_LOGDIR:-}"
   if [ -z "$logdir" ]; then
     # Find the WeKan checkout that holds this clone, rather than counting ../.
-    # This repo used to sit at wekan/FerretDB, so "$ROOT/../../log" was WeKan's
-    # ../log/; it lives in wekan/.tools/FerretDB now, where the same string means
-    # wekan/log instead - a standalone run would have quietly written its logs
-    # somewhere no other test run looks. Walking up until a WeKan checkout is
-    # recognised (a .meteor directory beside a build.sh) keeps working wherever
-    # the companion repos are kept next.
+    # This repo has moved twice - wekan/FerretDB, then wekan/.tools/FerretDB,
+    # now wekan/.tools/w/FerretDB - and each move changed what "$ROOT/../../log"
+    # pointed at, so a fixed count of ../ quietly writes the logs somewhere no
+    # other test run looks. Walking up until a WeKan checkout is recognised (a
+    # .meteor directory beside a build.sh) keeps working wherever the companion
+    # repos are kept next.
     local wekan_dir="" d="$ROOT"
     local _i
     for _i in 1 2 3 4 5; do
