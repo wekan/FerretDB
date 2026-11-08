@@ -2,6 +2,17 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **A negation over an array of documents holds only for every element**
+  ([9e211ce94](https://github.com/wekan/FerretDB/commit/9e211ce9468cf229ecaf2b7489d3178504fcb409)): `{"a.b": {$ne: x}}`
+  matched a document with an element whose `b` was `x` as long as another
+  element's was not, so an add-once update guarded by `$ne` pushed duplicates.
+  `$ne`, `$nin` and `$not` now hold only for every value of the path, as in
+  MongoDB; other operators still hold for any one. by @xet7. Thanks to xet7.
+
 ## [v1.107.0](https://github.com/wekan/FerretDB/releases/tag/v1.107.0) (2026-11-04)
 
 ### Fixed 🐛
