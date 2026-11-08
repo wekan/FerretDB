@@ -105,6 +105,15 @@ func filterDocumentPair(doc *types.Document, filterKey string, filterValue any) 
 			docs = append(docs, types.MakeDocument(0))
 		}
 
+		// A path through an array of documents gives several values. A
+		// negation - $ne, $nin, $not - holds only when it holds for every one
+		// of them ({"a.b": {$ne: 1}} matches when NO element's b is 1); any
+		// other operator holds when it holds for one. Each operator of the
+		// expression is quantified on its own, and the expression is their AND.
+		if len(docs) > 1 && hasNegationOperator(filterValue) {
+			return filterQuantified(docs, filterKey, filterSuffix, filterValue)
+		}
+
 		for _, doc := range docs {
 			// {field: {expr}} or {field: {document}}
 			ok, err := filterFieldExpr(doc, filterKey, filterSuffix, filterValue)
@@ -1943,4 +1952,59 @@ func filterFieldExprElemMatch(doc *types.Document, filterKey, filterSuffix strin
 
 	// Operator form, e.g. {$gt: value}: keep the existing behavior.
 	return filterFieldExpr(doc, filterKey, filterSuffix, expr)
+}
+
+// negationOperators hold for a multi-valued path only when they hold for every value.
+var negationOperators = []string{"$ne", "$nin", "$not"}
+
+// hasNegationOperator reports whether expr is an operator expression with a negation.
+func hasNegationOperator(expr *types.Document) bool {
+	for _, k := range expr.Keys() {
+		if slices.Contains(negationOperators, k) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// filterQuantified evaluates each operator of expr over docs - every value for a
+// negation, any value otherwise - and ANDs them. $options travels with $regex.
+func filterQuantified(docs []*types.Document, filterKey, filterSuffix string, expr *types.Document) (bool, error) {
+	for _, k := range expr.Keys() {
+		if k == "$options" {
+			continue
+		}
+
+		sub := must.NotFail(types.NewDocument(k, must.NotFail(expr.Get(k))))
+		if k == "$regex" && expr.Has("$options") {
+			sub.Set("$options", must.NotFail(expr.Get("$options")))
+		}
+
+		every := slices.Contains(negationOperators, k)
+		matched := every
+
+		for _, doc := range docs {
+			ok, err := filterFieldExpr(doc, filterKey, filterSuffix, sub)
+			if err != nil {
+				return false, err
+			}
+
+			if every && !ok {
+				matched = false
+				break
+			}
+
+			if !every && ok {
+				matched = true
+				break
+			}
+		}
+
+		if !matched {
+			return false, nil
+		}
+	}
+
+	return true, nil
 }
