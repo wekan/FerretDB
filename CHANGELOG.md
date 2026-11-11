@@ -6,6 +6,15 @@
 
 ### Fixed 🐛
 
+- **A field named like one of SQLite's own columns is found by its value**
+  ([e45515c15](https://github.com/wekan/FerretDB/commit/e45515c155860a3d12844bee4cff32c19e702cc4)): a label was written
+  double-quoted, and SQLite reads a double-quoted name as a column first, so a
+  filter on a field named `rowId`, `oid` or `_rowid_` read ROWID instead and
+  matched nothing - the client's History completion receipts, queried by
+  `rowId`, were never found. Those names are written as string literals now,
+  every other name as before, so existing indexes keep serving their queries.
+  by @xet7. Thanks to xet7.
+
 - **A negation over an array of documents holds only for every element**
   ([9e211ce94](https://github.com/wekan/FerretDB/commit/9e211ce9468cf229ecaf2b7489d3178504fcb409)): `{"a.b": {$ne: x}}`
   matched a document with an element whose `b` was `x` as long as another
