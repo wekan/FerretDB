@@ -6,6 +6,13 @@
 
 ### Fixed 🐛
 
+- **`{field: {$eq: value}}` uses the SQL filter and the indexes**
+  ([3d06e00be](https://github.com/wekan/FerretDB/commit/3d06e00bea47e1118a7fcae54672217cd3263b28)): only a plain
+  equality was pushed down, so a client writing each equality as `$eq` read
+  and decoded the whole collection for every lookup by `_id`. A string,
+  ObjectID or boolean `$eq` now gets the same WHERE as `{field: value}`.
+  by @xet7. Thanks to xet7.
+
 - **A field named like one of SQLite's own columns is found by its value**
   ([e45515c15](https://github.com/wekan/FerretDB/commit/e45515c155860a3d12844bee4cff32c19e702cc4)): a label was written
   double-quoted, and SQLite reads a double-quoted name as a column first, so a
