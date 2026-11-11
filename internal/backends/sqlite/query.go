@@ -727,6 +727,19 @@ func regexCondition(expr, pattern, options string) (string, []any, bool) {
 // a SUPERSET of any ONE of them is a valid superset of the whole expression —
 // coexisting operators ($ne, $nin, $options, …) do not make this unsafe.
 func operatorCondition(expr, key string, doc *types.Document) (string, []any, bool) {
+	// {field: {$eq: v}} of a scalar is {field: v}: the same pushdown, which a
+	// client that writes every equality as $eq (so a value from a request can
+	// never be read as an operator) otherwise never got - each lookup by _id
+	// scanned and decoded the whole collection.
+	if eqAny, err := doc.Get("$eq"); err == nil {
+		switch eqAny.(type) {
+		case string, types.ObjectID, bool:
+			if cond, condArgs, ok := pushdownFieldCondition(expr, key, eqAny); ok {
+				return cond, condArgs, true
+			}
+		}
+	}
+
 	if existsAny, err := doc.Get("$exists"); err == nil {
 		if exists, ok := existsAny.(bool); ok {
 			if exists {

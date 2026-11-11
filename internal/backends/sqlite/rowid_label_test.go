@@ -97,3 +97,48 @@ func TestFieldNamedLikeASQLiteColumn(t *testing.T) {
 func indexCreateSQLForTest(table, field string) string {
 	return fmt.Sprintf(`CREATE INDEX "%s_%s" ON %q (%s->%s)`, table, field, table, metadata.DefaultColumn, metadata.JSONLabel(field))
 }
+
+// {field: {$eq: v}} is pushed down as {field: v} is: a client writing every
+// equality as $eq made each lookup a full scan. The WHERE is there, and finds
+// the same documents; a non-scalar $eq stays in Go (negative).
+func TestEqOperatorPushdown(t *testing.T) {
+	t.Parallel()
+
+	db, err := sql.Open("sqlite", "file::memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	_, err = db.Exec(fmt.Sprintf(`CREATE TABLE "cards" (%s TEXT)`, metadata.DefaultColumn))
+	require.NoError(t, err)
+	for _, d := range []*types.Document{
+		must.NotFail(types.NewDocument("_id", "a", "boardId", "b1")),
+		must.NotFail(types.NewDocument("_id", "b", "boardId", "b2")),
+	} {
+		b, err := sjson.Marshal(d)
+		require.NoError(t, err)
+		_, err = db.Exec(fmt.Sprintf(`INSERT INTO "cards" (%s) VALUES (jsonb(?))`, metadata.DefaultColumn), string(b))
+		require.NoError(t, err)
+	}
+
+	for _, key := range []string{"_id", "boardId"} {
+		value := map[string]string{"_id": "b", "boardId": "b2"}[key]
+		filter := must.NotFail(types.NewDocument(key, must.NotFail(types.NewDocument("$eq", value))))
+		where, args := prepareWhereClause(filter)
+		require.NotEmpty(t, where, "a $eq on %s is pushed down", key)
+
+		rows, err := db.Query(`SELECT json_extract(`+metadata.DefaultColumn+`, '$._id') FROM "cards"`+where, args...)
+		require.NoError(t, err)
+		var got []string
+		for rows.Next() {
+			var id string
+			require.NoError(t, rows.Scan(&id))
+			got = append(got, id)
+		}
+		require.NoError(t, rows.Close())
+		assert.Equal(t, []string{"b"}, got, "$eq on %s", key)
+	}
+
+	where, _ := prepareWhereClause(must.NotFail(types.NewDocument("boardId",
+		must.NotFail(types.NewDocument("$eq", must.NotFail(types.NewDocument("x", "y")))))))
+	assert.Empty(t, where, "a document $eq stays in Go")
+}
