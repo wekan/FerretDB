@@ -112,6 +112,22 @@ func multikeyPaths(indexes []IndexInfo) [][2]string {
 // id, parent, fullkey and path, a field with one of those names is that
 // column, and the expression reads the wrong thing (or is ambiguous). A
 // literal is never a column, and -> returns the same value for both.
+// JSONLabel is a field name as the right operand of -> and ->>: double-quoted,
+// as the expression indexes have always been written - unless SQLite resolves
+// that name as a COLUMN first. A double-quoted name is an identifier before it
+// is a string, so `col->"rowId"` read ROWID's integer instead of the field
+// "rowId" and no filter on it ever matched; ROWID's aliases and the table's
+// own columns are written as string literals instead. Every other name keeps
+// its old form, so the indexes already on disk still match their queries.
+func JSONLabel(field string) string {
+	switch strings.ToLower(field) {
+	case "rowid", "oid", "_rowid_", strings.ToLower(DefaultColumn), strings.ToLower(RecordIDColumn):
+		return LabelLiteral(field)
+	}
+
+	return fmt.Sprintf("%q", field)
+}
+
 func LabelLiteral(label string) string {
 	return `'` + strings.ReplaceAll(label, `'`, `''`) + `'`
 }

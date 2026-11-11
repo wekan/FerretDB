@@ -1021,7 +1021,7 @@ func inCondition(expr, key string, arr *types.Array) (string, []any, bool) {
 // Registry.indexesCreate does (%q), so the WHERE expression text matches the
 // expression-index text and SQLite's index matcher can pair them up.
 func quoteJSONLabel(field string) string {
-	return fmt.Sprintf("%q", field)
+	return metadata.JSONLabel(field)
 }
 
 // prepareOrderByClause returns ORDER BY clause for given sort document.

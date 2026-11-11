@@ -305,7 +305,7 @@ func indexCreateSQL(table string, index IndexInfo) string {
 	for i, key := range index.Key {
 		fields := strings.Split(key.Field, ".")
 		for j, f := range fields {
-			fields[j] = fmt.Sprintf("%q", f)
+			fields[j] = JSONLabel(f)
 		}
 
 		columns[i] = fmt.Sprintf("%s->%s", DefaultColumn, strings.Join(fields, "->"))
