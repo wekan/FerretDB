@@ -10,7 +10,7 @@ godebug multipathtcp=0
 require (
 	github.com/AlekSi/pointer v1.2.0
 	github.com/FerretDB/wire v0.1.7
-	github.com/SAP/go-hdb v1.20.2
+	github.com/SAP/go-hdb v1.21.0
 	github.com/alecthomas/kong v1.17.0
 	github.com/arl/statsviz v0.8.2
 	github.com/dop251/goja v0.0.0-20261021140635-64adc8bb4d51
@@ -23,7 +23,7 @@ require (
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.73.1
 	github.com/stretchr/testify v1.12.1
-	github.com/xdg-go/scram v1.2.0
+	github.com/xdg-go/scram v1.4.0
 	github.com/xdg-go/stringprep v1.0.4
 	go.mongodb.org/mongo-driver v1.17.10
 	go.opentelemetry.io/otel v1.47.0
@@ -34,8 +34,8 @@ require (
 	golang.org/x/crypto v0.58.0
 	golang.org/x/crypto/x509roots/fallback v0.0.0-20261020153306-9f2b28d4331a
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e
-	golang.org/x/sys v0.49.0
-	modernc.org/sqlite v1.61.1
+	golang.org/x/sys v0.50.0
+	modernc.org/sqlite v1.62.0
 )
 
 require (
@@ -64,7 +64,6 @@ require (
 	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
-	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.4.2 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
@@ -80,7 +79,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
