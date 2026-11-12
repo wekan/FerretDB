@@ -2,6 +2,28 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **The integration module follows the main module again**
+  ([a937c4761](https://github.com/wekan/FerretDB/commit/a937c476a1be7ce20dc4060f80fd4c2cd404c80a)): v1.108.0 was tagged
+  on a commit whose `integration/go.mod` and `go.sum` lagged the main module, so
+  `tests/integration-module-sync.py` failed and the release job stopped before
+  it built any binary - the v1.108.0 GitHub Release has none. `integration/`
+  now records the main module's versions. by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **A release stops before it publishes anything when its source checks fail**
+  ([64cd16f23](https://github.com/wekan/FerretDB/commit/64cd16f231bc56db1e71b754754efe4845986a3b)): the checks ran
+  inside the build step, after the tag had been pushed and the GitHub Release
+  created, which is how v1.108.0 got a release with no binaries. They now run
+  first in `release-all.yml` and `release-all-missing.yml`. A run with an empty
+  version on a branch past its tag is refused with what to run instead, rather
+  than only "got: v1.108.0-2-g0c99dae2". `tests/release-version.sh` pins the
+  order and the message. by @xet7. Thanks to xet7.
+
 ## [v1.108.0](https://github.com/wekan/FerretDB/releases/tag/v1.108.0) (2026-11-12)
 
 ### Fixed 🐛
