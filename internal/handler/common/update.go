@@ -83,7 +83,17 @@ func UpdateDocument(ctx context.Context, c backends.Collection, cmd string, iter
 		if !param.HasUpdateOperators {
 			modified, err = processReplacementDoc(cmd, doc, param.Update)
 		} else {
-			modified, err = processUpdateOperator(cmd, doc, param.Update, upsert)
+			// The positional $ operator: each document's own matched element.
+			update := param.Update
+			if upsert && hasPositional(update) {
+				err = handlererrors.NewCommandErrorMsg(handlererrors.ErrBadValue, errPositionalNoMatch)
+			} else if !upsert {
+				update, err = resolvePositional(doc, param.Filter, update)
+			}
+
+			if err == nil {
+				modified, err = processUpdateOperator(cmd, doc, update, upsert)
+			}
 		}
 
 		if err != nil {
