@@ -78,6 +78,26 @@ jobs:
       - name: Turn off Go toolchain telemetry
         run: go telemetry off
 
+      # The source checks run BEFORE the version step, because that step can
+      # push the tag and the next one creates the GitHub Release. v1.108.0 was
+      # tagged and given an empty release on a commit whose integration/go.mod
+      # lagged the main module: the checks only ran inside the build step, after
+      # both. A commit that fails them is now refused before anything is
+      # published, so it can be fixed and released under the same number.
+      - name: Check the source before tagging or creating the release
+        run: |
+          set -euo pipefail
+          mkdir -p .tools/tmp
+          export TMPDIR="$PWD/.tools/tmp" GOTELEMETRY=off
+          python3 build/ferretdb/check-telemetry.py --source .
+          python3 -B tests/release-telemetry.py
+          python3 -B tests/telemetry-build.py
+          python3 -B tests/release-upload.py
+          python3 -B tests/integration-module-sync.py
+          python3 -B tests/dependency-floors.py
+          python3 -B tests/go-telemetry-off.py
+          python3 -B tests/mptcp-off.py
+
       - name: Resolve release version
         id: ver
         env:
@@ -138,14 +158,6 @@ jobs:
           set -euo pipefail
           mkdir -p .tools/tmp
           export TMPDIR="$PWD/.tools/tmp" GOTELEMETRY=off
-          python3 build/ferretdb/check-telemetry.py --source .
-          python3 -B tests/release-telemetry.py
-          python3 -B tests/telemetry-build.py
-          python3 -B tests/release-upload.py
-          python3 -B tests/integration-module-sync.py
-          python3 -B tests/dependency-floors.py
-          python3 -B tests/go-telemetry-off.py
-          python3 -B tests/mptcp-off.py
           FERRETDB_RELEASE_VERSION="${{ steps.ver.outputs.version }}" ./build.sh dist-seq
 
       # Runs even when the run is cancelled or the build failed part-way: every
