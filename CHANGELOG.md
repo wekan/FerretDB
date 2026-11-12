@@ -2,6 +2,18 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **The positional `$` update operator**
+  ([5d4327881](https://github.com/wekan/FerretDB/commit/5d4327881f9e729fbca29a0ff20759f5232e2e1f)): `{$set: {"items.$.n": 9}}`
+  with a filter on `items` failed with "Cannot create field '$'". The `$` is now
+  the index of the first element the query matched, per document, in
+  `update`, `updateMany` and `findAndModify`; no matching element, two `$`, a
+  dynamic `$rename` and an upsert are BadValue, as in MongoDB. by @xet7.
+  Thanks to xet7.
+
 ## [v1.110.0](https://github.com/wekan/FerretDB/releases/tag/v1.110.0) (2026-11-14)
 
 ### Fixed 🐛
