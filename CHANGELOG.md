@@ -2,6 +2,23 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Go 1.27.4, compress 1.20.2 and x/net 0.62.0, and no module below a patched
+  version**: govulncheck found three advisories that the released binary can
+  reach - GO-2026-6859 in the net/http of Go 1.27.3, GO-2026-6865 in
+  `klauspost/compress` 1.20.1, and GO-2026-6860 and GO-2026-6866 in
+  `golang.org/x/net` 0.61.0 - and the tools module still had OpenTelemetry 1.45.0,
+  below the 1.47.0 of WeKan's Dependabot alert #189. Go is now 1.27.4 everywhere a
+  release picks it (both `go` directives, the Dockerfiles, `build.sh` and both
+  release workflows), and compress, x/net and every OpenTelemetry module are at
+  the patched versions in all three go.mod files, after which govulncheck reports
+  nothing. `tests/dependency-floors.py` pins those floors and the Go version of
+  every one of those places, with negative tests for the versions found. by
+  @xet7. Thanks to xet7.
+
 ## [v1.109.0](https://github.com/wekan/FerretDB/releases/tag/v1.109.0) (2026-11-12)
 
 ### Fixed 🐛

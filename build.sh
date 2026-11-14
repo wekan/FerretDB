@@ -29,7 +29,7 @@ export GOTELEMETRY=off
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-GO_VERSION="1.27.3"
+GO_VERSION="1.27.4"
 LOCAL_GOROOT="$ROOT/.goroot"
 STATE_DIR="$ROOT/state"
 SQLITE_TEST_DIR="$ROOT/tmp/sqlite-tests"
