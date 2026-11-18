@@ -2,34 +2,58 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
-## Unreleased
+## Upcoming FerretDB release
 
 ### Fixed 🐛
 
-- Discover committed external SQLite collection registrations on lookup,
-  listing and creation. Preserve a physical table when another connection
-  wins a registration race. by @xet7. Thanks to xet7.
-- Return SQLite registry lookup failures to collection operations and
-  distinguish them from missing collections. Retrying after metadata repair
-  discovers the collection. by @xet7. Thanks to xet7.
-- Discover SQLite database files registered after startup on lookup
-  and listing. Refuse to initialize an occupied unregistered file and
-  preserve it on failure. by @xet7. Thanks to xet7.
-- Add SQLite URI option `dbext=db` to use `.db` files with standard
-  SQLite sidecars. Refuse ambiguous files and alternate recovery
-  sidecars. by @xet7. Thanks to xet7.
-- Add an explicit short-sidecar mode. Require `dbext=db` and a SQLite
-  build with `SQLITE_ENABLE_8_3_NAMES=2` before opening files, and refuse
-  incompatible sidecars and database names. by @xet7. Thanks to xet7.
-- Build an optional CGo SQLite driver for strict sidecars. Keep the
-  usual SQLite pragmas and duplicate-ID errors on the strict driver.
-  by @xet7. Thanks to xet7.
-- Take the SQLite database connection under the registry lock when listing
-  and renaming collections. A concurrent database drop closed it in between,
-  and `serverStatus` failed with "sql: database is closed". by @xet7.
+- **Discover externally registered SQLite collections**
+  ([7a8209d43](https://github.com/wekan/FerretDB/commit/7a8209d438c6cee167878e34ab71dd7aba36d323)): committed external SQLite
+  collection registrations are discovered on lookup, listing and creation, and
+  a physical table is preserved when another connection wins a registration
+  race. by @xet7. Thanks to xet7.
+- **Report SQLite collection discovery errors**
+  ([dc8f21797](https://github.com/wekan/FerretDB/commit/dc8f217975baff18cc80df17be9ea40536ee3a47)): registry lookup failures
+  are returned to collection operations and told apart from missing
+  collections. Retrying after metadata repair discovers the collection. by
+  @xet7. Thanks to xet7.
+- **Discover SQLite database files registered after startup**
+  ([2bbdc8c60](https://github.com/wekan/FerretDB/commit/2bbdc8c600e49e7b12092240a7808c2451c1be0d)): on lookup and listing. An
+  occupied unregistered file is refused and preserved on failure. by @xet7.
   Thanks to xet7.
-- Let the vet stage of `build.sh` list packages while the integration build
-  writes its work directory under `tmp/go`. by @xet7. Thanks to xet7.
+- **SQLite URI option `dbext=db`**
+  ([41ff16c46](https://github.com/wekan/FerretDB/commit/41ff16c46f9ac7e85dbf0e1f835d918a379f0fef)): uses `.db` files with
+  standard SQLite sidecars, and refuses ambiguous files and alternate recovery
+  sidecars. by @xet7. Thanks to xet7.
+- **Explicit short-sidecar mode**
+  ([7d7f15e4a](https://github.com/wekan/FerretDB/commit/7d7f15e4ad320bd26dda98e1f4ff21867ef93c10)): requires `dbext=db` and a
+  SQLite build with `SQLITE_ENABLE_8_3_NAMES=2` before opening files, and
+  refuses incompatible sidecars and database names. by @xet7. Thanks to xet7.
+- **Optional CGo SQLite driver for strict sidecars**
+  ([9bcda0768](https://github.com/wekan/FerretDB/commit/9bcda07684f750668c21a833af40fa3aac960dec)): keeps the usual SQLite
+  pragmas and duplicate-ID errors on the strict driver. by @xet7. Thanks to
+  xet7.
+- **The SQLite registry takes the database connection under its lock**
+  ([e62d7fb6d](https://github.com/wekan/FerretDB/commit/e62d7fb6de70154e18262c826a1cf7c85b1625a6)): listing and renaming
+  collections fetched the connection before taking the lock, and a concurrent
+  database drop closed it in between, so `serverStatus` failed with "sql:
+  database is closed". `TestCollectionListDropStress` reproduces the race and
+  `TestRegistryTakesConnectionUnderLock` pins the order. The vet stage of
+  `build.sh` also lists packages while the integration build writes its work
+  directory under `tmp/go`. by @xet7. Thanks to xet7.
+
+### Other Changes 🤖
+
+- **Sync the integration module with the main module after #62**
+  ([9cb1473ac](https://github.com/wekan/FerretDB/commit/9cb1473ac08abfe1439d4c3ab6a47c55289d017a)): `go mod tidy` in
+  `integration/`. by @xet7. Thanks to xet7.
+- **Bump go-hdb 1.22.1, pgx 5.13.0, prometheus/common 0.74.0 and x/crypto
+  0.59.0** in the main module (#62) by @dependabot. Thanks to dependabot.
+- **Bump nfpm from 2.48.0 to 2.49.0** in the tools module (#61) by
+  @dependabot. Thanks to dependabot.
+- **Bump markdownlint-cli2 to v0.24.1 and postgres to 18.7** build
+  dependencies images (#60) by @dependabot. Thanks to dependabot.
+- **Bump postgres from 18.6 to 18.7** in the FerretDB build image (#59) by
+  @dependabot. Thanks to dependabot.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 
