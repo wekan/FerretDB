@@ -18,6 +18,9 @@
 - Add SQLite URI option `dbext=db` to use `.db` files with standard
   SQLite sidecars. Refuse ambiguous files and alternate recovery
   sidecars. by @xet7. Thanks to xet7.
+- Add an explicit short-sidecar mode. Require `dbext=db` and a SQLite
+  build with `SQLITE_ENABLE_8_3_NAMES=2` before opening files, and refuse
+  incompatible sidecars and database names. by @xet7. Thanks to xet7.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 

@@ -32,6 +32,51 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil/teststress"
 )
 
+func TestShortSidecarMode(t *testing.T) {
+	t.Parallel()
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	uri := testutil.TestSQLiteURI(t, "")
+	for _, suffix := range []string{"shortnames=1", "dbext=db&shortnames=0", "dbext=db&shortnames=1&mode=memory"} {
+		_, _, err = New(uri+"?"+suffix, testutil.Logger(t), sp)
+		require.ErrorContains(t, err, "shortnames=1 requires dbext=db and file storage")
+	}
+	_, _, err = New(uri+"?8_3_names=1", testutil.Logger(t), sp)
+	require.ErrorContains(t, err, "use shortnames=1")
+
+	for _, name := range []string{"wekan", "a_b-c123"} {
+		require.True(t, shortDatabaseName(name))
+	}
+	for _, name := range []string{"", "with.dot", "über", "toolongdb"} {
+		require.False(t, shortDatabaseName(name))
+	}
+
+	dir := strings.TrimPrefix(uri, "file:")
+	file := filepath.Join(dir, "wekan.db")
+	if err := checkShortSidecarBuild(true); err == nil {
+		p, _, err := New(uri+"?dbext=db&shortnames=1", testutil.Logger(t), sp)
+		require.NoError(t, err)
+		defer p.Close()
+		ctx := testutil.Ctx(t)
+		db, _, err := p.GetOrCreate(ctx, "wekan", nil)
+		require.NoError(t, err)
+		_, err = db.ExecContext(ctx, "CREATE TABLE example (id INTEGER)")
+		require.NoError(t, err)
+		require.FileExists(t, file)
+		require.FileExists(t, filepath.Join(dir, "wekan.wal"))
+		require.FileExists(t, filepath.Join(dir, "wekan.shm"))
+		require.NoFileExists(t, file+"-wal")
+		require.NoFileExists(t, file+"-shm")
+		return
+	}
+	require.NoError(t, os.WriteFile(file, []byte("existing"), 0o600))
+	_, _, err = New(uri+"?dbext=db&shortnames=1", testutil.Logger(t), sp)
+	require.ErrorContains(t, err, "SQLITE_ENABLE_8_3_NAMES=2")
+	data, err := os.ReadFile(file)
+	require.NoError(t, err)
+	require.Equal(t, "existing", string(data))
+}
+
 func TestDatabaseExtension(t *testing.T) {
 	t.Parallel()
 	ctx := testutil.Ctx(t)

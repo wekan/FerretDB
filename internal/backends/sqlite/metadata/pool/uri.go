@@ -59,6 +59,14 @@ func parseURI(u string) (*url.URL, error) {
 		return nil, fmt.Errorf("dbext must be db or sqlite")
 	}
 
+	if values.Has("8_3_names") {
+		return nil, fmt.Errorf("use shortnames=1 instead of SQLite 8_3_names")
+	}
+	if values.Has("shortnames") && (values.Get("shortnames") != "1" || values.Get("dbext") != "db" ||
+		values.Get("mode") == "memory") {
+		return nil, fmt.Errorf("shortnames=1 requires dbext=db and file storage")
+	}
+
 	// it is deprecated and interacts weirdly with database/sql.Pool
 	if values.Get("cache") == "shared" {
 		return nil, fmt.Errorf(`shared cache is not supported`)

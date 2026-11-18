@@ -52,10 +52,11 @@ const (
 //
 //nolint:vet // for readability
 type Pool struct {
-	uri url.URL
-	ext string
-	l   *slog.Logger
-	sp  *state.Provider
+	uri        url.URL
+	ext        string
+	shortNames bool
+	l          *slog.Logger
+	sp         *state.Provider
 
 	rw  sync.RWMutex
 	dbs map[string]*fsql.DB
@@ -80,16 +81,22 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 	if values.Get("dbext") == "db" {
 		extension = ".db"
 	}
+	shortNames := values.Get("shortnames") == "1"
 	values.Del("dbext")
+	values.Del("shortnames")
+	if err := checkShortSidecarBuild(shortNames); err != nil {
+		return nil, nil, err
+	}
 	uri.RawQuery = values.Encode()
 
 	p := &Pool{
-		uri:   *uri,
-		ext:   extension,
-		l:     l,
-		sp:    sp,
-		dbs:   map[string]*fsql.DB{},
-		token: resource.NewToken(),
+		uri:        *uri,
+		ext:        extension,
+		shortNames: shortNames,
+		l:          l,
+		sp:         sp,
+		dbs:        map[string]*fsql.DB{},
+		token:      resource.NewToken(),
 	}
 
 	resource.Track(p, p.token)
@@ -171,8 +178,16 @@ func (p *Pool) checkAlternateFiles(name string) error {
 		alternate = defaultFilenameExtension
 	}
 	base := filepath.Join(p.uri.Path, name)
-	for _, suffix := range []string{alternate, alternate + "-wal", alternate + "-shm", alternate + "-journal",
-		".wal", ".shm", ".nal"} {
+	suffixes := []string{alternate, alternate + "-wal", alternate + "-shm", alternate + "-journal"}
+	if p.shortNames {
+		if !shortDatabaseName(name) {
+			return fmt.Errorf("SQLite database name %q is not an 8.3 filename stem", name)
+		}
+		suffixes = append(suffixes, ".db-wal", ".db-shm", ".db-journal")
+	} else {
+		suffixes = append(suffixes, ".wal", ".shm", ".nal")
+	}
+	for _, suffix := range suffixes {
 		_, err := os.Lstat(base + suffix)
 		if err == nil {
 			return fmt.Errorf("conflicting SQLite database path %q", base+suffix)
@@ -182,6 +197,18 @@ func (p *Pool) checkAlternateFiles(name string) error {
 		}
 	}
 	return nil
+}
+
+func shortDatabaseName(name string) bool {
+	if len(name) == 0 || len(name) > 8 {
+		return false
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' && r != '-' {
+			return false
+		}
+	}
+	return true
 }
 
 // Close closes all databases in the pool and frees all resources.

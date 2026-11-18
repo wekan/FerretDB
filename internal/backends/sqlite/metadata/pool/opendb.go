@@ -17,6 +17,7 @@ package pool
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"os"
 	"runtime"
@@ -29,6 +30,40 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/sqlguard"
 	"github.com/FerretDB/FerretDB/internal/util/state"
 )
+
+// checkShortSidecarBuild checks the library before opening any disk files.
+func checkShortSidecarBuild(requested bool) error {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	defer db.Close()
+	rows, err := db.Query("PRAGMA compile_options")
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	defer rows.Close()
+	forced := false
+	for rows.Next() {
+		var option string
+		if err := rows.Scan(&option); err != nil {
+			return lazyerrors.Error(err)
+		}
+		if option == "ENABLE_8_3_NAMES=2" {
+			forced = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return lazyerrors.Error(err)
+	}
+	if requested && !forced {
+		return fmt.Errorf("shortnames=1 requires SQLite built with SQLITE_ENABLE_8_3_NAMES=2")
+	}
+	if forced && !requested {
+		return fmt.Errorf("SQLite forces short sidecars; set dbext=db and shortnames=1")
+	}
+	return nil
+}
 
 // openDB opens existing database or creates a new one.
 //
