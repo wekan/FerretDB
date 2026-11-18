@@ -24,6 +24,12 @@
 - Build an optional CGo SQLite driver for strict sidecars. Keep the
   usual SQLite pragmas and duplicate-ID errors on the strict driver.
   by @xet7. Thanks to xet7.
+- Take the SQLite database connection under the registry lock when listing
+  and renaming collections. A concurrent database drop closed it in between,
+  and `serverStatus` failed with "sql: database is closed". by @xet7.
+  Thanks to xet7.
+- Let the vet stage of `build.sh` list packages while the integration build
+  writes its work directory under `tmp/go`. by @xet7. Thanks to xet7.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 

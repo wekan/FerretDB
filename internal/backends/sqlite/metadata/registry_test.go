@@ -888,3 +888,67 @@ func TestIndexesCreateDrop(t *testing.T) {
 		require.Equal(t, 1, len(collection.Settings.Indexes))
 	})
 }
+
+// CollectionList and DatabaseDrop racing, as integration's
+// TestCommandsAdministrationServerStatusStress does through serverStatus: a
+// list must never query a connection the drop has closed.
+func TestCollectionListDropStress(t *testing.T) {
+	ctx := testutil.Ctx(t)
+
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	var i atomic.Int32
+
+	teststress.StressN(t, 40, func(ready chan<- struct{}, start <-chan struct{}) {
+		n := i.Add(1)
+		dbName := fmt.Sprintf("db_%03d", n)
+
+		ready <- struct{}{}
+		<-start
+
+		for round := 0; round < 20; round++ {
+			_, err := r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: "c"})
+			require.NoError(t, err)
+
+			for _, name := range r.DatabaseList(ctx) {
+				_, err = r.CollectionList(ctx, name)
+				require.NoError(t, err, "CollectionList(%s)", name)
+
+				_, err = r.CollectionRename(ctx, name, "absent", "renamed")
+				require.NoError(t, err, "CollectionRename(%s)", name)
+			}
+
+			r.DatabaseDrop(ctx, dbName)
+		}
+	})
+}
+
+// Negative, by the shape: no Registry method that takes the lock may fetch the
+// database connection before it, where a concurrent DatabaseDrop can close it.
+func TestRegistryTakesConnectionUnderLock(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile("registry.go")
+	require.NoError(t, err)
+
+	funcs := strings.Split(string(src), "\nfunc ")
+	for _, f := range funcs[1:] {
+		name := f[:strings.Index(f, "(ctx")+1]
+		if end := strings.Index(f, "\n}\n"); end > 0 {
+			f = f[:end]
+		}
+
+		lock := strings.Index(f, "r.rw.Lock()")
+		get := strings.Index(f, "r.DatabaseGetExisting(")
+		if lock < 0 || get < 0 {
+			continue
+		}
+
+		require.Less(t, lock, get, "%s fetches the connection before taking the lock", name)
+	}
+}

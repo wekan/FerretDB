@@ -598,10 +598,15 @@ act_lint() {
   # "directory tmp/gopath/... outside main module" - neither of which is about
   # FerretDB. tmp/ is gitignored scratch, so it is filtered out of the package
   # list rather than vetted.
+  # go list runs with -e: the integration stage builds at the same time, and a
+  # go-build work directory it is writing under tmp/go is a half-written
+  # package. Without -e, go list stopped on it ("C source files not allowed")
+  # before the filter below could drop it; with -e it is listed, then dropped,
+  # and a real error in a FerretDB package still fails the go vet that follows.
   info "go vet -composites=false ./... ..."
   vet_module() {
     local packages
-    packages="$(go list ./...)" || return 1
+    packages="$(go list -e ./... 2>/dev/null)" || return 1
     packages="$(printf '%s\n' "$packages" | grep -v "/tmp/")"
     [ -n "$packages" ] || { err "No packages found for vet."; return 1; }
     # Package import paths cannot contain shell whitespace or glob characters.

@@ -456,13 +456,17 @@ func (r *Registry) databaseDrop(ctx context.Context, dbName string) bool {
 //
 // If database does not exist, no error is returned.
 func (r *Registry) CollectionList(ctx context.Context, dbName string) ([]*Collection, error) {
+	// The connection is taken while holding the lock: DatabaseDrop closes it
+	// under the same lock, so one fetched before would be closed underneath
+	// discoverCollections ("sql: database is closed").
+	r.rw.Lock()
+	defer r.rw.Unlock()
+
 	db := r.DatabaseGetExisting(ctx, dbName)
 	if db == nil {
 		return nil, nil
 	}
 
-	r.rw.Lock()
-	defer r.rw.Unlock()
 	if err := r.discoverCollections(ctx, dbName, db, ""); err != nil {
 		return nil, err
 	}
@@ -740,13 +744,14 @@ func (r *Registry) collectionDrop(ctx context.Context, dbName, collectionName st
 // Returned boolean value indicates whether the collection was renamed.
 // If database or collection did not exist, (false, nil) is returned.
 func (r *Registry) CollectionRename(ctx context.Context, dbName, oldCollectionName, newCollectionName string) (bool, error) {
+	// As CollectionList: the connection is taken while holding the lock.
+	r.rw.Lock()
+	defer r.rw.Unlock()
+
 	db := r.DatabaseGetExisting(ctx, dbName)
 	if db == nil {
 		return false, nil
 	}
-
-	r.rw.Lock()
-	defer r.rw.Unlock()
 
 	c, err := r.lookupCollection(ctx, dbName, oldCollectionName)
 	if err != nil {
