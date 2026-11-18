@@ -32,6 +32,57 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil/teststress"
 )
 
+func TestDiscoverCommittedCollections(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	r, err := NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	dbName := testutil.DatabaseName(t)
+	db, err := r.DatabaseGetOrCreate(ctx, dbName)
+	require.NoError(t, err)
+	require.Nil(t, r.CollectionGet(ctx, dbName, "external_lookup"))
+
+	register := func(name string) {
+		t.Helper()
+		physical := name + "_table"
+		_, err = db.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %q (%s BLOB NOT NULL) STRICT", physical, DefaultColumn))
+		require.NoError(t, err)
+		_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (name, table_name, settings) VALUES (?, ?, ?)", metadataTableName),
+			name, physical, `{"storage":"jsonb"}`)
+		require.NoError(t, err)
+	}
+	register("external_lookup")
+	lookup := r.CollectionGet(ctx, dbName, "external_lookup")
+	require.NotNil(t, lookup)
+	require.Equal(t, "external_lookup_table", lookup.TableName)
+	require.True(t, lookup.JSONB())
+	lookup.TableName = "changed"
+	require.Equal(t, "external_lookup_table", r.CollectionGet(ctx, dbName, "external_lookup").TableName)
+
+	register("external_list")
+	register("external_create")
+	created, err := r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: "external_create"})
+	require.NoError(t, err)
+	require.False(t, created)
+	register("external_list_late")
+	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (name, table_name, settings) VALUES (?, ?, ?)", metadataTableName),
+		"missing_table", "absent", "{}")
+	require.NoError(t, err)
+	require.Nil(t, r.CollectionGet(ctx, dbName, "missing_table"))
+
+	colls, err := r.CollectionList(ctx, dbName)
+	require.NoError(t, err)
+	require.Len(t, colls, 4)
+	require.Equal(t, "external_create", colls[0].Name)
+	require.Equal(t, "external_list", colls[1].Name)
+	require.Equal(t, "external_list_late", colls[2].Name)
+	require.Equal(t, "external_lookup", colls[3].Name)
+}
+
 func TestIndexUpgradeProgressFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "progress", "index-migration.json")
 	t.Setenv("FERRETDB_INDEX_MIGRATION_STATUS_FILE", path)

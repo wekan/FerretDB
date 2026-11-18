@@ -147,6 +147,44 @@ func (r *Registry) initCollections(ctx context.Context, dbName string, db *fsql.
 	return nil
 }
 
+// discoverCollections adds newly committed registrations from an external
+// SQLite connection. Existing cached metadata continues to be owned by the
+// registry. The caller holds the write lock.
+func (r *Registry) discoverCollections(ctx context.Context, dbName string, db *fsql.DB, name string) error {
+	query := fmt.Sprintf(`SELECT m.name, m.table_name, m.settings FROM %q m
+		JOIN sqlite_schema s ON s.type = 'table' AND s.name = m.table_name`, metadataTableName)
+	var args []any
+	if name != "" {
+		query += " WHERE m.name = ?"
+		args = append(args, name)
+	}
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	defer rows.Close()
+	discovered := map[string]*Collection{}
+	for rows.Next() {
+		c := new(Collection)
+		if err = rows.Scan(&c.Name, &c.TableName, &c.Settings); err != nil {
+			return lazyerrors.Error(err)
+		}
+		discovered[c.Name] = c
+	}
+	if err = rows.Err(); err != nil {
+		return lazyerrors.Error(err)
+	}
+	if r.colls[dbName] == nil {
+		r.colls[dbName] = map[string]*Collection{}
+	}
+	for name, c := range discovered {
+		if r.colls[dbName][name] == nil {
+			r.colls[dbName][name] = c
+		}
+	}
+	return nil
+}
+
 type indexUpgradeProgress struct {
 	Phase      string    `json:"phase"`
 	Database   string    `json:"database,omitempty"`
@@ -399,14 +437,16 @@ func (r *Registry) CollectionList(ctx context.Context, dbName string) ([]*Collec
 		return nil, nil
 	}
 
-	r.rw.RLock()
+	r.rw.Lock()
+	defer r.rw.Unlock()
+	if err := r.discoverCollections(ctx, dbName, db, ""); err != nil {
+		return nil, err
+	}
 
 	res := make([]*Collection, 0, len(r.colls[dbName]))
 	for _, c := range r.colls[dbName] {
 		res = append(res, c.deepCopy())
 	}
-
-	r.rw.RUnlock()
 
 	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
 	return res, nil
@@ -453,8 +493,14 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 		return false, lazyerrors.Error(err)
 	}
 
+	if r.colls[dbName][collectionName] != nil {
+		return false, nil
+	}
+	if err = r.discoverCollections(ctx, dbName, db, ""); err != nil {
+		return false, err
+	}
 	colls := r.colls[dbName]
-	if colls != nil && colls[collectionName] != nil {
+	if colls[collectionName] != nil {
 		return false, nil
 	}
 
@@ -512,7 +558,12 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 
 	q = fmt.Sprintf("INSERT INTO %q (name, table_name, settings) VALUES (?, ?, ?)", metadataTableName)
 	if _, err = db.ExecContext(ctx, q, collectionName, tableName, "{}"); err != nil {
-		_, _ = db.ExecContext(ctx, fmt.Sprintf("DROP TABLE %q", tableName))
+		// The conflicting registration may have committed after discovery.
+		// Never drop a physical table that another connection may now own.
+		if discoverErr := r.discoverCollections(ctx, dbName, db, collectionName); discoverErr == nil &&
+			r.colls[dbName][collectionName] != nil {
+			return false, nil
+		}
 		return false, lazyerrors.Error(err)
 	}
 
@@ -568,8 +619,25 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 // If database or collection does not exist, nil is returned.
 func (r *Registry) CollectionGet(ctx context.Context, dbName, collectionName string) *Collection {
 	r.rw.RLock()
-	defer r.rw.RUnlock()
+	c := r.collectionGet(dbName, collectionName)
+	r.rw.RUnlock()
+	if c != nil {
+		return c
+	}
 
+	r.rw.Lock()
+	defer r.rw.Unlock()
+	if c = r.collectionGet(dbName, collectionName); c != nil {
+		return c
+	}
+	db := r.DatabaseGetExisting(ctx, dbName)
+	if db == nil {
+		return nil
+	}
+	if err := r.discoverCollections(ctx, dbName, db, collectionName); err != nil {
+		r.l.DebugContext(ctx, "Failed to discover collection registration", slog.Any("error", err))
+		return nil
+	}
 	return r.collectionGet(dbName, collectionName)
 }
 
