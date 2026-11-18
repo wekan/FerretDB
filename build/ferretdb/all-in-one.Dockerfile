@@ -108,7 +108,7 @@ EOF
 
 # final stage
 
-FROM postgres:18.6 AS all-in-one
+FROM postgres:18.7 AS all-in-one
 
 COPY --from=all-in-one-build /src/bin/ferretdb /ferretdb
 
