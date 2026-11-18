@@ -16,18 +16,15 @@ package sqlite
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"strings"
 	"time"
 
-	sqlite3 "modernc.org/sqlite"
-	sqlite3lib "modernc.org/sqlite/lib"
-
 	"github.com/FerretDB/FerretDB/internal/backends"
 	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata"
+	"github.com/FerretDB/FerretDB/internal/backends/sqlite/metadata/pool"
 	"github.com/FerretDB/FerretDB/internal/handler/sjson"
 	"github.com/FerretDB/FerretDB/internal/types"
 	"github.com/FerretDB/FerretDB/internal/util/fsql"
@@ -240,8 +237,7 @@ func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllPa
 			}
 
 			if _, err = tx.ExecContext(ctx, q, args...); err != nil {
-				var se *sqlite3.Error
-				if errors.As(err, &se) && se.Code() == sqlite3lib.SQLITE_CONSTRAINT_UNIQUE {
+				if pool.IsUniqueConstraint(err) {
 					return backends.NewError(backends.ErrorCodeInsertDuplicateID, err)
 				}
 

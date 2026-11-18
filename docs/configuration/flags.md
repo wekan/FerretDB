@@ -82,6 +82,18 @@ Additionally:
 | `--sqlite-url` | SQLite URI (directory) for 'sqlite' handler | `FERRETDB_SQLITE_URL` | `file:data/` `.`<br />(`file:/state/` for Docker) |
 
 FerretDB uses [modernc.org/sqlite](https://gitlab.com/cznic/sqlite) library for accessing SQLite database files.
+
+For an 8.3 shared SQLite file, build the optional CGo driver:
+
+```sh
+CGO_ENABLED=1 CGO_CFLAGS="-O2 -DSQLITE_ENABLE_8_3_NAMES=2" \
+  go build -tags ferretdb_sqlite_short,sqlite_dbstat ./cmd/ferretdb
+```
+
+Use a directory URI such as `file:/data/?dbext=db&shortnames=1`. All clients
+must use the same short WAL, SHM and journal naming policy. The binary still
+uses the default driver for ordinary SQLite URIs.
+
 Supported URL parameters are documented there:
 
 - https://www.sqlite.org/uri.html

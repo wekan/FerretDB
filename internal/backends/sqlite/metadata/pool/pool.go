@@ -121,7 +121,7 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 
 		p.l.Debug("Opening existing database", slog.String("name", name), slog.String("uri", uri))
 
-		db, err := openDB(name, uri, p.memory(), true, l, p.sp)
+		db, err := openDB(name, uri, p.memory(), true, p.shortNames, l, p.sp)
 		if err != nil {
 			p.Close()
 			return nil, nil, lazyerrors.Error(err)
@@ -273,7 +273,7 @@ func (p *Pool) Discover(ctx context.Context, name string, registered func(*fsql.
 	query := uri.Query()
 	query.Set("mode", "rw")
 	uri.RawQuery = query.Encode()
-	db, err := openDB(name, uri.String(), false, false, p.l, p.sp)
+	db, err := openDB(name, uri.String(), false, false, p.shortNames, p.l, p.sp)
 	if err != nil {
 		p.l.DebugContext(ctx, "Failed to open external database", logging.Error(err))
 		return nil
@@ -335,7 +335,7 @@ func (p *Pool) GetOrCreate(ctx context.Context, name string, initialize func(*fs
 	}
 
 	uri := p.databaseURI(name)
-	db, err := openDB(name, uri, p.memory(), false, p.l, p.sp)
+	db, err := openDB(name, uri, p.memory(), false, p.shortNames, p.l, p.sp)
 	if err != nil {
 		return nil, false, lazyerrors.Errorf("%s: %w", uri, err)
 	}

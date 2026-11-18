@@ -21,6 +21,9 @@
 - Add an explicit short-sidecar mode. Require `dbext=db` and a SQLite
   build with `SQLITE_ENABLE_8_3_NAMES=2` before opening files, and refuse
   incompatible sidecars and database names. by @xet7. Thanks to xet7.
+- Build an optional CGo SQLite driver for strict sidecars. Keep the
+  usual SQLite pragmas and duplicate-ID errors on the strict driver.
+  by @xet7. Thanks to xet7.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 
