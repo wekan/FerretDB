@@ -9,6 +9,9 @@
 - Discover committed external SQLite collection registrations on lookup,
   listing and creation. Preserve a physical table when another connection
   wins a registration race. by @xet7. Thanks to xet7.
+- Return SQLite registry lookup failures to collection operations and
+  distinguish them from missing collections. Retrying after metadata repair
+  discovers the collection. by @xet7. Thanks to xet7.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 

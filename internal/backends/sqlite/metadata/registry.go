@@ -613,32 +613,34 @@ func (r *Registry) collectionCreate(ctx context.Context, params *CollectionCreat
 	return true, nil
 }
 
-// CollectionGet returns a copy of collection metadata.
-// It can be safely modified by a caller.
-//
-// If database or collection does not exist, nil is returned.
-func (r *Registry) CollectionGet(ctx context.Context, dbName, collectionName string) *Collection {
+// CollectionGet returns a copy of collection metadata, or nil for an absent
+// database or collection. Discovery errors are returned separately.
+func (r *Registry) CollectionGet(ctx context.Context, dbName, collectionName string) (*Collection, error) {
 	r.rw.RLock()
 	c := r.collectionGet(dbName, collectionName)
 	r.rw.RUnlock()
 	if c != nil {
-		return c
+		return c, nil
 	}
 
 	r.rw.Lock()
 	defer r.rw.Unlock()
-	if c = r.collectionGet(dbName, collectionName); c != nil {
-		return c
+	return r.lookupCollection(ctx, dbName, collectionName)
+}
+
+// lookupCollection may add a registration to the cache. The caller holds the write lock.
+func (r *Registry) lookupCollection(ctx context.Context, dbName, collectionName string) (*Collection, error) {
+	if c := r.collectionGet(dbName, collectionName); c != nil {
+		return c, nil
 	}
 	db := r.DatabaseGetExisting(ctx, dbName)
 	if db == nil {
-		return nil
+		return nil, nil
 	}
 	if err := r.discoverCollections(ctx, dbName, db, collectionName); err != nil {
-		r.l.DebugContext(ctx, "Failed to discover collection registration", slog.Any("error", err))
-		return nil
+		return nil, err
 	}
-	return r.collectionGet(dbName, collectionName)
+	return r.collectionGet(dbName, collectionName), nil
 }
 
 // collectionGet returns a copy of collection metadata.
@@ -679,7 +681,10 @@ func (r *Registry) collectionDrop(ctx context.Context, dbName, collectionName st
 		return false, nil
 	}
 
-	c := r.collectionGet(dbName, collectionName)
+	c, err := r.lookupCollection(ctx, dbName, collectionName)
+	if err != nil {
+		return false, err
+	}
 	if c == nil {
 		return false, nil
 	}
@@ -719,7 +724,10 @@ func (r *Registry) CollectionRename(ctx context.Context, dbName, oldCollectionNa
 	r.rw.Lock()
 	defer r.rw.Unlock()
 
-	c := r.collectionGet(dbName, oldCollectionName)
+	c, err := r.lookupCollection(ctx, dbName, oldCollectionName)
+	if err != nil {
+		return false, err
+	}
 	if c == nil {
 		return false, nil
 	}
@@ -836,7 +844,10 @@ func (r *Registry) IndexesDrop(ctx context.Context, dbName, collectionName strin
 //
 // It does not hold the lock.
 func (r *Registry) indexesDrop(ctx context.Context, dbName, collectionName string, indexNames []string) error {
-	c := r.collectionGet(dbName, collectionName)
+	c, err := r.lookupCollection(ctx, dbName, collectionName)
+	if err != nil {
+		return err
+	}
 	if c == nil {
 		return nil
 	}

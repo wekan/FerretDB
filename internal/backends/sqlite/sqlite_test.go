@@ -45,7 +45,8 @@ func TestCollectionsStats(t *testing.T) {
 	for i, cName := range cNames {
 		_, err = r.CollectionCreate(ctx, &metadata.CollectionCreateParams{DBName: dbName, Name: cName})
 		require.NoError(t, err)
-		colls[i] = r.CollectionGet(ctx, dbName, cName)
+		colls[i], err = r.CollectionGet(ctx, dbName, cName)
+		require.NoError(t, err)
 	}
 
 	t.Run("RefreshTwoTables", func(t *testing.T) {

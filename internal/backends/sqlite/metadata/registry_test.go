@@ -32,6 +32,13 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil/teststress"
 )
 
+func mustCollectionGet(t *testing.T, ctx context.Context, r *Registry, dbName, collectionName string) *Collection {
+	t.Helper()
+	c, err := r.CollectionGet(ctx, dbName, collectionName)
+	require.NoError(t, err)
+	return c
+}
+
 func TestDiscoverCommittedCollections(t *testing.T) {
 	t.Parallel()
 	ctx := testutil.Ctx(t)
@@ -44,7 +51,7 @@ func TestDiscoverCommittedCollections(t *testing.T) {
 	dbName := testutil.DatabaseName(t)
 	db, err := r.DatabaseGetOrCreate(ctx, dbName)
 	require.NoError(t, err)
-	require.Nil(t, r.CollectionGet(ctx, dbName, "external_lookup"))
+	require.Nil(t, mustCollectionGet(t, ctx, r, dbName, "external_lookup"))
 
 	register := func(name string) {
 		t.Helper()
@@ -56,12 +63,12 @@ func TestDiscoverCommittedCollections(t *testing.T) {
 		require.NoError(t, err)
 	}
 	register("external_lookup")
-	lookup := r.CollectionGet(ctx, dbName, "external_lookup")
+	lookup := mustCollectionGet(t, ctx, r, dbName, "external_lookup")
 	require.NotNil(t, lookup)
 	require.Equal(t, "external_lookup_table", lookup.TableName)
 	require.True(t, lookup.JSONB())
 	lookup.TableName = "changed"
-	require.Equal(t, "external_lookup_table", r.CollectionGet(ctx, dbName, "external_lookup").TableName)
+	require.Equal(t, "external_lookup_table", mustCollectionGet(t, ctx, r, dbName, "external_lookup").TableName)
 
 	register("external_list")
 	register("external_create")
@@ -72,7 +79,7 @@ func TestDiscoverCommittedCollections(t *testing.T) {
 	_, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %q (name, table_name, settings) VALUES (?, ?, ?)", metadataTableName),
 		"missing_table", "absent", "{}")
 	require.NoError(t, err)
-	require.Nil(t, r.CollectionGet(ctx, dbName, "missing_table"))
+	require.Nil(t, mustCollectionGet(t, ctx, r, dbName, "missing_table"))
 
 	colls, err := r.CollectionList(ctx, dbName)
 	require.NoError(t, err)
@@ -111,7 +118,7 @@ func TestIndexUpgradeProgressFile(t *testing.T) {
 func testCollection(t *testing.T, ctx context.Context, r *Registry, db *fsql.DB, dbName, collectionName string) {
 	t.Helper()
 
-	c := r.CollectionGet(ctx, dbName, collectionName)
+	c := mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.Nil(t, c)
 
 	created, err := r.CollectionCreate(ctx, &CollectionCreateParams{DBName: dbName, Name: collectionName})
@@ -122,7 +129,7 @@ func testCollection(t *testing.T, ctx context.Context, r *Registry, db *fsql.DB,
 	require.NoError(t, err)
 	require.False(t, created)
 
-	c = r.CollectionGet(ctx, dbName, collectionName)
+	c = mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.NotNil(t, c)
 	require.Equal(t, collectionName, c.Name)
 
@@ -143,7 +150,7 @@ func testCollection(t *testing.T, ctx context.Context, r *Registry, db *fsql.DB,
 	require.NoError(t, err)
 	require.False(t, dropped)
 
-	c = r.CollectionGet(ctx, dbName, collectionName)
+	c = mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.Nil(t, c)
 }
 
@@ -204,7 +211,7 @@ func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, created)
 
-	c := r.CollectionGet(ctx, dbName, collectionName)
+	c := mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.NotNil(t, c)
 	tableName := c.TableName
 
@@ -217,7 +224,7 @@ func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	delete(r.colls[dbName], collectionName)
 	r.rw.Unlock()
 
-	require.Nil(t, r.CollectionGet(ctx, dbName, collectionName), "collection must look absent after orphaning")
+	require.Nil(t, mustCollectionGet(t, ctx, r, dbName, collectionName), "collection must look absent after orphaning")
 
 	// Re-creating it (as an upsert's CreateCollection does) must SUCCEED by
 	// adopting the orphaned table, not error with "table already exists".
@@ -225,7 +232,7 @@ func TestCollectionCreateAdoptsOrphanTable(t *testing.T) {
 	require.NoError(t, err, "collectionCreate must adopt an orphaned physical table, not fail on it")
 	require.True(t, created)
 
-	c = r.CollectionGet(ctx, dbName, collectionName)
+	c = mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.NotNil(t, c, "collection must be registered again")
 	require.Equal(t, tableName, c.TableName, "must re-adopt the SAME deterministic table")
 
@@ -259,7 +266,7 @@ func TestOplogTsIndexUsedForTailRange(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, created)
 
-	c := r.CollectionGet(ctx, "local", "oplog.rs")
+	c := mustCollectionGet(t, ctx, r, "local", "oplog.rs")
 	require.NotNil(t, c)
 	tableName := c.TableName
 	indexName := tableName + "_ts"
@@ -329,7 +336,7 @@ func TestInWithNullUsesIndex(t *testing.T) {
 		Key:  []IndexKeyPair{{Field: "boardId"}},
 	}}))
 
-	c := r.CollectionGet(ctx, dbName, collectionName)
+	c := mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.NotNil(t, c)
 	tableName := c.TableName
 
@@ -389,7 +396,7 @@ func TestDottedPathEqualityUsesIndex(t *testing.T) {
 		Key:  []IndexKeyPair{{Field: "meta.cardId"}},
 	}}))
 
-	c := r.CollectionGet(ctx, dbName, collectionName)
+	c := mustCollectionGet(t, ctx, r, dbName, collectionName)
 	require.NotNil(t, c)
 	tableName := c.TableName
 
@@ -517,7 +524,7 @@ func TestCreateSameStress(t *testing.T) {
 				require.NoError(t, err)
 				require.False(t, created)
 
-				c := r.CollectionGet(ctx, dbName, collectionName)
+				c := mustCollectionGet(t, ctx, r, dbName, collectionName)
 				require.NotNil(t, c)
 				require.Equal(t, collectionName, c.Name)
 
@@ -706,7 +713,7 @@ func TestIndexesCreateDrop(t *testing.T) {
 	err = r.IndexesCreate(ctx, dbName, collectionName, toCreate)
 	require.NoError(t, err)
 
-	collection := r.CollectionGet(ctx, dbName, collectionName)
+	collection := mustCollectionGet(t, ctx, r, dbName, collectionName)
 
 	t.Run("CoveringDistinctIndex", func(t *testing.T) {
 		indexName := collection.TableName + "_covering_index"
@@ -817,7 +824,7 @@ func TestIndexesCreateDrop(t *testing.T) {
 		err = r.initCollections(ctx, dbName, db)
 		require.NoError(t, err)
 
-		collection = r.CollectionGet(ctx, dbName, collectionName)
+		collection = mustCollectionGet(t, ctx, r, dbName, collectionName)
 		require.Equal(t, 5, len(collection.Settings.Indexes))
 	})
 
@@ -838,7 +845,7 @@ func TestIndexesCreateDrop(t *testing.T) {
 		err = r.initCollections(ctx, dbName, db)
 		require.NoError(t, err)
 
-		collection = r.CollectionGet(ctx, dbName, collectionName)
+		collection = mustCollectionGet(t, ctx, r, dbName, collectionName)
 		require.Equal(t, 1, len(collection.Settings.Indexes))
 	})
 }

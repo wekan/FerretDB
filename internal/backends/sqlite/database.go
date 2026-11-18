@@ -121,14 +121,22 @@ func (db *database) DropCollection(ctx context.Context, params *backends.DropCol
 
 // RenameCollection implements backends.Database interface.
 func (db *database) RenameCollection(ctx context.Context, params *backends.RenameCollectionParams) error {
-	if c := db.r.CollectionGet(ctx, db.name, params.OldName); c == nil {
+	c, err := db.r.CollectionGet(ctx, db.name, params.OldName)
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	if c == nil {
 		return backends.NewError(
 			backends.ErrorCodeCollectionDoesNotExist,
 			lazyerrors.Errorf("old database %q or collection %q does not exist", db.name, params.OldName),
 		)
 	}
 
-	if c := db.r.CollectionGet(ctx, db.name, params.NewName); c != nil {
+	c, err = db.r.CollectionGet(ctx, db.name, params.NewName)
+	if err != nil {
+		return lazyerrors.Error(err)
+	}
+	if c != nil {
 		return backends.NewError(
 			backends.ErrorCodeCollectionAlreadyExists,
 			lazyerrors.Errorf("new database %q and collection %q already exists", db.name, params.NewName),

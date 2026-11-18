@@ -31,6 +31,45 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil"
 )
 
+func TestCollectionDiscoveryErrors(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	r, err := metadata.NewRegistry(testutil.TestSQLiteURI(t, ""), 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+	dbName := testutil.DatabaseName(t)
+	db, err := r.DatabaseGetOrCreate(ctx, dbName)
+	require.NoError(t, err)
+	c := newCollection(r, dbName, "external")
+	result, err := c.CountAll(ctx, &backends.CountAllParams{})
+	require.NoError(t, err)
+	require.Zero(t, result.Count)
+
+	_, err = db.ExecContext(ctx, "CREATE TABLE external_table (_ferretdb_sjson BLOB NOT NULL) STRICT")
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "INSERT INTO _ferretdb_collections (name, table_name, settings) VALUES (?, ?, ?)",
+		"external", "external_table", "{invalid")
+	require.NoError(t, err)
+
+	_, err = c.Query(ctx, &backends.QueryParams{})
+	require.Error(t, err)
+	_, err = c.CountAll(ctx, &backends.CountAllParams{})
+	require.Error(t, err)
+	_, err = c.InsertAll(ctx, &backends.InsertAllParams{})
+	require.Error(t, err)
+	dropped, err := r.CollectionDrop(ctx, dbName, "external")
+	require.Error(t, err)
+	require.False(t, dropped)
+
+	_, err = db.ExecContext(ctx, "UPDATE _ferretdb_collections SET settings = ? WHERE name = ?", `{"storage":"jsonb"}`, "external")
+	require.NoError(t, err)
+	result, err = c.CountAll(ctx, &backends.CountAllParams{})
+	require.NoError(t, err)
+	require.Zero(t, result.Count)
+}
+
 func TestCappedCollectionInsertAllQueryExplain(t *testing.T) {
 	// remove this test
 	// TODO https://github.com/FerretDB/FerretDB/issues/3181
@@ -202,8 +241,9 @@ func TestQueryNumericTypeNorRangePushdown(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"nan", "string", "array"}, ids,
 		"non-finite numbers and safe string/array supersets remain; finite scalars and missing fields are pruned")
-	indexName, _ := preferredNumericRangeIndex(r.CollectionGet(ctx, dbName, collectionName).TableName,
-		r.CollectionGet(ctx, dbName, collectionName).Settings.Indexes, filter)
+	collectionMetadata, err := r.CollectionGet(ctx, dbName, collectionName)
+	require.NoError(t, err)
+	indexName, _ := preferredNumericRangeIndex(collectionMetadata.TableName, collectionMetadata.Settings.Indexes, filter)
 	var physicalIndex string
 	require.NoError(t, sqlDB.QueryRowContext(ctx,
 		"SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?", indexName).Scan(&physicalIndex))

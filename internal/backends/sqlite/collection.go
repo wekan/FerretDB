@@ -60,7 +60,10 @@ func (c *collection) Query(ctx context.Context, params *backends.QueryParams) (*
 		}, nil
 	}
 
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if meta == nil {
 		return &backends.QueryResult{
 			Iter: newQueryIterator(ctx, nil, params.OnlyRecordIDs),
@@ -200,16 +203,25 @@ func (c *collection) InsertAll(ctx context.Context, params *backends.InsertAllPa
 	// tokens, ...) stalled all concurrent readers' RLocks — a steady stream of
 	// small Meteor writes kept every polling query futex-waiting. CollectionCreate
 	// is idempotent, so two racing first inserts are still safe.
-	if c.r.CollectionGet(ctx, c.dbName, c.name) == nil {
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
+	if meta == nil {
 		if _, err := c.r.CollectionCreate(ctx, &metadata.CollectionCreateParams{DBName: c.dbName, Name: c.name}); err != nil {
 			return nil, lazyerrors.Error(err)
 		}
+		meta, err = c.r.CollectionGet(ctx, c.dbName, c.name)
+		if err != nil {
+			return nil, lazyerrors.Error(err)
+		}
+	}
+	db := c.r.DatabaseGetExisting(ctx, c.dbName)
+	if db == nil || meta == nil {
+		return nil, backends.NewError(backends.ErrorCodeCollectionDoesNotExist, nil)
 	}
 
-	db := c.r.DatabaseGetExisting(ctx, c.dbName)
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
-
-	err := db.InTransaction(ctx, func(tx *fsql.Tx) error {
+	err = db.InTransaction(ctx, func(tx *fsql.Tx) error {
 		batchSize := c.r.BatchSize
 		if batchSize < 1 {
 			panic("batch-size should be greater or equal to 1")
@@ -254,7 +266,10 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 		return &res, nil
 	}
 
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if meta == nil {
 		return &res, nil
 	}
@@ -266,7 +281,7 @@ func (c *collection) UpdateAll(ctx context.Context, params *backends.UpdateAllPa
 
 	q := fmt.Sprintf(`UPDATE %q SET %s = %s WHERE %s = ?`, meta.TableName, metadata.DefaultColumn, value, metadata.IDColumn)
 
-	err := db.InTransaction(ctx, func(tx *fsql.Tx) error {
+	err = db.InTransaction(ctx, func(tx *fsql.Tx) error {
 		for _, doc := range params.Docs {
 			b, err := sjson.Marshal(doc)
 			if err != nil {
@@ -307,7 +322,10 @@ func (c *collection) DeleteAll(ctx context.Context, params *backends.DeleteAllPa
 		return &backends.DeleteAllResult{Deleted: 0}, nil
 	}
 
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if meta == nil {
 		return &backends.DeleteAllResult{Deleted: 0}, nil
 	}
@@ -366,7 +384,10 @@ func (c *collection) Explain(ctx context.Context, params *backends.ExplainParams
 		}, nil
 	}
 
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if meta == nil {
 		return &backends.ExplainResult{
 			QueryPlanner: must.NotFail(types.NewDocument()),
@@ -454,7 +475,10 @@ func (c *collection) Stats(ctx context.Context, params *backends.CollectionStats
 		)
 	}
 
-	coll := c.r.CollectionGet(ctx, c.dbName, c.name)
+	coll, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if coll == nil {
 		return nil, backends.NewError(
 			backends.ErrorCodeCollectionDoesNotExist,
@@ -537,7 +561,10 @@ func (c *collection) CountAll(ctx context.Context, params *backends.CountAllPara
 		return new(backends.CountAllResult), nil
 	}
 
-	meta := c.r.CollectionGet(ctx, c.dbName, c.name)
+	meta, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if meta == nil {
 		return new(backends.CountAllResult), nil
 	}
@@ -560,7 +587,10 @@ func (c *collection) Compact(ctx context.Context, params *backends.CompactParams
 		)
 	}
 
-	coll := c.r.CollectionGet(ctx, c.dbName, c.name)
+	coll, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if coll == nil {
 		return nil, backends.NewError(
 			backends.ErrorCodeCollectionDoesNotExist,
@@ -590,7 +620,10 @@ func (c *collection) ListIndexes(ctx context.Context, params *backends.ListIndex
 		)
 	}
 
-	coll := c.r.CollectionGet(ctx, c.dbName, c.name)
+	coll, err := c.r.CollectionGet(ctx, c.dbName, c.name)
+	if err != nil {
+		return nil, lazyerrors.Error(err)
+	}
 	if coll == nil {
 		return nil, backends.NewError(
 			backends.ErrorCodeCollectionDoesNotExist,
