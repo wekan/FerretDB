@@ -100,7 +100,7 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 
 		p.l.Debug("Opening existing database", slog.String("name", name), slog.String("uri", uri))
 
-		db, err := openDB(name, uri, p.memory(), l, p.sp)
+		db, err := openDB(name, uri, p.memory(), true, l, p.sp)
 		if err != nil {
 			p.Close()
 			return nil, nil, lazyerrors.Error(err)
@@ -179,10 +179,65 @@ func (p *Pool) GetExisting(ctx context.Context, name string) *fsql.DB {
 	return p.dbs[name]
 }
 
+// Discover opens a database file committed by another process. The callback
+// must verify registration before the connection is published to the pool.
+func (p *Pool) Discover(ctx context.Context, name string, registered func(*fsql.DB) bool) *fsql.DB {
+	if p.memory() || name == "" || filepath.Base(name) != name {
+		return nil
+	}
+	info, err := os.Lstat(p.databaseFile(name))
+	if err != nil || !info.Mode().IsRegular() {
+		return nil
+	}
+
+	p.rw.Lock()
+	defer p.rw.Unlock()
+	if db := p.dbs[name]; db != nil {
+		return db
+	}
+
+	uri, err := url.Parse(p.databaseURI(name))
+	if err != nil {
+		return nil
+	}
+	query := uri.Query()
+	query.Set("mode", "rw")
+	uri.RawQuery = query.Encode()
+	db, err := openDB(name, uri.String(), false, false, p.l, p.sp)
+	if err != nil {
+		p.l.DebugContext(ctx, "Failed to open external database", logging.Error(err))
+		return nil
+	}
+	if !registered(db) {
+		_ = db.Close()
+		return nil
+	}
+	p.dbs[name] = db
+	return db
+}
+
+// FileNames returns candidate database names that may have appeared since startup.
+func (p *Pool) FileNames() []string {
+	if p.memory() {
+		return nil
+	}
+	entries, err := os.ReadDir(p.uri.Path)
+	if err != nil {
+		return nil
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), filenameExtension) {
+			names = append(names, p.databaseName(entry.Name()))
+		}
+	}
+	return names
+}
+
 // GetOrCreate returns an existing database by valid name, or creates a new one.
 //
 // Returned boolean value indicates whether the database was created.
-func (p *Pool) GetOrCreate(ctx context.Context, name string) (*fsql.DB, bool, error) {
+func (p *Pool) GetOrCreate(ctx context.Context, name string, initialize func(*fsql.DB) error) (*fsql.DB, bool, error) {
 	db := p.GetExisting(ctx, name)
 	if db != nil {
 		return db, false, nil
@@ -196,10 +251,26 @@ func (p *Pool) GetOrCreate(ctx context.Context, name string) (*fsql.DB, bool, er
 		return db, false, nil
 	}
 
+	if file := p.databaseFile(name); file != "" {
+		info, err := os.Lstat(file)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, false, lazyerrors.Error(err)
+		}
+		if err == nil && !info.Mode().IsRegular() {
+			return nil, false, fmt.Errorf("SQLite database path %q is not a regular file", file)
+		}
+	}
+
 	uri := p.databaseURI(name)
-	db, err := openDB(name, uri, p.memory(), p.l, p.sp)
+	db, err := openDB(name, uri, p.memory(), false, p.l, p.sp)
 	if err != nil {
 		return nil, false, lazyerrors.Errorf("%s: %w", uri, err)
+	}
+	if initialize != nil {
+		if err = initialize(db); err != nil {
+			_ = db.Close()
+			return nil, false, lazyerrors.Error(err)
+		}
 	}
 
 	p.l.DebugContext(ctx, "Database created", slog.String("name", name), slog.String("uri", uri))

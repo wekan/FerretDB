@@ -16,6 +16,7 @@ package metadata
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -37,6 +38,44 @@ func mustCollectionGet(t *testing.T, ctx context.Context, r *Registry, dbName, c
 	c, err := r.CollectionGet(ctx, dbName, collectionName)
 	require.NoError(t, err)
 	return c
+}
+
+func TestDiscoverCommittedDatabaseFiles(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	uri := testutil.TestSQLiteURI(t, "")
+	r, err := NewRegistry(uri, 100, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	t.Cleanup(r.Close)
+
+	require.Nil(t, r.DatabaseGetExisting(ctx, "external"))
+	require.Empty(t, r.DatabaseList(ctx))
+	openExternal := func(name string) *sql.DB {
+		t.Helper()
+		db, err := sql.Open("sqlite", filepath.Join(strings.TrimPrefix(uri, "file:"), name+".sqlite"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, db.Close()) })
+		return db
+	}
+	external := openExternal("external")
+	_, err = external.ExecContext(ctx, "CREATE TABLE outside_table (id INTEGER)")
+	require.NoError(t, err)
+	require.Nil(t, r.DatabaseGetExisting(ctx, "external"))
+	require.Empty(t, r.DatabaseList(ctx))
+	_, err = r.DatabaseGetOrCreate(ctx, "external")
+	require.ErrorContains(t, err, "not a registered database")
+	var count int
+	require.NoError(t, external.QueryRowContext(ctx, "SELECT count(*) FROM outside_table").Scan(&count))
+
+	_, err = external.ExecContext(ctx, fmt.Sprintf("CREATE TABLE %q (name TEXT, table_name TEXT, settings TEXT)", metadataTableName))
+	require.NoError(t, err)
+	require.Equal(t, []string{"external"}, r.DatabaseList(ctx))
+	require.NotNil(t, r.DatabaseGetExisting(ctx, "external"))
+	_, err = r.DatabaseGetOrCreate(ctx, "external")
+	require.NoError(t, err)
+	require.NoError(t, external.QueryRowContext(ctx, "SELECT count(*) FROM outside_table").Scan(&count))
 }
 
 func TestDiscoverCommittedCollections(t *testing.T) {

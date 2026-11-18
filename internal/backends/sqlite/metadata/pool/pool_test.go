@@ -47,12 +47,12 @@ func TestCreateDrop(t *testing.T) {
 	db := p.GetExisting(ctx, dbName)
 	require.Nil(t, db)
 
-	db, created, err := p.GetOrCreate(ctx, dbName)
+	db, created, err := p.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	require.NotNil(t, db)
 	require.True(t, created)
 
-	db2, created, err := p.GetOrCreate(ctx, dbName)
+	db2, created, err := p.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	require.Same(t, db, db2)
 	require.False(t, created)
@@ -122,12 +122,12 @@ func TestCreateDropStress(t *testing.T) {
 				db := p.GetExisting(ctx, dbName)
 				require.Nil(t, db)
 
-				db, created, err := p.GetOrCreate(ctx, dbName)
+				db, created, err := p.GetOrCreate(ctx, dbName, nil)
 				require.NoError(t, err)
 				require.NotNil(t, db)
 				require.True(t, created)
 
-				db2, created, err := p.GetOrCreate(ctx, dbName)
+				db2, created, err := p.GetOrCreate(ctx, dbName, nil)
 				require.NoError(t, err)
 				require.Same(t, db, db2)
 				require.False(t, created)
@@ -171,7 +171,7 @@ func TestMemory(t *testing.T) {
 	assert.Empty(t, dbs)
 	t.Cleanup(p0.Close)
 
-	_, created, err := p0.GetOrCreate(ctx, dbName)
+	_, created, err := p0.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	assert.True(t, created)
 
@@ -180,14 +180,14 @@ func TestMemory(t *testing.T) {
 	assert.Empty(t, dbs, "dir content should be ignored for mode=memory")
 	t.Cleanup(p1.Close)
 
-	db1, created, err := p1.GetOrCreate(ctx, dbName)
+	db1, created, err := p1.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	assert.True(t, created)
 
 	_, err = db1.ExecContext(ctx, "CREATE TABLE test (id INT) STRICT")
 	require.NoError(t, err)
 
-	db2, created, err := p1.GetOrCreate(ctx, dbName)
+	db2, created, err := p1.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	assert.False(t, created, "the same database should be returned for the same name")
 	assert.Same(t, db1, db2)
@@ -197,7 +197,7 @@ func TestMemory(t *testing.T) {
 	require.ErrorAs(t, err, &se)
 	assert.Equal(t, sqlite3lib.SQLITE_ERROR, se.Code())
 
-	db2, created, err = p1.GetOrCreate(ctx, testutil.DatabaseName(t)+"2")
+	db2, created, err = p1.GetOrCreate(ctx, testutil.DatabaseName(t)+"2", nil)
 	require.NoError(t, err)
 	assert.True(t, created, "different database should be returned for different name")
 	assert.NotSame(t, db1, db2)
@@ -210,7 +210,7 @@ func TestMemory(t *testing.T) {
 	assert.Empty(t, dbs)
 	t.Cleanup(p2.Close)
 
-	db2, created, err = p2.GetOrCreate(ctx, dbName)
+	db2, created, err = p2.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 	assert.True(t, created, "different database should be returned for the same name, but different pool")
 	assert.NotSame(t, db1, db2)
@@ -232,7 +232,7 @@ func TestDefaults(t *testing.T) {
 
 	dbName := testutil.DatabaseName(t)
 
-	db, _, err := p.GetOrCreate(ctx, dbName)
+	db, _, err := p.GetOrCreate(ctx, dbName, nil)
 	require.NoError(t, err)
 
 	rows, err := db.QueryContext(ctx, "PRAGMA compile_options")

@@ -362,12 +362,22 @@ func indexCreateSQL(table string, index IndexInfo) string {
 
 // DatabaseList returns a sorted list of existing databases.
 func (r *Registry) DatabaseList(ctx context.Context) []string {
+	for _, name := range r.p.FileNames() {
+		r.DatabaseGetExisting(ctx, name)
+	}
 	return r.p.List(ctx)
 }
 
 // DatabaseGetExisting returns a connection to existing database or nil if it doesn't exist.
 func (r *Registry) DatabaseGetExisting(ctx context.Context, dbName string) *fsql.DB {
-	return r.p.GetExisting(ctx, dbName)
+	if db := r.p.GetExisting(ctx, dbName); db != nil {
+		return db
+	}
+	return r.p.Discover(ctx, dbName, func(db *fsql.DB) bool {
+		var kind string
+		return db.QueryRowContext(ctx, "SELECT type FROM sqlite_schema WHERE name = ?", metadataTableName).Scan(&kind) == nil &&
+			kind == "table"
+	})
 }
 
 // DatabaseGetOrCreate returns a connection to existing database or newly created database.
@@ -382,15 +392,9 @@ func (r *Registry) DatabaseGetOrCreate(ctx context.Context, dbName string) (*fsq
 //
 // It does not hold the lock.
 func (r *Registry) databaseGetOrCreate(ctx context.Context, dbName string) (*fsql.DB, error) {
-	db, created, err := r.p.GetOrCreate(ctx, dbName)
-	if err != nil {
-		return nil, lazyerrors.Error(err)
-	}
-
-	if !created {
+	if db := r.DatabaseGetExisting(ctx, dbName); db != nil {
 		return db, nil
 	}
-
 	q := fmt.Sprintf(
 		"CREATE TABLE %q ("+
 			"name TEXT NOT NULL UNIQUE CHECK(name != ''), "+
@@ -399,8 +403,25 @@ func (r *Registry) databaseGetOrCreate(ctx context.Context, dbName string) (*fsq
 			") STRICT",
 		metadataTableName,
 	)
-	if _, err = db.ExecContext(ctx, q); err != nil {
-		r.databaseDrop(ctx, dbName)
+	db, _, err := r.p.GetOrCreate(ctx, dbName, func(db *fsql.DB) error {
+		return db.InTransaction(ctx, func(tx *fsql.Tx) error {
+			var registered, occupied bool
+			if queryErr := tx.QueryRowContext(ctx, `SELECT EXISTS (
+			SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?
+		), EXISTS (SELECT 1 FROM sqlite_schema)`, metadataTableName).Scan(&registered, &occupied); queryErr != nil {
+				return queryErr
+			}
+			if registered {
+				return nil
+			}
+			if occupied {
+				return fmt.Errorf("SQLite database %q is not a registered database", dbName)
+			}
+			_, createErr := tx.ExecContext(ctx, q)
+			return createErr
+		})
+	})
+	if err != nil {
 		return nil, lazyerrors.Error(err)
 	}
 
@@ -423,6 +444,9 @@ func (r *Registry) DatabaseDrop(ctx context.Context, dbName string) bool {
 //
 // It does not hold the lock.
 func (r *Registry) databaseDrop(ctx context.Context, dbName string) bool {
+	if r.DatabaseGetExisting(ctx, dbName) == nil {
+		return false
+	}
 	delete(r.colls, dbName)
 
 	return r.p.Drop(ctx, dbName)

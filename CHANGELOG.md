@@ -12,6 +12,9 @@
 - Return SQLite registry lookup failures to collection operations and
   distinguish them from missing collections. Retrying after metadata repair
   discovers the collection. by @xet7. Thanks to xet7.
+- Discover SQLite database files registered after startup on lookup
+  and listing. Refuse to initialize an occupied unregistered file and
+  preserve it on failure. by @xet7. Thanks to xet7.
 
 ## [v1.111.0](https://github.com/wekan/FerretDB/releases/tag/v1.111.0) (2026-11-16)
 

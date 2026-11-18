@@ -36,7 +36,7 @@ import (
 // so no validation is needed.
 // One exception is very long full path names for the filesystem,
 // but we don't check it.
-func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (*fsql.DB, error) {
+func openDB(name, uri string, memory, repair bool, l *slog.Logger, sp *state.Provider) (*fsql.DB, error) {
 	db, err := sql.Open("sqlite", uri)
 	if err != nil {
 		return nil, lazyerrors.Error(err)
@@ -49,7 +49,9 @@ func openDB(name, uri string, memory bool, l *slog.Logger, sp *state.Provider) (
 		return nil, lazyerrors.Error(err)
 	}
 
-	checkAndRepairSQLite(db, name, memory, l)
+	if repair {
+		checkAndRepairSQLite(db, name, memory, l)
+	}
 
 	// do it only once because version can't change
 	if sp.Get().BackendVersion == "" {
