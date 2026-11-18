@@ -17,6 +17,8 @@ package pool
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -29,6 +31,54 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/testutil"
 	"github.com/FerretDB/FerretDB/internal/util/testutil/teststress"
 )
+
+func TestDatabaseExtension(t *testing.T) {
+	t.Parallel()
+	ctx := testutil.Ctx(t)
+	sp, err := state.NewProvider("")
+	require.NoError(t, err)
+	uri := testutil.TestSQLiteURI(t, "")
+	dir := strings.TrimPrefix(uri, "file:")
+	_, _, err = New(uri+"?dbext=other", testutil.Logger(t), sp)
+	require.ErrorContains(t, err, "dbext must be db or sqlite")
+
+	p, dbs, err := New(uri+"?dbext=db", testutil.Logger(t), sp)
+	require.NoError(t, err)
+	require.Empty(t, dbs)
+	defer p.Close()
+
+	db, created, err := p.GetOrCreate(ctx, "shared", nil)
+	require.NoError(t, err)
+	require.True(t, created)
+	_, err = db.ExecContext(ctx, "CREATE TABLE retained (id INTEGER)")
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(dir, "shared.db"))
+	require.NoFileExists(t, filepath.Join(dir, "shared.sqlite"))
+
+	other, _, err := New(uri, testutil.Logger(t), sp)
+	require.NoError(t, err)
+	defer other.Close()
+	_, _, err = other.GetOrCreate(ctx, "shared", nil)
+	require.ErrorContains(t, err, "conflicting SQLite database path")
+	require.NoFileExists(t, filepath.Join(dir, "shared.sqlite"))
+
+	reopened, existing, err := New(uri+"?dbext=db", testutil.Logger(t), sp)
+	require.NoError(t, err)
+	defer reopened.Close()
+	require.Contains(t, existing, "shared")
+	var count int
+	require.NoError(t, existing["shared"].QueryRowContext(ctx, "SELECT count(*) FROM retained").Scan(&count))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "ambiguous.sqlite-wal"), nil, 0o600))
+	_, _, err = p.GetOrCreate(ctx, "ambiguous", nil)
+	require.ErrorContains(t, err, "conflicting SQLite database path")
+	require.NoFileExists(t, filepath.Join(dir, "ambiguous.db"))
+
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "shortnames.wal"), nil, 0o600))
+	_, _, err = p.GetOrCreate(ctx, "shortnames", nil)
+	require.ErrorContains(t, err, "conflicting SQLite database path")
+	require.NoFileExists(t, filepath.Join(dir, "shortnames.db"))
+}
 
 func TestCreateDrop(t *testing.T) {
 	t.Parallel()

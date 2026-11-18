@@ -39,8 +39,8 @@ import (
 	"github.com/FerretDB/FerretDB/internal/util/state"
 )
 
-// filenameExtension represents SQLite database filename extension.
-const filenameExtension = ".sqlite"
+// defaultFilenameExtension is the historical SQLite database extension.
+const defaultFilenameExtension = ".sqlite"
 
 // Parts of Prometheus metric names.
 const (
@@ -53,6 +53,7 @@ const (
 //nolint:vet // for readability
 type Pool struct {
 	uri url.URL
+	ext string
 	l   *slog.Logger
 	sp  *state.Provider
 
@@ -74,8 +75,17 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 		return nil, nil, fmt.Errorf("failed to parse SQLite URI %q: %s", u, err)
 	}
 
+	extension := defaultFilenameExtension
+	values := uri.Query()
+	if values.Get("dbext") == "db" {
+		extension = ".db"
+	}
+	values.Del("dbext")
+	uri.RawQuery = values.Encode()
+
 	p := &Pool{
 		uri:   *uri,
+		ext:   extension,
 		l:     l,
 		sp:    sp,
 		dbs:   map[string]*fsql.DB{},
@@ -88,7 +98,7 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 		return p, p.dbs, nil
 	}
 
-	matches, err := filepath.Glob(filepath.Join(uri.Path, "*"+filenameExtension))
+	matches, err := filepath.Glob(filepath.Join(uri.Path, "*"+p.ext))
 	if err != nil {
 		p.Close()
 		return nil, nil, lazyerrors.Error(err)
@@ -96,6 +106,10 @@ func New(u string, l *slog.Logger, sp *state.Provider) (*Pool, map[string]*fsql.
 
 	for _, f := range matches {
 		name := p.databaseName(f)
+		if err := p.checkAlternateFiles(name); err != nil {
+			p.Close()
+			return nil, nil, err
+		}
 		uri := p.databaseURI(name)
 
 		p.l.Debug("Opening existing database", slog.String("name", name), slog.String("uri", uri))
@@ -123,14 +137,14 @@ func (p *Pool) databaseName(databaseFile string) string {
 		panic("should not be called for in-memory database")
 	}
 
-	return strings.TrimSuffix(filepath.Base(databaseFile), filenameExtension)
+	return strings.TrimSuffix(filepath.Base(databaseFile), p.ext)
 }
 
 // databaseURI returns SQLite URI for the given database name,
 // even for in-memory database.
 func (p *Pool) databaseURI(databaseName string) string {
 	dbURI := p.uri
-	dbURI.Path = path.Join(dbURI.Path, databaseName+filenameExtension)
+	dbURI.Path = path.Join(dbURI.Path, databaseName+p.ext)
 	dbURI.Opaque = dbURI.Path
 
 	return dbURI.String()
@@ -143,7 +157,31 @@ func (p *Pool) databaseFile(databaseName string) string {
 		return ""
 	}
 
-	return filepath.Join(p.uri.Path, databaseName+filenameExtension)
+	return filepath.Join(p.uri.Path, databaseName+p.ext)
+}
+
+// checkAlternateFiles prevents two extension modes from opening different
+// databases for the same name, including recovery files left by either mode.
+func (p *Pool) checkAlternateFiles(name string) error {
+	if p.memory() {
+		return nil
+	}
+	alternate := ".db"
+	if p.ext == alternate {
+		alternate = defaultFilenameExtension
+	}
+	base := filepath.Join(p.uri.Path, name)
+	for _, suffix := range []string{alternate, alternate + "-wal", alternate + "-shm", alternate + "-journal",
+		".wal", ".shm", ".nal"} {
+		_, err := os.Lstat(base + suffix)
+		if err == nil {
+			return fmt.Errorf("conflicting SQLite database path %q", base+suffix)
+		}
+		if !os.IsNotExist(err) {
+			return lazyerrors.Error(err)
+		}
+	}
+	return nil
 }
 
 // Close closes all databases in the pool and frees all resources.
@@ -196,6 +234,11 @@ func (p *Pool) Discover(ctx context.Context, name string, registered func(*fsql.
 		return db
 	}
 
+	if err := p.checkAlternateFiles(name); err != nil {
+		p.l.DebugContext(ctx, "Skipped conflicting database path", logging.Error(err))
+		return nil
+	}
+
 	uri, err := url.Parse(p.databaseURI(name))
 	if err != nil {
 		return nil
@@ -227,7 +270,7 @@ func (p *Pool) FileNames() []string {
 	}
 	var names []string
 	for _, entry := range entries {
-		if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), filenameExtension) {
+		if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), p.ext) {
 			names = append(names, p.databaseName(entry.Name()))
 		}
 	}
@@ -251,6 +294,9 @@ func (p *Pool) GetOrCreate(ctx context.Context, name string, initialize func(*fs
 		return db, false, nil
 	}
 
+	if err := p.checkAlternateFiles(name); err != nil {
+		return nil, false, err
+	}
 	if file := p.databaseFile(name); file != "" {
 		info, err := os.Lstat(file)
 		if err != nil && !os.IsNotExist(err) {

@@ -55,6 +55,10 @@ func parseURI(u string) (*url.URL, error) {
 
 	values := uri.Query()
 
+	if extension := values.Get("dbext"); extension != "" && extension != "db" && extension != "sqlite" {
+		return nil, fmt.Errorf("dbext must be db or sqlite")
+	}
+
 	// it is deprecated and interacts weirdly with database/sql.Pool
 	if values.Get("cache") == "shared" {
 		return nil, fmt.Errorf(`shared cache is not supported`)
