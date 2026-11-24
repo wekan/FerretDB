@@ -14,9 +14,12 @@ grep -q 'sha256sum -c.*mongosh-' "$workflow"
 grep -q 'mongosh-${m}.tgz' "$dockerfile"
 grep -q 'arm/v7).*m=armv7' "$dockerfile"
 grep -q 'ENV PATH=/opt/mongosh:' "$dockerfile"
-grep -q 'FROM debian:trixie-slim AS final' "$dockerfile"
+# The runtime is distroless (tests/docker-runtime.py pins the stages); the
+# target-CPU stage still installs what the packaged Node.js needs to run.
+grep -q 'FROM runtime-${TARGETARCH} AS final' "$dockerfile"
 grep -q 'ca-certificates libstdc++6 libatomic1' "$dockerfile"
-grep -q '/opt/mongosh/mongosh --version' "$dockerfile"
+grep -q 'RUN \["/opt/mongosh/mongosh", "--version"\]' "$dockerfile"
+grep -q 'COPY --from=launcher /launcher /opt/mongosh/mongosh' "$dockerfile"
 # The target runtimes are emulated through binfmt, registered from the image
 # the job pulls through build/ferretdb/pull-image.sh (Docker Hub with retries,
 # then its mirrors) - what docker/setup-qemu-action did, without its single

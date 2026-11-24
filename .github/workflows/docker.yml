@@ -12,9 +12,11 @@ run-name: Docker ${{ inputs.version || github.event.release.tag_name }}
 # A release made before the SQLite-only build has no ferretdb-sqlite-<arch>
 # assets; then only the ferretdb image is published. Because the
 # binaries are already built, buildx just repackages the right one per target
-# into a runtime image. QEMU installs target runtime libraries and smoke-tests
-# the packaged commands. Only platforms supported by the Debian runtime and
-# having both FerretDB and mongosh assets are included (see release-platforms.sh).
+# into a distroless runtime image (gcr.io/distroless/cc-debian13: no shell, no
+# package manager). QEMU runs the target-CPU stage that collects runtime
+# libraries, and the exec-form smoke tests of the packaged commands. Only
+# platforms with a runtime base and both FerretDB and mongosh assets are
+# included (see release-platforms.sh and tests/docker-runtime.py).
 #
 # Registry credentials are the SAME base64("username:token") secrets as wekan/wekan:
 #   DOCKERHUB_AUTH   Docker Hub
@@ -58,6 +60,7 @@ jobs:
           TMPDIR="$PWD/.tools/tmp" bash tests/release-version.sh
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/docker-publish.py
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/pull-image.py
+          TMPDIR="$PWD/.tools/tmp" python3 -B tests/docker-runtime.py
           TMPDIR="$PWD/.tools/tmp" bash tests/official-ppc64le-node.sh
 
       # Every image this job starts from comes from Docker Hub, and the v1.89.0
@@ -91,9 +94,10 @@ jobs:
         run: docker run --privileged --rm tonistiigi/binfmt:latest --install arm,arm64,ppc64le,s390x,riscv64
 
       # The builder runs the BuildKit image pulled above (buildx uses a local
-      # image as it is). Its own pulls - the FROM images of Dockerfile.release -
-      # go to mirror.gcr.io first and to Docker Hub when the mirror does not
-      # have them.
+      # image as it is). Its own Docker Hub pulls - the busybox, golang and
+      # debian FROM images of Dockerfile.release - go to mirror.gcr.io first and
+      # to Docker Hub when the mirror does not have them; the distroless runtime
+      # comes from gcr.io itself.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:

@@ -51,6 +51,7 @@ GO_PINS = [
     ('go.mod', r'^go (\d+\.\d+(?:\.\d+)?)$'),
     ('integration/go.mod', r'^go (\d+\.\d+(?:\.\d+)?)$'),
     ('Dockerfile', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
+    ('Dockerfile.release', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
     ('build/ferretdb/*.Dockerfile', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
     ('build.sh', r'^GO_VERSION="(\d+\.\d+(?:\.\d+)?)"'),
     ('.github/workflows/release-all*.yml', r"GO_VERSION: '(\d+\.\d+(?:\.\d+)?)'"),
