@@ -2,6 +2,22 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Distroless Docker images**
+  ([967f34415](https://github.com/wekan/FerretDB/commit/967f34415bb706eb95d12a4687dce080d9c63f54)): the `ferretdb` and
+  `ferretdb-sqlite` images were `debian:trixie-slim`, and image scanners listed
+  255 vulnerabilities in packages FerretDB does not use (util-linux, login,
+  tar, coreutils, systemd libraries, sqlite and glibc). The runtime is now
+  `gcr.io/distroless/cc-debian13`: glibc, libstdc++, CA certificates and tzdata,
+  and no shell or package manager. 386, which distroless does not publish, gets
+  the same packages from Debian in a `scratch` image. A static launcher replaces
+  mongosh's shell script. The `ferretdb` user (uid and gid 1000) still owns
+  `/state`. `tests/docker-runtime.py` checks the stages and the platforms. by
+  @xet7. Thanks to xet7.
+
 ## [v1.112.0](https://github.com/wekan/FerretDB/releases/tag/v1.112.0) (2026-11-18)
 
 ### Fixed 🐛
