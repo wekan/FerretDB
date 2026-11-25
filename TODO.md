@@ -7,32 +7,23 @@ with what it needs and why it is not done. When an item is done, it moves to
 Checked on 2026-11-25: licenses from each driver's repository, upkeep from its
 newest push, and the platforms each test image publishes from its registry.
 
-## Licenses: compatible, and what copyfree means here
+## Licenses: permissive, no GPL
 
-Every license here can be combined and shipped together: MIT, BSD, ISC,
-Apache-2.0 and MPL-2.0 code goes into one binary, each part under its own
-license (Apache's license text and NOTICE kept, MPL's only for changes to its
-own files). FerretDB itself is Apache-2.0, as is the SAP HANA driver
-`github.com/SAP/go-hdb`, and WeKan, MIT, depends on a hundred Apache-2.0 npm
-packages (the AWS SDK among them). So a license is never what rules a driver
-out below.
-
-[Copyfree](https://copyfree.org/standard/licenses) is a stricter label for a
-license itself, not about combining: it certifies MIT, the BSD licenses, ISC,
-the PostgreSQL License, Blue Oak 1.0.0 and BSD+Patent, and
-[rejects](https://copyfree.org/standard/rejected) Apache-2.0 (section 4:
-notices required in modified files) and MPL. It has not certified Apache in
-any archived version of its list (2014, 2016, 2019). Where two drivers do the
-same, the copyfree one is preferred.
+Permissive licenses - MIT, BSD, ISC, Apache-2.0 and the like - are used, and
+can be combined and shipped together in one binary, each part under its own
+license (Apache's license text and NOTICE kept). MPL-2.0 is fine as well: its
+conditions cover only changes to its own files. GPL, AGPL and the like are not
+used: GPL code would turn the license of the whole program into GPL. FerretDB
+itself is Apache-2.0, as is the SAP HANA driver `github.com/SAP/go-hdb`.
 
 - The MySQL driver stays `github.com/go-sql-driver/mysql` (MPL-2.0). The MIT
   `github.com/go-mysql-org/go-mysql` (maintained, pushed 2026-11-24) was looked
-  at and not adopted, for what it costs rather than its license: its `driver`
-  package brings in `pingcap/log`, `pingcap/tidb/pkg/parser` and
-  `coreos/go-semver` (Apache-2.0), TiDB's SQL parser makes an otherwise empty
-  program 7 MB, and the DSN and error handling of the mysql backend would be
-  rewritten. One small dependency would become four and a bigger binary.
-  Revisit if its driver stops depending on them.
+  at and not adopted, for what it costs: its `driver` package brings in
+  `pingcap/log`, `pingcap/tidb/pkg/parser` and `coreos/go-semver`, TiDB's SQL
+  parser makes an otherwise empty program 7 MB, and the DSN and error
+  handling of the mysql backend would be rewritten. One small dependency
+  would become four and a bigger binary. Revisit if its driver stops
+  depending on them.
 
 ## Need a machine with Docker to run the tests
 
