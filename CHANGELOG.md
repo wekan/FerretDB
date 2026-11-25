@@ -26,6 +26,15 @@
   refuse every program that is not `/ferretdb`, and still refuse Node.js, a C
   library and a C++ runtime. by @xet7. Thanks to xet7.
 
+### Fixed 🐛
+
+- **gorilla/websocket past GO-2026-6278**
+  ([51b4b1cb0](https://github.com/wekan/FerretDB/commit/51b4b1cb0c37480561e70ada7f6509670c0f8fe5)): the Quay security
+  scanner found v1.5.3, with a weak PRNG for the WebSocket mask key, through
+  statsviz in the debug handler; the fix is only on gorilla/websocket's main
+  branch, so both modules require its newest commit, and
+  `tests/dependency-floors.py` keeps it there. by @xet7. Thanks to xet7.
+
 ## [v1.115.0](https://github.com/wekan/FerretDB/releases/tag/v1.115.0) (2026-11-25)
 
 ### Fixed 🐛
