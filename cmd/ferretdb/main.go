@@ -60,6 +60,18 @@ var cli struct {
 		Path string `arg:"" required:"" help:"SQLite database file to check read-only." type:"path"`
 	} `cmd:"" name:"check-sqlite" help:"Run SQLite PRAGMA quick_check and exit."`
 
+	// The multicall tools (see multicall.go). They are normally selected
+	// before the flags are parsed; these entries list them in --help.
+	Mongosh struct {
+		Args []string `arg:"" optional:"" passthrough:"" help:"mongosh arguments."`
+	} `cmd:"" passthrough:"" help:"Run the built-in MongoDB-compatible shell (also as argv[0] mongosh)."`
+	Sh struct {
+		Args []string `arg:"" optional:"" passthrough:"" help:"Shell arguments."`
+	} `cmd:"" passthrough:"" help:"Run the built-in command shell (also as argv[0] sh or bash)."`
+	Bash struct {
+		Args []string `arg:"" optional:"" passthrough:"" help:"Shell arguments."`
+	} `cmd:"" passthrough:"" hidden:"" help:"Same as sh."`
+
 	Version     bool   `default:"false"           help:"Print version to stdout and exit." env:"-"`
 	Handler     string `default:"${default_handler}" help:"${help_handler}"`
 	Mode        string `default:"${default_mode}" help:"${help_mode}"                      enum:"${enum_mode}"`
@@ -227,8 +239,21 @@ var (
 )
 
 func main() {
+	if tool, args := selectTool(os.Args); tool != "" {
+		os.Exit(runTool(tool, args))
+	}
+
 	setCLIPlugins()
 	ctx := kong.Parse(&cli, kongOptions...)
+
+	switch cmd := ctx.Command(); {
+	case strings.HasPrefix(cmd, "mongosh"):
+		os.Exit(runTool("mongosh", cli.Mongosh.Args))
+	case strings.HasPrefix(cmd, "sh"):
+		os.Exit(runTool("sh", cli.Sh.Args))
+	case strings.HasPrefix(cmd, "bash"):
+		os.Exit(runTool("bash", cli.Bash.Args))
+	}
 
 	switch ctx.Command() {
 	case "run":
