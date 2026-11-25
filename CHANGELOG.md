@@ -2,6 +2,30 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### New Features 🎉
+
+- **ferretdb is also mongosh, sh and bash**
+  ([a87f3b232](https://github.com/wekan/FerretDB/commit/a87f3b232fd5659a9a45bf4bb1ecfe81c088543d)): the one static
+  binary picks what to be from the name it is started as, BusyBox-style, or
+  from its first argument (`ferretdb mongosh`, `ferretdb sh`). mongosh is the
+  goja JavaScript engine and the Go driver: `--eval`, script files, an
+  interactive prompt with history, the common `db`, collection and cursor
+  methods, `rs.status()`, `show`/`use` and mongosh's output; with no address
+  it connects to the server's own `FERRETDB_LISTEN_ADDR`. sh/bash is the
+  mvdan.cc/sh interpreter with ls, cat, cp, mv, rm, mkdir, df, du, ps, env, id,
+  date, grep, head, tail, wc and more built in; any other command is "not
+  available in this image" (exit 127). No Node.js and no C library; Node.js
+  modules (`require`) are not available. by @xet7. Thanks to xet7.
+- **`docker exec -it <container> mongosh`, `sh` and `bash` work again**
+  ([1ae1fc1d4](https://github.com/wekan/FerretDB/commit/1ae1fc1d481b60a429420aee0e4450e1ee80ca54)): in the
+  distroless image `/usr/bin/mongosh`, `/bin/sh` and `/bin/bash` are links to
+  `/ferretdb`; `--build-arg FERRETDB_SHELL=false` leaves the sh and bash links
+  out. `tests/docker-runtime.py` and `integration/docker_release_test.sh` now
+  refuse every program that is not `/ferretdb`, and still refuse Node.js, a C
+  library and a C++ runtime. by @xet7. Thanks to xet7.
+
 ## [v1.115.0](https://github.com/wekan/FerretDB/releases/tag/v1.115.0) (2026-11-25)
 
 ### Fixed 🐛
