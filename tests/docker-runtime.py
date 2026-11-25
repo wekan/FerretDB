@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-"""The published FerretDB image runs on a distroless base, with no shell.
+"""The published FerretDB image runs on distroless static, with no shell.
 
 The ghcr.io/wekan/ferretdb image was debian:trixie-slim, and image scanners
-listed 255 vulnerabilities in packages FerretDB never uses: util-linux, login,
-tar, coreutils, systemd libraries, sqlite, glibc. Dockerfile.release now ends in
-gcr.io/distroless/base-nossl-debian13 - glibc, CA certificates, tzdata and
-netbase only - with libgcc, libstdc++ and libatomic from Debian's packages for
-the packaged Node.js, and assembles the same set into scratch for 386, which
-distroless does not publish. It was cc-debian13, whose libssl3 nothing loads:
-its OpenSSL advisories were HIGH findings of an image that never used it. This
-pins:
+listed 255 vulnerabilities in packages FerretDB never uses. It then became
+distroless base-nossl-debian13 with libgcc, libstdc++ and libatomic for the
+Node.js of a bundled mongosh, and every one of Artifact Hub's 42 findings was
+in glibc and those C++ runtime libraries. The ferretdb binary is static and
+uses neither, so mongosh is gone and Dockerfile.release ends in
+gcr.io/distroless/static-debian13 - CA certificates, tzdata, netbase and media
+types only - and assembles the same set into scratch for 386, which distroless
+does not publish. This pins:
 
-  * every runtime-<arch> stage is distroless base-nossl-debian13, except 386,
+  * every runtime-<arch> stage is distroless static-debian13, except 386,
     which is scratch, and the final stage is FROM runtime-${TARGETARCH};
-  * no OpenSSL in the image: no libssl package added, no base that has it;
+  * no C library, no C++ runtime, no Node.js, no mongosh and no OpenSSL in the
+    image: none is added, and no base has them;
   * the final stage has no shell-form RUN, no package manager and no shell:
-    each smoke test is an exec-form RUN;
+    the smoke test is an exec-form RUN;
   * the runtime platforms are exactly what release-platforms.sh selects, and
     the distroless ones are exactly what distroless publishes;
-  * the image keeps uid/gid 1000 for /state, so existing volumes still work;
-  * mongosh's "#!/bin/sh" launcher is replaced by the static Go launcher.
+  * the image keeps uid/gid 1000 for /state, so existing volumes still work.
 
 Nothing here builds an image or touches the network.
 """
@@ -32,9 +32,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / 'Dockerfile.release'
-DISTROLESS = 'gcr.io/distroless/base-nossl-debian13:nonroot'
+DISTROLESS = 'gcr.io/distroless/static-debian13:nonroot'
 
-# The platforms gcr.io/distroless/base-nossl-debian13 publishes (its manifest list on
+# The platforms gcr.io/distroless/static-debian13 publishes (its manifest list on
 # 2026-11-25), as buildx TARGETARCH names. arm is arm/v7 only.
 DISTROLESS_ARCHES = {'amd64', 'arm64', 'arm', 'ppc64le', 's390x', 'riscv64'}
 # Assembled from debian:trixie-slim into scratch by Dockerfile.release.
@@ -76,8 +76,6 @@ def runtime_problems(text):
         problems.append(f'final stage is FROM {base}, not runtime-${{TARGETARCH}}')
     runtimes = {n[len('runtime-'):]: b for b, n, _ in all_stages if n and n.startswith('runtime-')}
     for arch, image in sorted(runtimes.items()):
-        if arch == 'libs':
-            continue
         want = 'scratch' if arch in ASSEMBLED_ARCHES else DISTROLESS
         if image != want:
             problems.append(f'runtime-{arch} is FROM {image}, not {want}')
@@ -99,7 +97,7 @@ def runtime_problems(text):
 
 def runtime_arches(text):
     return {n[len('runtime-'):] for _, n, _ in stages(text)
-            if n and n.startswith('runtime-') and n != 'runtime-libs'}
+            if n and n.startswith('runtime-')}
 
 
 class DistrolessRuntime(unittest.TestCase):
@@ -120,8 +118,6 @@ class DistrolessRuntime(unittest.TestCase):
             for arch in ('amd64', 'arm64', 'armhf', 'i386', 'ppc64le', 's390x', 'riscv64',
                          'armv6', 'armel', 'loong64'):
                 (Path(tmp) / f'ferretdb-{arch}').write_text('binary')
-                shell = 'armv7' if arch == 'armhf' else arch
-                (Path(tmp) / f'mongosh-{shell}.tgz').write_text('archive')
             out = subprocess.run(['bash', str(ROOT / 'build/ferretdb/release-platforms.sh'), tmp],
                                  capture_output=True, text=True, check=True).stdout.strip()
         platforms = out.split(',')
@@ -146,29 +142,28 @@ class DistrolessRuntime(unittest.TestCase):
             self.assertIn(line, self.final)
         self.assertNotIn('HEALTHCHECK', self.text, 'a HEALTHCHECK would need a shell or curl')
 
-    def test_mongosh_starts_without_a_shell(self):
-        self.assertIn('COPY --from=launcher /launcher /opt/mongosh/mongosh', self.final)
-        self.assertIn('RUN ["/opt/mongosh/mongosh", "--version"]', self.final)
-        self.assertIn('CGO_ENABLED=0', self.text)
-        launcher = (ROOT / 'build/ferretdb/launcher/main.go').read_text(encoding='utf-8')
-        self.assertIn('syscall.Exec', launcher)
-        self.assertNotIn('"os/exec"', launcher)
-        self.assertNotIn('/bin/sh"', launcher.split('package main', 1)[1])
+    def test_no_mongosh_node_or_c_runtime_in_the_image(self):
+        # The instructions, not the comments that say why these are gone.
+        code = '\n'.join(l for l in self.text.splitlines() if not l.lstrip().startswith('#'))
+        for word in ('mongosh', '/opt/', 'node', 'launcher', 'libc6', 'libstdc++', 'libgcc', 'libatomic',
+                     'ld-linux', 'gcc-14-base'):
+            self.assertNotIn(word, code, word)
+        self.assertEqual([l for l in self.final if l.upper().startswith('RUN')], ['RUN ["/ferretdb", "--version"]'])
+        self.assertIn('ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', self.final)
+        self.assertFalse((ROOT / 'build/ferretdb/launcher').exists())
+        self.assertFalse((ROOT / 'build/ferretdb/official-ppc64le-node.sh').exists())
 
-    def test_386_root_has_what_distroless_cc_has(self):
-        # Every other arch adds the C++ runtime to base-nossl the same way.
-        self.assertIn('*) \\\n        for p in gcc-14-base libgcc-s1 libstdc++6 libatomic1; do add_package "$p"; done ;;', self.text)
-        for package in ('libc6', 'libgcc-s1', 'libstdc++6', 'libatomic1', 'tzdata', 'netbase'):
+    def test_386_root_has_what_distroless_static_has(self):
+        for package in ('base-files', 'netbase', 'tzdata', 'tzdata-legacy', 'media-types', 'ca-certificates'):
             self.assertRegex(self.text, rf'for p in [^;]*\b{re.escape(package)}\b')
-        for needed in ('/etc/ssl/certs/ca-certificates.crt', '/etc/os-release',
-                       'mkdir -p -m 1777 /add/tmp', 'test -e /add/lib/ld-linux.so.2',
-                       '/add/var/lib/dpkg/status.d'):
+        for needed in ('/etc/ssl/certs/ca-certificates.crt', 'mkdir -p -m 1777 /add/tmp',
+                       '/add/var/lib/dpkg/status.d', 'COPY --from=static-root /add/ /'):
             self.assertIn(needed, self.text)
 
     def test_no_openssl_in_the_image(self):
         self.assertNotRegex(self.text, r'^FROM\s+\S*distroless/(cc|base)-debian', 'a distroless base with libssl3')
         self.assertNotRegex(self.text, r'add_package[^;\n]*\blibssl|for p in [^;]*\blibssl|install[^\n]*\blibssl')
-        self.assertNotRegex(self.text, r'(?m)^FROM\s+\S*distroless/(?!base-nossl-debian13:nonroot)')
+        self.assertNotRegex(self.text, r'(?m)^FROM\s+\S*distroless/(?!static-debian13:nonroot)')
 
     def test_negative_debian_or_shell_runtimes_are_refused(self):
         good = self.text
@@ -177,8 +172,10 @@ class DistrolessRuntime(unittest.TestCase):
             'shell RUN': good.replace('RUN ["/ferretdb", "--version"]', 'RUN /ferretdb --version'),
             'apt in final': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["apt-get", "update"]'),
             'sh in exec form': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["/bin/sh", "-c", "true"]'),
-            'other base': good.replace('FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-s390x',
+            'other base': good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-s390x',
                                        'FROM debian:trixie-slim AS runtime-s390x'),
+            'a base with a C library': good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-arm64',
+                                                    'FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-arm64'),
             '386 not scratch': good.replace('FROM scratch AS runtime-386', 'FROM debian:trixie-slim AS runtime-386'),
             'no user': good.replace('USER ferretdb:ferretdb', ''),
         }
@@ -186,7 +183,7 @@ class DistrolessRuntime(unittest.TestCase):
             with self.subTest(name):
                 self.assertNotEqual(text, good, 'the case changes the Dockerfile')
                 self.assertNotEqual(runtime_problems(text), [])
-        dropped = good.replace('FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-riscv64\n', '')
+        dropped = good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-riscv64\n', '')
         self.assertNotEqual(runtime_arches(dropped), DISTROLESS_ARCHES | ASSEMBLED_ARCHES)
 
 

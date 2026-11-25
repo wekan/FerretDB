@@ -1,5 +1,5 @@
 # Build context for Dockerfile.release: only the downloaded release binaries
-# (dist/ferretdb-<arch> and verified dist/mongosh-<arch>.tgz) plus identity files.
+# (dist/ferretdb-<arch> and dist/ferretdb-sqlite-<arch>) plus identity files.
 # Everything else (source tree, .git) is excluded. This is a per-Dockerfile ignore
 # file so it does not affect the source build's .dockerignore.
 **

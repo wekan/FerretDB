@@ -101,11 +101,12 @@ class Workflow(unittest.TestCase):
         pull = self.index('Pull the images the build starts from')
         qemu = self.index('Set up target runtime emulation')
         buildx = self.index('Set up Docker Buildx')
-        ppc = self.index('Prepare same-version official PowerPC Node runtime')
+        # The first step that pulls a base image: buildx building the image.
+        publish = self.index('Authenticate and publish to each registry independently')
         self.assertLess(login, pull)
         self.assertLess(pull, qemu)
         self.assertLess(qemu, buildx)
-        self.assertLess(buildx, ppc)
+        self.assertLess(buildx, publish)
         run = self.steps[pull]['run']
         self.assertIn('pull-image.sh tonistiigi/binfmt:latest', run)
         self.assertIn('pull-image.sh moby/buildkit:buildx-stable-1', run)
@@ -126,11 +127,6 @@ class Workflow(unittest.TestCase):
         self.assertIn('--password-stdin', run)
         self.assertIn('::warning::', run)
         self.assertNotIn('set -e', run)
-
-    def test_the_ppc64le_check_pulls_through_the_helper(self):
-        script = (ROOT / 'build/ferretdb/official-ppc64le-node.sh').read_text()
-        self.assertLess(script.index('pull-image.sh" debian:trixie-slim linux/ppc64le'),
-                        script.index('docker run --rm --platform linux/ppc64le'))
 
 
 if __name__ == '__main__':

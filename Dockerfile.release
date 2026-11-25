@@ -2,33 +2,30 @@
 
 # Builds the FerretDB images from the PREBUILT per-arch binaries attached to a
 # GitHub Release (downloaded into ./dist/ferretdb-<arch> and
-# ./dist/ferretdb-sqlite-<arch>) — no compiling. FERRETDB_ASSET picks which. Used by
+# ./dist/ferretdb-sqlite-<arch>) - no compiling. FERRETDB_ASSET picks which. Used by
 # .github/workflows/docker.yml. The pick stage runs on the native build platform
 # and just selects the binary matching the target platform, so buildx emits every
-# supported runtime architecture present in ./dist. The matching mongosh package is
-# assembled by wekan/mongosh-patches with the already-built node-patches runtime.
+# supported runtime architecture present in ./dist.
 #
 # See Dockerfile.release.dockerignore for the build context (the ./dist dir +
 # build/ferretdb passwd/group), and Dockerfile for the build-from-source variant
 # used by release-all.yml.
 #
-# The runtime is distroless: gcr.io/distroless/base-nossl-debian13 has glibc, CA
-# certificates, tzdata and netbase and nothing else - no shell, no package
-# manager, no coreutils, util-linux, login, tar, systemd or sqlite - and no
-# OpenSSL. The ferretdb binary is static (CGO_ENABLED=0, build.sh), and the
-# packaged Node.js that runs mongosh carries its own OpenSSL, so nothing here
-# loads libssl. It was cc-debian13, which is base-debian13 with libssl3: two
-# OpenSSL QUIC advisories (CVE-2026-107494, CVE-2026-124709, no Debian fix yet)
-# were HIGH findings in Artifact Hub's scan of an image that never used it.
-# Node.js is linked against libstdc++, libgcc_s and libatomic, which cc-debian13
-# carried; they are copied from Debian's packages in runtime-libs below. The tag is not pinned by digest, as no other base image here is: an
-# image built from a release takes the newest distroless rebuild, and with it
-# Debian's newest security updates, as `apt-get upgrade` did before.
+# The runtime is gcr.io/distroless/static-debian13: CA certificates, tzdata,
+# netbase and media types, and nothing else - no C library, no shell, no package
+# manager. The ferretdb binary is static (CGO_ENABLED=0, build.sh) and needs
+# nothing more. The image used to carry mongosh, with the Node.js it runs on,
+# and so glibc, libstdc++, libgcc_s and libatomic from Debian: every finding of
+# Artifact Hub's scan of the image (42 in v1.114.0, none with a Debian fix) was
+# in those, and nothing of FerretDB used them. A mongosh is run from anywhere
+# else, against the published port. The tag is not pinned by digest, as no other
+# base image here is: an image built from a release takes the newest distroless
+# rebuild, and with it Debian's newest security updates.
 #
 # Distroless publishes amd64, arm64, arm/v7, ppc64le, s390x and riscv64. For
-# 386, which it does not publish, runtime-386 is assembled from the same Debian
-# packages of debian:trixie-slim into scratch (see the runtime-libs stage), so
-# every platform of build/ferretdb/release-platforms.sh keeps its image.
+# 386, which it does not publish, runtime-386 is the same Debian packages, from
+# debian:trixie-slim, in scratch (the static-root stage), so every platform of
+# build/ferretdb/release-platforms.sh keeps its image.
 
 FROM --platform=$BUILDPLATFORM busybox AS pick
 ARG TARGETARCH
@@ -44,8 +41,8 @@ RUN set -eux; \
     case "${TARGETARCH}/${TARGETVARIANT}" in \
       amd64/*)   n=amd64 ;; \
       arm64/*)   n=arm64 ;; \
-      arm/v7)    n=armhf; m=armv7 ;; \
-      arm/v6)    n=armv6; m=armv6 ;; \
+      arm/v7)    n=armhf ;; \
+      arm/v6)    n=armv6 ;; \
       arm/v5)    n=armel ;; \
       arm/)      n=armhf ;; \
       386/*)     n=i386 ;; \
@@ -58,101 +55,45 @@ RUN set -eux; \
     case "${FERRETDB_ASSET}" in ferretdb|ferretdb-sqlite) ;; *) echo "unknown FERRETDB_ASSET ${FERRETDB_ASSET}" >&2; exit 1 ;; esac; \
     cp "/bins/${FERRETDB_ASSET}-${n}" /ferretdb; \
     chmod 0755 /ferretdb; \
-    m="${m:-$n}"; \
-    test -f "/bins/mongosh-${m}.tgz"; \
-    mkdir -p /mongosh; \
-    tar -xzf "/bins/mongosh-${m}.tgz" -C /mongosh --strip-components=1; \
-    test -x /mongosh/mongosh; \
-    if [ "$n" = ppc64le ]; then \
-      cp /bins/official-node-ppc64le /mongosh/bin/node.official; \
-      cp /bins/official-node-ppc64le.version /mongosh/bin/node.official.version; \
-      cp /bins/official-node-ppc64le.LICENSE /mongosh/LICENSE-node-official; \
-    fi; \
     mkdir -p /state; \
     chown 1000:1000 /state
 
-# mongosh's launcher is a "#!/bin/sh" script, and the runtime has no shell. A
-# static binary of build/ferretdb/launcher takes its place and execs bin/node
-# with the same program and arguments. Cross-compiled on the build platform.
-FROM --platform=$BUILDPLATFORM golang:1.27.4 AS launcher
-ARG TARGETARCH
-ARG TARGETVARIANT
-ENV GOTOOLCHAIN=local
-# GOTELEMETRY=off in the environment does not turn off the Go toolchain's own
-# telemetry - the mode file that `go telemetry off` writes does.
-RUN go telemetry off
-WORKDIR /src
-COPY build/ferretdb/launcher/main.go /src/main.go
-RUN CGO_ENABLED=0 GOOS=linux GOARCH="${TARGETARCH}" GOARM="${TARGETVARIANT#v}" GOAMD64=v1 \
-    go build -trimpath -ldflags "-s -w" -o /launcher main.go
-
-# Runs on the target CPU (QEMU in CI), with the Debian packages the packaged
-# Node.js needs, to check and select the PowerPC runtime, and to collect what the
-# runtime base does not have into /add:
-#   ppc64le: libatomic.so.1, which official PowerPC Node.js needs and distroless
-#            cc does not ship;
-#   386:     the whole runtime root - the same packages distroless cc is made
-#            of - since distroless has no 386 image.
-# Files are copied to their real directory (/lib is usr/lib in both), and each
-# added package's dpkg record goes to /add/var/lib/dpkg/status.d/<package>,
+# 386 only: the packages gcr.io/distroless/static-debian13 is made of, unpacked
+# into /add, each with its dpkg record in /add/var/lib/dpkg/status.d/<package>,
 # where distroless keeps its own, so an image scanner still sees every package.
-# `upgrade` takes the Debian security updates released since debian:trixie-slim
-# was last published.
-FROM debian:trixie-slim AS runtime-libs
-ARG TARGETARCH
+# Runs as the target (386 runs natively on an amd64 runner). `upgrade` takes the
+# Debian security updates released since debian:trixie-slim was last published.
+FROM debian:trixie-slim AS static-root
 RUN apt-get update \
     && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ca-certificates libstdc++6 libatomic1 tzdata netbase \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata tzdata-legacy netbase media-types \
     && rm -rf /var/lib/apt/lists/*
-
-COPY --from=pick /mongosh /opt/mongosh
-
-# Keep the package version: reject an outdated or mismatched replacement before
-# selecting the official native PPC build. The packaged cross-built V8 snapshot
-# fails even on node -e; changing mongosh flags cannot repair it.
-RUN if [ -f /opt/mongosh/bin/node.official ]; then \
-      expected="$(cat /opt/mongosh/bin/node.official.version)"; \
-      test "$(/opt/mongosh/bin/node --version)" = "$expected" \
-      && test "$(/opt/mongosh/bin/node.official --version)" = "$expected" \
-      && mv /opt/mongosh/bin/node.official /opt/mongosh/bin/node; \
-    fi
-
 RUN set -eu; \
     mkdir -p /add/var/lib/dpkg/status.d; \
-    add_package() { \
-      dpkg-query -L "$1" | while read -r f; do \
-        case "$f" in /usr/share/doc/*|/usr/share/man/*|/usr/share/lintian/*) continue ;; esac; \
+    for p in base-files netbase tzdata tzdata-legacy media-types ca-certificates; do \
+      dpkg-query -L "$p" | while read -r f; do \
+        case "$f" in /usr/share/doc/*|/usr/share/man/*|/usr/share/lintian/*|/usr/sbin/*|/usr/share/ca-certificates/*) continue ;; esac; \
         if [ -L "$f" ] || [ -f "$f" ]; then \
           d="$(readlink -f "$(dirname "$f")")"; mkdir -p "/add$d"; cp -a "$f" "/add$d/"; \
         fi; \
       done; \
-      dpkg-query -s "$1" > "/add/var/lib/dpkg/status.d/$1"; \
-    }; \
-    case "${TARGETARCH}" in \
-      386) \
-        for d in lib lib32 lib64 libx32; do [ ! -L "/$d" ] || cp -a "/$d" /add/; done; \
-        for p in libc6 libgcc-s1 gcc-14-base libstdc++6 libatomic1 tzdata netbase; do add_package "$p"; done; \
-        cp -a --parents /etc/os-release /usr/lib/os-release /etc/ld.so.cache /add/; \
-        dpkg-query -s base-files > /add/var/lib/dpkg/status.d/base-files; \
-        dpkg-query -s ca-certificates > /add/var/lib/dpkg/status.d/ca-certificates; \
-        cp -a --parents /etc/ssl/certs/ca-certificates.crt /add/; \
-        mkdir -p -m 1777 /add/tmp; \
-        test -e /add/lib/ld-linux.so.2 ;; \
-      *) \
-        for p in gcc-14-base libgcc-s1 libstdc++6 libatomic1; do add_package "$p"; done ;; \
-    esac
+      dpkg-query -s "$p" > "/add/var/lib/dpkg/status.d/$p"; \
+    done; \
+    cp -a --parents /etc/ssl/certs/ca-certificates.crt /add/; \
+    mkdir -p -m 1777 /add/tmp; \
+    test -s /add/etc/ssl/certs/ca-certificates.crt; \
+    test -e /add/usr/share/zoneinfo/UTC
 
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-amd64
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-arm64
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-arm
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-ppc64le
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-s390x
-FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-riscv64
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-amd64
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-arm64
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-arm
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-ppc64le
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-s390x
+FROM gcr.io/distroless/static-debian13:nonroot AS runtime-riscv64
 FROM scratch AS runtime-386
+COPY --from=static-root /add/ /
 
 FROM runtime-${TARGETARCH} AS final
-
-COPY --from=runtime-libs /add/ /
 
 # The same ferretdb user, uid and gid 1000, as before the distroless runtime:
 # existing /state volumes are owned by it.
@@ -160,18 +101,13 @@ COPY build/ferretdb/passwd /etc/passwd
 COPY build/ferretdb/group  /etc/group
 
 COPY --from=pick /ferretdb /ferretdb
-COPY --from=runtime-libs /opt/mongosh /opt/mongosh
-COPY --from=launcher /launcher /opt/mongosh/mongosh
 COPY --from=pick --chown=1000:1000 /state /state
 
 USER ferretdb:ferretdb
 
-# Verify the target loader, shared libraries, launcher and JS bundle before any
-# registry receives an image. These commands need no database or network
-# service, and no shell: each is an exec-form RUN.
+# Verify the binary runs on the target before any registry receives an image.
+# It needs no database or network service, and no shell: an exec-form RUN.
 RUN ["/ferretdb", "--version"]
-RUN ["/opt/mongosh/bin/node", "-e", "if (!process.version.startsWith('v26.') || 1 + 1 !== 2) process.exit(1)"]
-RUN ["/opt/mongosh/mongosh", "--version"]
 
 ENTRYPOINT ["/ferretdb"]
 
@@ -184,4 +120,4 @@ ENV FERRETDB_STATE_DIR=/state
 ENV FERRETDB_HANDLER=sqlite
 ENV FERRETDB_SQLITE_URL=file:/state/
 ENV FERRETDB_TELEMETRY=disable
-ENV PATH=/opt/mongosh:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

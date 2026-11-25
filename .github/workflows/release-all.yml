@@ -44,10 +44,6 @@ on:
         description: 'Release tag, e.g. v1.25.0 (empty = git describe)'
         required: false
         type: string
-      mongosh_version:
-        description: 'wekan/mongosh-patches release tag (empty = newest release)'
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -314,8 +310,4 @@ jobs:
           set -euo pipefail
           V="${{ steps.ver.outputs.version }}"
           echo "Dispatching docker.yml for release $V ..."
-          args=(--ref "${{ github.ref_name }}" -f version="$V")
-          if [ -n "${{ inputs.mongosh_version }}" ]; then
-            args+=(-f mongosh_version="${{ inputs.mongosh_version }}")
-          fi
-          gh workflow run docker.yml "${args[@]}"
+          gh workflow run docker.yml --ref "${{ github.ref_name }}" -f version="$V"

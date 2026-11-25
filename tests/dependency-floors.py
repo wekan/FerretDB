@@ -51,7 +51,6 @@ GO_PINS = [
     ('go.mod', r'^go (\d+\.\d+(?:\.\d+)?)$'),
     ('integration/go.mod', r'^go (\d+\.\d+(?:\.\d+)?)$'),
     ('Dockerfile', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
-    ('Dockerfile.release', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
     ('build/ferretdb/*.Dockerfile', r'golang:(\d+\.\d+(?:\.\d+)?)\b'),
     ('build.sh', r'^GO_VERSION="(\d+\.\d+(?:\.\d+)?)"'),
     ('.github/workflows/release-all*.yml', r"GO_VERSION: '(\d+\.\d+(?:\.\d+)?)'"),
@@ -116,6 +115,9 @@ class DependencyFloors(unittest.TestCase):
                 self.assertTrue(found, f'{f.relative_to(ROOT)} still names its Go version as {pattern}')
                 problems += below
         self.assertEqual(problems, [], 'raise every Go pin together')
+        # Dockerfile.release only repackages the release binaries: since the
+        # mongosh launcher went, nothing in it compiles Go, so it has no pin.
+        self.assertNotRegex((ROOT / 'Dockerfile.release').read_text(), r'(?m)^FROM\s+(--platform=\S+\s+)?golang:')
 
     def test_detects_affected_go(self):
         # Negative test: the toolchain govulncheck reported GO-2026-6859 for.

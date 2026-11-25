@@ -12,11 +12,11 @@ run-name: Docker ${{ inputs.version || github.event.release.tag_name }}
 # A release made before the SQLite-only build has no ferretdb-sqlite-<arch>
 # assets; then only the ferretdb image is published. Because the
 # binaries are already built, buildx just repackages the right one per target
-# into a distroless runtime image (gcr.io/distroless/base-nossl-debian13: no shell, no OpenSSL, no
-# package manager). QEMU runs the target-CPU stage that collects runtime
-# libraries, and the exec-form smoke tests of the packaged commands. Only
-# platforms with a runtime base and both FerretDB and mongosh assets are
-# included (see release-platforms.sh and tests/docker-runtime.py).
+# into a distroless runtime image (gcr.io/distroless/static-debian13: no C
+# library, no shell, no OpenSSL, no package manager - the binary is static).
+# QEMU runs the exec-form smoke test of the binary on each target. Only
+# platforms with a runtime base and a FerretDB asset are included (see
+# release-platforms.sh and tests/docker-runtime.py).
 #
 # Registry credentials are the SAME base64("username:token") secrets as wekan/wekan:
 #   DOCKERHUB_AUTH   Docker Hub
@@ -36,10 +36,6 @@ on:
         description: 'Release tag to use (empty = newest release)'
         required: false
         type: string
-      mongosh_version:
-        description: 'wekan/mongosh-patches release tag (empty = newest release)'
-        required: false
-        type: string
   release:
     types: [published]
 
@@ -56,12 +52,11 @@ jobs:
       - name: Test Docker release selection
         run: |
           mkdir -p .tools/tmp
-          TMPDIR="$PWD/.tools/tmp" bash integration/docker_mongosh_test.sh
+          TMPDIR="$PWD/.tools/tmp" bash integration/docker_release_test.sh
           TMPDIR="$PWD/.tools/tmp" bash tests/release-version.sh
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/docker-publish.py
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/pull-image.py
           TMPDIR="$PWD/.tools/tmp" python3 -B tests/docker-runtime.py
-          TMPDIR="$PWD/.tools/tmp" bash tests/official-ppc64le-node.sh
 
       # Every image this job starts from comes from Docker Hub, and the v1.89.0
       # run died on Docker Hub's anonymous pull limit before building anything.
@@ -94,8 +89,8 @@ jobs:
         run: docker run --privileged --rm tonistiigi/binfmt:latest --install arm,arm64,ppc64le,s390x,riscv64
 
       # The builder runs the BuildKit image pulled above (buildx uses a local
-      # image as it is). Its own Docker Hub pulls - the busybox, golang and
-      # debian FROM images of Dockerfile.release - go to mirror.gcr.io first and
+      # image as it is). Its own Docker Hub pulls - the busybox and debian FROM
+      # images of Dockerfile.release - go to mirror.gcr.io first and
       # to Docker Hub when the mirror does not have them; the distroless runtime
       # comes from gcr.io itself.
       - name: Set up Docker Buildx
@@ -145,39 +140,6 @@ jobs:
             found=true
           done
           "$found" || { echo '::error::No FerretDB binaries to audit'; exit 1; }
-
-      - name: Download and verify mongosh packages for every Linux architecture
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MONGOSH_REPO: wekan/mongosh-patches
-          REQUESTED_MONGOSH_VERSION: ${{ inputs.mongosh_version }}
-        run: |
-          set -euo pipefail
-          tag="$REQUESTED_MONGOSH_VERSION"
-          if [ -z "$tag" ]; then
-            tag="$(gh release list --repo "$MONGOSH_REPO" --limit 1 --json tagName --jq '.[0].tagName')"
-          fi
-          [ -n "$tag" ] && [ "$tag" != null ] || { echo '::error::no mongosh release found'; exit 1; }
-          echo "MONGOSH_VERSION=$tag" >> "$GITHUB_ENV"
-          for binary in amd64 arm64 armhf i386 ppc64le s390x riscv64; do
-            [ -f "dist/ferretdb-$binary" ] || [ -f "dist/ferretdb-sqlite-$binary" ] || continue
-            arch="$binary"
-            [ "$arch" != armhf ] || arch=armv7
-            for suffix in tgz tgz.sha256sum; do
-              gh release download "$tag" --repo "$MONGOSH_REPO" \
-                --pattern "mongosh-$arch.$suffix" --dir dist --clobber
-            done
-            (cd dist && sha256sum -c "mongosh-$arch.tgz.sha256sum")
-          done
-          echo '=== verified mongosh packages ==='
-          ls -la dist/mongosh-*
-
-      - name: Prepare same-version official PowerPC Node runtime
-        run: |
-          set -euo pipefail
-          mkdir -p "$PWD/.tools/tmp/ferretdb-node"
-          export TMPDIR="$PWD/.tools/tmp/ferretdb-node"
-          bash build/ferretdb/official-ppc64le-node.sh dist
 
       - name: Compute platform list from the downloaded binaries
         run: |
