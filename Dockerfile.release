@@ -22,8 +22,8 @@
 # newest distroless rebuild, and with it Debian's newest security updates.
 #
 # mongosh, sh and bash are the ferretdb binary itself, BusyBox-style: it picks
-# what to be from the name it is started as, so /usr/bin/mongosh, /bin/sh and
-# /bin/bash are symbolic links to /ferretdb, made in the pick stage (distroless
+# what to be from the name it is started as, so /usr/bin/mongosh, /usr/bin/sh and
+# /usr/bin/bash (so /bin/sh, as /bin is usr/bin) are symbolic links to /ferretdb, made in the pick stage (distroless
 # has no ln). mongosh is a MongoDB-compatible shell in Go (goja and the Go
 # driver), sh/bash a POSIX shell in Go (mvdan.cc/sh) whose only commands are
 # its own built-ins - still no Node.js, no C library and no other program, so
@@ -36,7 +36,7 @@
 # debian:trixie-slim, in scratch (the static-root stage), so every platform of
 # build/ferretdb/release-platforms.sh keeps its image.
 
-# true: /bin/sh and /bin/bash link to /ferretdb; false: no shell in the image.
+# true: /usr/bin/sh and /usr/bin/bash (/bin/sh, /bin/bash) link to /ferretdb; false: no shell.
 ARG FERRETDB_SHELL=true
 
 FROM --platform=$BUILDPLATFORM busybox AS pick
@@ -72,10 +72,12 @@ RUN set -eux; \
     chown 1000:1000 /state; \
     # The names the binary answers to, as symbolic links copied into the
     # final stage: mongosh always, sh and bash unless FERRETDB_SHELL=false.
-    mkdir -p /links/usr/bin /links/bin; \
+    # All in /usr/bin: the runtime's /bin is a link to usr/bin (Debian's merged
+    # /usr, in distroless and in runtime-386 alike), so /bin/sh is found there.
+    mkdir -p /links/usr/bin; \
     ln -s /ferretdb /links/usr/bin/mongosh; \
     case "${FERRETDB_SHELL}" in \
-      true)  ln -s /ferretdb /links/bin/sh; ln -s /ferretdb /links/bin/bash ;; \
+      true)  ln -s /ferretdb /links/usr/bin/sh; ln -s /ferretdb /links/usr/bin/bash ;; \
       false) ;; \
       *) echo "FERRETDB_SHELL must be true or false, not ${FERRETDB_SHELL}" >&2; exit 1 ;; \
     esac
@@ -103,6 +105,8 @@ RUN set -eu; \
     done; \
     cp -a --parents /etc/ssl/certs/ca-certificates.crt /add/; \
     mkdir -p -m 1777 /add/tmp; \
+    mkdir -p /add/usr/bin /add/usr/sbin /add/usr/lib; \
+    for d in bin sbin lib; do [ -e "/add/$d" ] || ln -s "usr/$d" "/add/$d"; done; \
     test -s /add/etc/ssl/certs/ca-certificates.crt; \
     test -e /add/usr/share/zoneinfo/UTC
 
@@ -125,7 +129,6 @@ COPY build/ferretdb/group  /etc/group
 COPY --from=pick /ferretdb /ferretdb
 COPY --from=pick --chown=1000:1000 /state /state
 COPY --from=pick /links/usr/bin/ /usr/bin/
-COPY --from=pick /links/bin/ /bin/
 
 USER ferretdb:ferretdb
 

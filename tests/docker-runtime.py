@@ -14,8 +14,9 @@ does not publish.
 mongosh, sh and bash came back, but not as programs: they are the static
 ferretdb binary itself, which picks what to be from the name it is started as
 (a MongoDB-compatible shell in Go, and a POSIX shell in Go whose only commands
-are its own built-ins). /usr/bin/mongosh, /bin/sh and /bin/bash are symbolic
-links to /ferretdb, and FERRETDB_SHELL=false leaves sh and bash out. So the
+are its own built-ins). /usr/bin/mongosh, /usr/bin/sh and /usr/bin/bash are
+symbolic links to /ferretdb - /bin/sh is /usr/bin/sh, as the runtime's /bin
+links to usr/bin - and FERRETDB_SHELL=false leaves sh and bash out. So the
 guards that refused mongosh and sh in the image changed on purpose: they now
 refuse anything that is NOT /ferretdb - a mongosh package, Node.js, a real
 shell or BusyBox - and still refuse a C library and a C++ runtime. This pins:
@@ -28,8 +29,8 @@ shell or BusyBox - and still refuse a C library and a C++ runtime. This pins:
   * the only programs the final stage runs are /ferretdb and the links to it,
     in exec-form RUNs (no shell-form RUN, no package manager): mongosh always,
     /bin/sh only when the shell is in the image;
-  * /usr/bin/mongosh always links to /ferretdb, /bin/sh and /bin/bash only
-    with FERRETDB_SHELL=true, which is the default;
+  * /usr/bin/mongosh always links to /ferretdb, /usr/bin/sh and /usr/bin/bash
+    only with FERRETDB_SHELL=true, which is the default;
   * the runtime platforms are exactly what release-platforms.sh selects, and
     the distroless ones are exactly what distroless publishes;
   * the image keeps uid/gid 1000 for /state, so existing volumes still work.
@@ -133,8 +134,10 @@ def runtime_problems(text):
         for path, target in image_links.items():
             if target != '/ferretdb':
                 problems.append(f'FERRETDB_SHELL={shell}: {path} links to {target}, not /ferretdb')
-        has_shell = {'/bin/sh', '/bin/bash'} <= set(image_links)
-        if has_shell != (shell == 'true') or (shell == 'false' and set(image_links) & {'/bin/sh', '/bin/bash'}):
+        # /bin/sh is /usr/bin/sh: the runtime's /bin links to usr/bin.
+        shells = {'/usr/bin/sh', '/usr/bin/bash'}
+        has_shell = shells <= set(image_links)
+        if has_shell != (shell == 'true') or (shell == 'false' and set(image_links) & shells):
             problems.append(f'FERRETDB_SHELL={shell}: /bin/sh and /bin/bash present: {sorted(image_links)}')
         for line in body:
             if not line.upper().startswith('RUN'):
@@ -149,6 +152,10 @@ def runtime_problems(text):
                 problems.append(f'RUN in the final stage is not an exec-form list: {line}')
                 continue
             program = str(argv[0])
+            # The runtime's /bin, /sbin and /lib link to their usr/ (merged /usr).
+            for merged in ('/bin/', '/sbin/', '/lib/'):
+                if program.startswith(merged):
+                    program = '/usr' + program
             if program != '/ferretdb' and image_links.get(program) != '/ferretdb':
                 problems.append(f'FERRETDB_SHELL={shell}: RUN runs {program}, which is not /ferretdb: {line}')
         if not any(line.startswith('USER ') for line in body):
@@ -222,18 +229,23 @@ class DistrolessRuntime(unittest.TestCase):
         self.assertFalse((ROOT / 'build/ferretdb/official-ppc64le-node.sh').exists())
 
     def test_mongosh_and_shell_are_links_to_ferretdb(self):
+        # All in /usr/bin: /bin is a link to usr/bin in the runtime (Debian's
+        # merged /usr, in distroless and in runtime-386), so /bin/sh is found
+        # there, and no COPY has to write through that link.
         self.assertEqual(links(self.text, 'true'),
-                         {'/usr/bin/mongosh': '/ferretdb', '/bin/sh': '/ferretdb', '/bin/bash': '/ferretdb'})
+                         {'/usr/bin/mongosh': '/ferretdb', '/usr/bin/sh': '/ferretdb', '/usr/bin/bash': '/ferretdb'})
         self.assertEqual(links(self.text, 'false'), {'/usr/bin/mongosh': '/ferretdb'})
-        for line in ('COPY --from=pick /links/usr/bin/ /usr/bin/', 'COPY --from=pick /links/bin/ /bin/'):
-            self.assertIn(line, self.final)
+        self.assertIn('COPY --from=pick /links/usr/bin/ /usr/bin/', self.final)
+        self.assertNotIn('COPY --from=pick /links/bin/', self.text)
         self.assertIn('FERRETDB_SHELL must be true or false', self.text)
 
     def test_386_root_has_what_distroless_static_has(self):
         for package in ('base-files', 'netbase', 'tzdata', 'tzdata-legacy', 'media-types', 'ca-certificates'):
             self.assertRegex(self.text, rf'for p in [^;]*\b{re.escape(package)}\b')
         for needed in ('/etc/ssl/certs/ca-certificates.crt', 'mkdir -p -m 1777 /add/tmp',
-                       '/add/var/lib/dpkg/status.d', 'COPY --from=static-root /add/ /'):
+                       '/add/var/lib/dpkg/status.d', 'COPY --from=static-root /add/ /',
+                       # Merged /usr, as distroless has it: /bin/sh is /usr/bin/sh.
+                       'for d in bin sbin lib; do [ -e "/add/$d" ] || ln -s "usr/$d" "/add/$d"; done'):
             self.assertIn(needed, self.text)
 
     def test_no_openssl_in_the_image(self):
@@ -252,10 +264,10 @@ class DistrolessRuntime(unittest.TestCase):
             # /bin/sh is in the image only with FERRETDB_SHELL=true: running it
             # in the stage both share would break the build without the shell
             'sh without the shell': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["/bin/sh", "-c", "true"]'),
-            'a real shell': good.replace('ln -s /ferretdb /links/bin/sh;', 'ln -s /bin/busybox /links/bin/sh;'),
+            'a real shell': good.replace('ln -s /ferretdb /links/usr/bin/sh;', 'ln -s /bin/busybox /links/usr/bin/sh;'),
             'a mongosh program': good.replace('ln -s /ferretdb /links/usr/bin/mongosh;',
                                               'cp /bins/mongosh /links/usr/bin/mongosh;'),
-            'sh with the shell off': good.replace('false) ;;', 'false) ln -s /ferretdb /links/bin/sh ;;'),
+            'sh with the shell off': good.replace('false) ;;', 'false) ln -s /ferretdb /links/usr/bin/sh ;;'),
             'shell not the default': good.replace('ARG FERRETDB_SHELL=true', 'ARG FERRETDB_SHELL=false'),
             'busybox in final': good.replace('RUN ["/bin/sh", "-c", "true"]', 'RUN ["/bin/busybox", "true"]'),
             'other base': good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-s390x',

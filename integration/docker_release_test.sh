@@ -22,14 +22,17 @@ grep -q 'RUN \["/usr/bin/mongosh", "--version"\]' "$dockerfile"
 grep -q 'RUN \["/bin/sh", "-c", "true"\]' "$dockerfile"
 # mongosh always, sh and bash only with FERRETDB_SHELL=true, all to /ferretdb.
 grep -q 'ln -s /ferretdb /links/usr/bin/mongosh;' "$dockerfile"
-grep -qE 'true\)  ln -s /ferretdb /links/bin/sh; ln -s /ferretdb /links/bin/bash ;;' "$dockerfile"
+grep -qE 'true\)  ln -s /ferretdb /links/usr/bin/sh; ln -s /ferretdb /links/usr/bin/bash ;;' "$dockerfile"
 grep -qE 'false\) ;;' "$dockerfile"
 grep -q 'COPY --from=pick /links/usr/bin/ /usr/bin/' "$dockerfile"
-grep -q 'COPY --from=pick /links/bin/ /bin/' "$dockerfile"
+# /bin is a link to usr/bin in the runtime (merged /usr): nothing is copied
+# through it, and the 386 root gets the same links distroless has.
+! grep -q 'COPY --from=pick /links/bin/' "$dockerfile"
+grep -qF 'for d in bin sbin lib; do [ -e "/add/$d" ] || ln -s "usr/$d" "/add/$d"; done' "$dockerfile"
 # Negative: no link points anywhere but /ferretdb, and no mongosh package,
 # Node.js, C++ runtime or other shell is in the image or its build. (Its
 # comments may say why they are gone; its instructions name none of them.)
-! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -E 'ln -s ' | grep -vqE 'ln -s /ferretdb /links/'
+! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -E 'ln -s ' | grep -vF 'ln -s "usr/$d" "/add/$d"' | grep -vqE 'ln -s /ferretdb /links/'
 ! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -qiE 'mongosh-[0-9]|mongosh\.tgz|npm |/opt/node|libstdc\+\+|libatomic|libgcc|official-node|apk add|apt-get install'
 [ "$(grep -vE '^[[:space:]]*#' "$dockerfile" | grep -c 'mongosh')" = 2 ]
 ! grep -qE 'mongosh-patches|mongosh_version|official-ppc64le-node' "$workflow"
