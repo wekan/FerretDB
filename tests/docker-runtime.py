@@ -4,12 +4,16 @@
 The ghcr.io/wekan/ferretdb image was debian:trixie-slim, and image scanners
 listed 255 vulnerabilities in packages FerretDB never uses: util-linux, login,
 tar, coreutils, systemd libraries, sqlite, glibc. Dockerfile.release now ends in
-gcr.io/distroless/cc-debian13 - glibc, libgcc, libstdc++, CA certificates,
-tzdata and netbase only - and assembles the same set into scratch for 386,
-which distroless does not publish. This pins:
+gcr.io/distroless/base-nossl-debian13 - glibc, CA certificates, tzdata and
+netbase only - with libgcc, libstdc++ and libatomic from Debian's packages for
+the packaged Node.js, and assembles the same set into scratch for 386, which
+distroless does not publish. It was cc-debian13, whose libssl3 nothing loads:
+its OpenSSL advisories were HIGH findings of an image that never used it. This
+pins:
 
-  * every runtime-<arch> stage is distroless cc-debian13, except 386, which is
-    scratch, and the final stage is FROM runtime-${TARGETARCH};
+  * every runtime-<arch> stage is distroless base-nossl-debian13, except 386,
+    which is scratch, and the final stage is FROM runtime-${TARGETARCH};
+  * no OpenSSL in the image: no libssl package added, no base that has it;
   * the final stage has no shell-form RUN, no package manager and no shell:
     each smoke test is an exec-form RUN;
   * the runtime platforms are exactly what release-platforms.sh selects, and
@@ -28,9 +32,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = ROOT / 'Dockerfile.release'
-DISTROLESS = 'gcr.io/distroless/cc-debian13:nonroot'
+DISTROLESS = 'gcr.io/distroless/base-nossl-debian13:nonroot'
 
-# The platforms gcr.io/distroless/cc-debian13 publishes (its manifest list on
+# The platforms gcr.io/distroless/base-nossl-debian13 publishes (its manifest list on
 # 2026-11-25), as buildx TARGETARCH names. arm is arm/v7 only.
 DISTROLESS_ARCHES = {'amd64', 'arm64', 'arm', 'ppc64le', 's390x', 'riscv64'}
 # Assembled from debian:trixie-slim into scratch by Dockerfile.release.
@@ -152,13 +156,19 @@ class DistrolessRuntime(unittest.TestCase):
         self.assertNotIn('/bin/sh"', launcher.split('package main', 1)[1])
 
     def test_386_root_has_what_distroless_cc_has(self):
+        # Every other arch adds the C++ runtime to base-nossl the same way.
+        self.assertIn('*) \\\n        for p in gcc-14-base libgcc-s1 libstdc++6 libatomic1; do add_package "$p"; done ;;', self.text)
         for package in ('libc6', 'libgcc-s1', 'libstdc++6', 'libatomic1', 'tzdata', 'netbase'):
             self.assertRegex(self.text, rf'for p in [^;]*\b{re.escape(package)}\b')
         for needed in ('/etc/ssl/certs/ca-certificates.crt', '/etc/os-release',
                        'mkdir -p -m 1777 /add/tmp', 'test -e /add/lib/ld-linux.so.2',
                        '/add/var/lib/dpkg/status.d'):
             self.assertIn(needed, self.text)
-        self.assertIn('ppc64le) \\\n        add_package libatomic1', self.text)
+
+    def test_no_openssl_in_the_image(self):
+        self.assertNotRegex(self.text, r'^FROM\s+\S*distroless/(cc|base)-debian', 'a distroless base with libssl3')
+        self.assertNotRegex(self.text, r'add_package[^;\n]*\blibssl|for p in [^;]*\blibssl|install[^\n]*\blibssl')
+        self.assertNotRegex(self.text, r'(?m)^FROM\s+\S*distroless/(?!base-nossl-debian13:nonroot)')
 
     def test_negative_debian_or_shell_runtimes_are_refused(self):
         good = self.text
@@ -167,7 +177,7 @@ class DistrolessRuntime(unittest.TestCase):
             'shell RUN': good.replace('RUN ["/ferretdb", "--version"]', 'RUN /ferretdb --version'),
             'apt in final': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["apt-get", "update"]'),
             'sh in exec form': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["/bin/sh", "-c", "true"]'),
-            'other base': good.replace('FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-s390x',
+            'other base': good.replace('FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-s390x',
                                        'FROM debian:trixie-slim AS runtime-s390x'),
             '386 not scratch': good.replace('FROM scratch AS runtime-386', 'FROM debian:trixie-slim AS runtime-386'),
             'no user': good.replace('USER ferretdb:ferretdb', ''),
@@ -176,7 +186,7 @@ class DistrolessRuntime(unittest.TestCase):
             with self.subTest(name):
                 self.assertNotEqual(text, good, 'the case changes the Dockerfile')
                 self.assertNotEqual(runtime_problems(text), [])
-        dropped = good.replace('FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-riscv64\n', '')
+        dropped = good.replace('FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-riscv64\n', '')
         self.assertNotEqual(runtime_arches(dropped), DISTROLESS_ARCHES | ASSEMBLED_ARCHES)
 
 

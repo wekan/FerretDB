@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runtime platforms of Dockerfile.release, intersected with release assets:
-# the platforms gcr.io/distroless/cc-debian13 publishes (amd64, arm64, arm/v7,
+# the platforms gcr.io/distroless/base-nossl-debian13 publishes (amd64, arm64, arm/v7,
 # ppc64le, s390x, riscv64), plus 386, whose runtime Dockerfile.release assembles
 # from debian:trixie-slim. tests/docker-runtime.py keeps the two lists equal.
 # ARMv6, ARMv5 and Loong64 have standalone binaries but no matching base.

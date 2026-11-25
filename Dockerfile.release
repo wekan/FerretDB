@@ -12,12 +12,16 @@
 # build/ferretdb passwd/group), and Dockerfile for the build-from-source variant
 # used by release-all.yml.
 #
-# The runtime is distroless: gcr.io/distroless/cc-debian13 has glibc, libgcc,
-# libstdc++, CA certificates, tzdata and netbase and nothing else - no shell, no
-# package manager, no coreutils, util-linux, login, tar, systemd or sqlite. The
-# ferretdb binary is static (CGO_ENABLED=0, build.sh), but the packaged Node.js
-# that runs mongosh is linked against glibc and libstdc++, so "cc" rather than
-# "static". The tag is not pinned by digest, as no other base image here is: an
+# The runtime is distroless: gcr.io/distroless/base-nossl-debian13 has glibc, CA
+# certificates, tzdata and netbase and nothing else - no shell, no package
+# manager, no coreutils, util-linux, login, tar, systemd or sqlite - and no
+# OpenSSL. The ferretdb binary is static (CGO_ENABLED=0, build.sh), and the
+# packaged Node.js that runs mongosh carries its own OpenSSL, so nothing here
+# loads libssl. It was cc-debian13, which is base-debian13 with libssl3: two
+# OpenSSL QUIC advisories (CVE-2026-107494, CVE-2026-124709, no Debian fix yet)
+# were HIGH findings in Artifact Hub's scan of an image that never used it.
+# Node.js is linked against libstdc++, libgcc_s and libatomic, which cc-debian13
+# carried; they are copied from Debian's packages in runtime-libs below. The tag is not pinned by digest, as no other base image here is: an
 # image built from a release takes the newest distroless rebuild, and with it
 # Debian's newest security updates, as `apt-get upgrade` did before.
 #
@@ -125,8 +129,6 @@ RUN set -eu; \
       dpkg-query -s "$1" > "/add/var/lib/dpkg/status.d/$1"; \
     }; \
     case "${TARGETARCH}" in \
-      ppc64le) \
-        add_package libatomic1 ;; \
       386) \
         for d in lib lib32 lib64 libx32; do [ ! -L "/$d" ] || cp -a "/$d" /add/; done; \
         for p in libc6 libgcc-s1 gcc-14-base libstdc++6 libatomic1 tzdata netbase; do add_package "$p"; done; \
@@ -136,14 +138,16 @@ RUN set -eu; \
         cp -a --parents /etc/ssl/certs/ca-certificates.crt /add/; \
         mkdir -p -m 1777 /add/tmp; \
         test -e /add/lib/ld-linux.so.2 ;; \
+      *) \
+        for p in gcc-14-base libgcc-s1 libstdc++6 libatomic1; do add_package "$p"; done ;; \
     esac
 
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-amd64
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-arm64
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-arm
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-ppc64le
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-s390x
-FROM gcr.io/distroless/cc-debian13:nonroot AS runtime-riscv64
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-amd64
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-arm64
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-arm
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-ppc64le
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-s390x
+FROM gcr.io/distroless/base-nossl-debian13:nonroot AS runtime-riscv64
 FROM scratch AS runtime-386
 
 FROM runtime-${TARGETARCH} AS final

@@ -12,7 +12,7 @@ run-name: Docker ${{ inputs.version || github.event.release.tag_name }}
 # A release made before the SQLite-only build has no ferretdb-sqlite-<arch>
 # assets; then only the ferretdb image is published. Because the
 # binaries are already built, buildx just repackages the right one per target
-# into a distroless runtime image (gcr.io/distroless/cc-debian13: no shell, no
+# into a distroless runtime image (gcr.io/distroless/base-nossl-debian13: no shell, no OpenSSL, no
 # package manager). QEMU runs the target-CPU stage that collects runtime
 # libraries, and the exec-form smoke tests of the packaged commands. Only
 # platforms with a runtime base and both FerretDB and mongosh assets are
