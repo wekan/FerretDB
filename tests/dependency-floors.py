@@ -17,6 +17,11 @@ back silently.
 - go.opentelemetry.io/otel/... < 1.47.0: the version WeKan's Dependabot alert
   #189 was raised for (otel/trace), and the rest of the set, which moves
   together. tools/ had 1.45.0 through the gcp detectors.
+- github.com/gorilla/websocket < v1.5.4-0.20240701034025-d67f41855da4
+  (GO-2026-6278): a weak PRNG for the WebSocket mask key, found by the Quay
+  security scanner in WeKan's image, through arl/statsviz in the debug
+  handler. The fix has no release tag, only that commit of the main branch,
+  so the floor is its pseudo-version.
 - Go itself < 1.27.4 (GO-2026-6859, net/http): every place that picks the Go a
   release is built with - the go directives, the Dockerfiles, build.sh and the
   release workflows - so no binary is built with the affected stdlib.
@@ -41,6 +46,7 @@ FLOORS = {
     'go.opentelemetry.io/otel/log': 'v1.47.0',
     'go.opentelemetry.io/otel/sdk': 'v1.47.0',
     'go.opentelemetry.io/otel/sdk/metric': 'v1.47.0',
+    'github.com/gorilla/websocket': 'v1.5.4-0.20240701034025-d67f41855da4',
 }
 
 GO_FLOOR = (1, 27, 4)
@@ -97,6 +103,13 @@ class DependencyFloors(unittest.TestCase):
                          'a pseudo-version before the release is not the release')
         self.assertEqual(below_floor({'github.com/go-jose/go-jose/v4': 'v4.1.6',
                                       'github.com/go-jose/go-jose/v3': 'v3.0.0'}, 'x'), [])
+
+        # Negative test: the version the Quay scanner found, and a pseudo-version
+        # of the main branch from before the fix; the newer main is above it.
+        self.assertEqual(below_floor({'github.com/gorilla/websocket': 'v1.5.3'}, 'go.mod'),
+                         ['go.mod: github.com/gorilla/websocket v1.5.3 < v1.5.4-0.20240701034025-d67f41855da4'])
+        self.assertEqual(len(below_floor({'github.com/gorilla/websocket': 'v1.5.4-0.20240101000000-aaaaaaaaaaaa'}, 'x')), 1)
+        self.assertEqual(below_floor({'github.com/gorilla/websocket': 'v1.5.4-0.20250319132907-e064f32e3674'}, 'x'), [])
 
         self.assertEqual(below_floor({'go.opentelemetry.io/otel/trace': 'v1.45.0',
                                       'github.com/klauspost/compress': 'v1.20.1',
