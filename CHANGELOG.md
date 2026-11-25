@@ -2,6 +2,21 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Other Changes 🤖
+
+- **Sync the integration module with the main module after #63**
+  ([d37483667](https://github.com/wekan/FerretDB/commit/d374836674c633a78ddfa7f93e210317dc6c85c3)): `go mod tidy` in
+  `integration/`, which also records `mattn/go-sqlite3`. by @xet7. Thanks to
+  xet7.
+- **Bump go-sql-driver/mysql 1.10.2 and xdg-go/stringprep 1.0.5** in the main
+  module (#63) by @dependabot. Thanks to dependabot.
+- **Bump oapi-codegen 2.9.0, pkgsite 0.7.0, x/tools 0.53.0 and x/vuln 1.10.0**
+  in the tools module (#64) by @dependabot. Thanks to dependabot.
+- **Bump markdownlint-cli2 to v0.24.2 and mongo to 9.0.8** build dependencies
+  images (#65) by @dependabot. Thanks to dependabot.
+
 ## [v1.113.0](https://github.com/wekan/FerretDB/releases/tag/v1.113.0) (2026-11-25)
 
 ### Fixed 🐛
