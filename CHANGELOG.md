@@ -6,6 +6,14 @@
 
 ### Fixed 🐛
 
+- **Docker images without OpenSSL**
+  ([24c249dd8](https://github.com/wekan/FerretDB/commit/24c249dd86f02751bfb44efa5e98abf9346386b5)): Artifact Hub's
+  scan listed two HIGH findings in `libssl3t64` (CVE-2026-107494 and
+  CVE-2026-124709, OpenSSL QUIC, no Debian fix yet), which nothing in the image
+  loads. The runtime is now `gcr.io/distroless/base-nossl-debian13`, with
+  libstdc++, libgcc and libatomic for mongosh's Node.js copied from Debian's
+  packages, and `tests/docker-runtime.py` refuses a base or package with libssl.
+  by @xet7. Thanks to xet7.
 - **`task env-up` uses the development compose file again**
   ([53642f1cb](https://github.com/wekan/FerretDB/commit/53642f1cbebd917210dbd7ad718643a0d4abed21)): it asked
   `docker-compose.yml`, which runs WeKan, for postgres, mysql and mongodb; the
