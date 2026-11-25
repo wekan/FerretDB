@@ -17,19 +17,32 @@
 # nothing more. The image used to carry mongosh, with the Node.js it runs on,
 # and so glibc, libstdc++, libgcc_s and libatomic from Debian: every finding of
 # Artifact Hub's scan of the image (42 in v1.114.0, none with a Debian fix) was
-# in those, and nothing of FerretDB used them. A mongosh is run from anywhere
-# else, against the published port. The tag is not pinned by digest, as no other
-# base image here is: an image built from a release takes the newest distroless
-# rebuild, and with it Debian's newest security updates.
+# in those, and nothing of FerretDB used them. The tag is not pinned by digest,
+# as no other base image here is: an image built from a release takes the
+# newest distroless rebuild, and with it Debian's newest security updates.
+#
+# mongosh, sh and bash are the ferretdb binary itself, BusyBox-style: it picks
+# what to be from the name it is started as, so /usr/bin/mongosh, /bin/sh and
+# /bin/bash are symbolic links to /ferretdb, made in the pick stage (distroless
+# has no ln). mongosh is a MongoDB-compatible shell in Go (goja and the Go
+# driver), sh/bash a POSIX shell in Go (mvdan.cc/sh) whose only commands are
+# its own built-ins - still no Node.js, no C library and no other program, so
+# `docker exec -it <container> mongosh`, `... sh` and `... bash` work. Build
+# with --build-arg FERRETDB_SHELL=false to leave the sh and bash links out
+# (mongosh is always there).
 #
 # Distroless publishes amd64, arm64, arm/v7, ppc64le, s390x and riscv64. For
 # 386, which it does not publish, runtime-386 is the same Debian packages, from
 # debian:trixie-slim, in scratch (the static-root stage), so every platform of
 # build/ferretdb/release-platforms.sh keeps its image.
 
+# true: /bin/sh and /bin/bash link to /ferretdb; false: no shell in the image.
+ARG FERRETDB_SHELL=true
+
 FROM --platform=$BUILDPLATFORM busybox AS pick
 ARG TARGETARCH
 ARG TARGETVARIANT
+ARG FERRETDB_SHELL
 # Which release binary the image is made of: ferretdb (ferretdb-<arch>, every
 # handler) for the ferretdb image, ferretdb-sqlite (ferretdb-sqlite-<arch>,
 # the sqlite handler only) for the ferretdb-sqlite image. build/ferretdb/
@@ -56,7 +69,16 @@ RUN set -eux; \
     cp "/bins/${FERRETDB_ASSET}-${n}" /ferretdb; \
     chmod 0755 /ferretdb; \
     mkdir -p /state; \
-    chown 1000:1000 /state
+    chown 1000:1000 /state; \
+    # The names the binary answers to, as symbolic links copied into the
+    # final stage: mongosh always, sh and bash unless FERRETDB_SHELL=false.
+    mkdir -p /links/usr/bin /links/bin; \
+    ln -s /ferretdb /links/usr/bin/mongosh; \
+    case "${FERRETDB_SHELL}" in \
+      true)  ln -s /ferretdb /links/bin/sh; ln -s /ferretdb /links/bin/bash ;; \
+      false) ;; \
+      *) echo "FERRETDB_SHELL must be true or false, not ${FERRETDB_SHELL}" >&2; exit 1 ;; \
+    esac
 
 # 386 only: the packages gcr.io/distroless/static-debian13 is made of, unpacked
 # into /add, each with its dpkg record in /add/var/lib/dpkg/status.d/<package>,
@@ -93,7 +115,7 @@ FROM gcr.io/distroless/static-debian13:nonroot AS runtime-riscv64
 FROM scratch AS runtime-386
 COPY --from=static-root /add/ /
 
-FROM runtime-${TARGETARCH} AS final
+FROM runtime-${TARGETARCH} AS image
 
 # The same ferretdb user, uid and gid 1000, as before the distroless runtime:
 # existing /state volumes are owned by it.
@@ -102,12 +124,25 @@ COPY build/ferretdb/group  /etc/group
 
 COPY --from=pick /ferretdb /ferretdb
 COPY --from=pick --chown=1000:1000 /state /state
+COPY --from=pick /links/usr/bin/ /usr/bin/
+COPY --from=pick /links/bin/ /bin/
 
 USER ferretdb:ferretdb
 
 # Verify the binary runs on the target before any registry receives an image.
-# It needs no database or network service, and no shell: an exec-form RUN.
+# It needs no database or network service, and no shell: exec-form RUNs, the
+# second one through the mongosh link.
 RUN ["/ferretdb", "--version"]
+RUN ["/usr/bin/mongosh", "--version"]
+
+# With the shell, check its link too; a RUN cannot be conditional, so the
+# FERRETDB_SHELL build argument selects one of these two stages.
+FROM image AS shell-true
+RUN ["/bin/sh", "-c", "true"]
+
+FROM image AS shell-false
+
+FROM shell-${FERRETDB_SHELL} AS final
 
 ENTRYPOINT ["/ferretdb"]
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Static release guard for docker.yml and Dockerfile.release: the image is the
-# static ferretdb binary on distroless static, with no mongosh, and the target
-# platforms are exactly the ones the release has binaries for.
+# static ferretdb binary on distroless static, and the target platforms are
+# exactly the ones the release has binaries for. mongosh, sh and bash are
+# links to that same binary (it is a MongoDB-compatible shell and a POSIX
+# shell in Go, chosen by the name it runs as) - not a mongosh package, not
+# Node.js and not a real shell, so the old refusal of "mongosh" in the image
+# became a refusal of everything that is not /ferretdb.
 set -euo pipefail
 # Every check below is a quiet grep; say which one failed, or a release job
 # stops with only "exit code 1" in its log (as the v1.90.0 Docker run did).
@@ -9,12 +13,25 @@ trap 'echo "docker_release_test.sh: check at line $LINENO failed" >&2' ERR
 root="$(cd "$(dirname "$0")/.." && pwd)"
 workflow="$root/.github/workflows/docker.yml"
 dockerfile="$root/Dockerfile.release"
-grep -q 'FROM runtime-${TARGETARCH} AS final' "$dockerfile"
+grep -q 'FROM runtime-${TARGETARCH} AS image' "$dockerfile"
+grep -q 'FROM shell-${FERRETDB_SHELL} AS final' "$dockerfile"
+grep -qx 'ARG FERRETDB_SHELL=true' "$dockerfile"
 grep -q 'FROM gcr.io/distroless/static-debian13:nonroot AS runtime-amd64' "$dockerfile"
 grep -q 'RUN \["/ferretdb", "--version"\]' "$dockerfile"
-# Negative: no mongosh, no Node.js and no C++ runtime in the image or its build.
-# (Its comments may say why they are gone; its instructions name none of them.)
-! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -qiE 'mongosh|/opt/node|libstdc\+\+|libatomic|libgcc|official-node'
+grep -q 'RUN \["/usr/bin/mongosh", "--version"\]' "$dockerfile"
+grep -q 'RUN \["/bin/sh", "-c", "true"\]' "$dockerfile"
+# mongosh always, sh and bash only with FERRETDB_SHELL=true, all to /ferretdb.
+grep -q 'ln -s /ferretdb /links/usr/bin/mongosh;' "$dockerfile"
+grep -qE 'true\)  ln -s /ferretdb /links/bin/sh; ln -s /ferretdb /links/bin/bash ;;' "$dockerfile"
+grep -qE 'false\) ;;' "$dockerfile"
+grep -q 'COPY --from=pick /links/usr/bin/ /usr/bin/' "$dockerfile"
+grep -q 'COPY --from=pick /links/bin/ /bin/' "$dockerfile"
+# Negative: no link points anywhere but /ferretdb, and no mongosh package,
+# Node.js, C++ runtime or other shell is in the image or its build. (Its
+# comments may say why they are gone; its instructions name none of them.)
+! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -E 'ln -s ' | grep -vqE 'ln -s /ferretdb /links/'
+! grep -vE '^[[:space:]]*#' "$dockerfile" | grep -qiE 'mongosh-[0-9]|mongosh\.tgz|npm |/opt/node|libstdc\+\+|libatomic|libgcc|official-node|apk add|apt-get install'
+[ "$(grep -vE '^[[:space:]]*#' "$dockerfile" | grep -c 'mongosh')" = 2 ]
 ! grep -qE 'mongosh-patches|mongosh_version|official-ppc64le-node' "$workflow"
 ! grep -q 'mongosh_version' "$root/.github/workflows/release-all.yml"
 # The target runtimes are emulated through binfmt, registered from the image

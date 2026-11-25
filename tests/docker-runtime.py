@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The published FerretDB image runs on distroless static, with no shell.
+"""The published FerretDB image runs on distroless static, with one program.
 
 The ghcr.io/wekan/ferretdb image was debian:trixie-slim, and image scanners
 listed 255 vulnerabilities in packages FerretDB never uses. It then became
@@ -9,14 +9,27 @@ in glibc and those C++ runtime libraries. The ferretdb binary is static and
 uses neither, so mongosh is gone and Dockerfile.release ends in
 gcr.io/distroless/static-debian13 - CA certificates, tzdata, netbase and media
 types only - and assembles the same set into scratch for 386, which distroless
-does not publish. This pins:
+does not publish.
+
+mongosh, sh and bash came back, but not as programs: they are the static
+ferretdb binary itself, which picks what to be from the name it is started as
+(a MongoDB-compatible shell in Go, and a POSIX shell in Go whose only commands
+are its own built-ins). /usr/bin/mongosh, /bin/sh and /bin/bash are symbolic
+links to /ferretdb, and FERRETDB_SHELL=false leaves sh and bash out. So the
+guards that refused mongosh and sh in the image changed on purpose: they now
+refuse anything that is NOT /ferretdb - a mongosh package, Node.js, a real
+shell or BusyBox - and still refuse a C library and a C++ runtime. This pins:
 
   * every runtime-<arch> stage is distroless static-debian13, except 386,
-    which is scratch, and the final stage is FROM runtime-${TARGETARCH};
-  * no C library, no C++ runtime, no Node.js, no mongosh and no OpenSSL in the
-    image: none is added, and no base has them;
-  * the final stage has no shell-form RUN, no package manager and no shell:
-    the smoke test is an exec-form RUN;
+    which is scratch, and the final stage descends from runtime-${TARGETARCH}
+    with FERRETDB_SHELL both true and false;
+  * no C library, no C++ runtime, no Node.js, no mongosh package and no
+    OpenSSL in the image: none is added, and no base has them;
+  * the only programs the final stage runs are /ferretdb and the links to it,
+    in exec-form RUNs (no shell-form RUN, no package manager): mongosh always,
+    /bin/sh only when the shell is in the image;
+  * /usr/bin/mongosh always links to /ferretdb, /bin/sh and /bin/bash only
+    with FERRETDB_SHELL=true, which is the default;
   * the runtime platforms are exactly what release-platforms.sh selects, and
     the distroless ones are exactly what distroless publishes;
   * the image keeps uid/gid 1000 for /state, so existing volumes still work.
@@ -46,7 +59,11 @@ PLATFORM_ARCH = {
     'linux/riscv64': 'riscv64',
 }
 
-SHELL_WORDS = re.compile(r'\b(apt-get|apt|dpkg|apk|sh|bash|busybox|curl|wget)\b')
+FINAL_RUNS = {
+    'true': ['RUN ["/ferretdb", "--version"]', 'RUN ["/usr/bin/mongosh", "--version"]',
+             'RUN ["/bin/sh", "-c", "true"]'],
+    'false': ['RUN ["/ferretdb", "--version"]', 'RUN ["/usr/bin/mongosh", "--version"]'],
+}
 
 
 def stages(text):
@@ -65,33 +82,77 @@ def stages(text):
     return result
 
 
+def links(text, shell):
+    """{path in the image: target} of the pick stage's links for FERRETDB_SHELL=shell."""
+    pick = [b for _, n, b in stages(text) if n == 'pick']
+    if not pick:
+        return {}
+    run = ' '.join(pick[0])
+    always, _, cases = run.partition('case "${FERRETDB_SHELL}" in')
+    chosen = re.search(rf'(?:^|\s){re.escape(shell)}\)(.*?);;', cases)
+    found = re.findall(r'ln -s (\S+) /links(/\S+?);?(?=\s|$)', always + ' ' + (chosen.group(1) if chosen else ''))
+    return {path: target for target, path in found}
+
+
+def final_chain(text, shell):
+    """(root base, [stage names], instructions) from the final stage back to its base."""
+    by_name = {n: (b, body) for b, n, body in stages(text) if n}
+    base, name, body = stages(text)[-1]
+    names, instructions = [name], list(body)
+    base = base.replace('${FERRETDB_SHELL}', shell)
+    while base in by_name:
+        names.insert(0, base)
+        parent, parent_body = by_name[base]
+        instructions = list(parent_body) + instructions
+        base = parent.replace('${FERRETDB_SHELL}', shell)
+    return base, names, instructions
+
+
 def runtime_problems(text):
-    """What makes the final stage something other than a shell-free distroless one."""
+    """What makes the final stage something other than distroless plus /ferretdb."""
     problems = []
     all_stages = stages(text)
     if not all_stages:
         return ['no stages']
-    base, name, body = all_stages[-1]
-    if base != 'runtime-${TARGETARCH}':
-        problems.append(f'final stage is FROM {base}, not runtime-${{TARGETARCH}}')
+    if all_stages[-1][1] != 'final':
+        problems.append('the last stage is not named final')
+    if not re.search(r'(?m)^ARG FERRETDB_SHELL=true$', text.split('\nFROM ', 1)[0]):
+        problems.append('no global ARG FERRETDB_SHELL=true before the first FROM')
     runtimes = {n[len('runtime-'):]: b for b, n, _ in all_stages if n and n.startswith('runtime-')}
     for arch, image in sorted(runtimes.items()):
         want = 'scratch' if arch in ASSEMBLED_ARCHES else DISTROLESS
         if image != want:
             problems.append(f'runtime-{arch} is FROM {image}, not {want}')
-    for line in body:
-        if not line.upper().startswith('RUN'):
-            continue
-        command = line[3:].strip()
-        try:
-            argv = json.loads(command)
-        except ValueError:
-            problems.append(f'shell-form RUN in the final stage: {line}')
-            continue
-        if not isinstance(argv, list) or SHELL_WORDS.search(Path(str(argv[0])).name):
-            problems.append(f'RUN in the final stage uses a shell or package manager: {line}')
-    if not any(line.startswith('USER ') for line in body):
-        problems.append('final stage has no USER')
+    for shell in ('true', 'false'):
+        base, _, body = final_chain(text, shell)
+        if base != 'runtime-${TARGETARCH}':
+            problems.append(f'FERRETDB_SHELL={shell}: final stage descends from {base}, not runtime-${{TARGETARCH}}')
+        image_links = links(text, shell)
+        if image_links.get('/usr/bin/mongosh') != '/ferretdb':
+            problems.append(f'FERRETDB_SHELL={shell}: /usr/bin/mongosh is not a link to /ferretdb')
+        for path, target in image_links.items():
+            if target != '/ferretdb':
+                problems.append(f'FERRETDB_SHELL={shell}: {path} links to {target}, not /ferretdb')
+        has_shell = {'/bin/sh', '/bin/bash'} <= set(image_links)
+        if has_shell != (shell == 'true') or (shell == 'false' and set(image_links) & {'/bin/sh', '/bin/bash'}):
+            problems.append(f'FERRETDB_SHELL={shell}: /bin/sh and /bin/bash present: {sorted(image_links)}')
+        for line in body:
+            if not line.upper().startswith('RUN'):
+                continue
+            command = line[3:].strip()
+            try:
+                argv = json.loads(command)
+            except ValueError:
+                problems.append(f'shell-form RUN in the final stage: {line}')
+                continue
+            if not isinstance(argv, list) or not argv:
+                problems.append(f'RUN in the final stage is not an exec-form list: {line}')
+                continue
+            program = str(argv[0])
+            if program != '/ferretdb' and image_links.get(program) != '/ferretdb':
+                problems.append(f'FERRETDB_SHELL={shell}: RUN runs {program}, which is not /ferretdb: {line}')
+        if not any(line.startswith('USER ') for line in body):
+            problems.append('final stage has no USER')
     return problems
 
 
@@ -103,9 +164,9 @@ def runtime_arches(text):
 class DistrolessRuntime(unittest.TestCase):
     def setUp(self):
         self.text = DOCKERFILE.read_text(encoding='utf-8')
-        self.final = stages(self.text)[-1][2]
+        self.final = final_chain(self.text, 'true')[2]
 
-    def test_final_stage_is_distroless_without_a_shell(self):
+    def test_final_stage_is_distroless_plus_ferretdb(self):
         self.assertEqual(runtime_problems(self.text), [])
         self.assertNotIn('debian:trixie-slim AS final', self.text)
         self.assertNotIn('nonroot@sha256', self.text, 'tags, as the other base images: newest distroless rebuild')
@@ -142,16 +203,31 @@ class DistrolessRuntime(unittest.TestCase):
             self.assertIn(line, self.final)
         self.assertNotIn('HEALTHCHECK', self.text, 'a HEALTHCHECK would need a shell or curl')
 
-    def test_no_mongosh_node_or_c_runtime_in_the_image(self):
+    def test_no_node_or_c_runtime_in_the_image(self):
         # The instructions, not the comments that say why these are gone.
         code = '\n'.join(l for l in self.text.splitlines() if not l.lstrip().startswith('#'))
-        for word in ('mongosh', '/opt/', 'node', 'launcher', 'libc6', 'libstdc++', 'libgcc', 'libatomic',
-                     'ld-linux', 'gcc-14-base'):
+        for word in ('/opt/', 'node', 'npm', 'launcher', 'libc6', 'libstdc++', 'libgcc', 'libatomic',
+                     'ld-linux', 'gcc-14-base', 'busybox:', 'apk add'):
             self.assertNotIn(word, code, word)
-        self.assertEqual([l for l in self.final if l.upper().startswith('RUN')], ['RUN ["/ferretdb", "--version"]'])
+        # mongosh is named only as the link to /ferretdb and its smoke test:
+        # no mongosh package, download or release asset.
+        mentions = [l.strip() for l in code.splitlines() if 'mongosh' in l]
+        self.assertEqual(mentions, ['ln -s /ferretdb /links/usr/bin/mongosh; \\',
+                                    'RUN ["/usr/bin/mongosh", "--version"]'])
+        for shell, runs in FINAL_RUNS.items():
+            body = final_chain(self.text, shell)[2]
+            self.assertEqual([l for l in body if l.upper().startswith('RUN')], runs, shell)
         self.assertIn('ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin', self.final)
         self.assertFalse((ROOT / 'build/ferretdb/launcher').exists())
         self.assertFalse((ROOT / 'build/ferretdb/official-ppc64le-node.sh').exists())
+
+    def test_mongosh_and_shell_are_links_to_ferretdb(self):
+        self.assertEqual(links(self.text, 'true'),
+                         {'/usr/bin/mongosh': '/ferretdb', '/bin/sh': '/ferretdb', '/bin/bash': '/ferretdb'})
+        self.assertEqual(links(self.text, 'false'), {'/usr/bin/mongosh': '/ferretdb'})
+        for line in ('COPY --from=pick /links/usr/bin/ /usr/bin/', 'COPY --from=pick /links/bin/ /bin/'):
+            self.assertIn(line, self.final)
+        self.assertIn('FERRETDB_SHELL must be true or false', self.text)
 
     def test_386_root_has_what_distroless_static_has(self):
         for package in ('base-files', 'netbase', 'tzdata', 'tzdata-legacy', 'media-types', 'ca-certificates'):
@@ -168,10 +244,20 @@ class DistrolessRuntime(unittest.TestCase):
     def test_negative_debian_or_shell_runtimes_are_refused(self):
         good = self.text
         cases = {
-            'debian final': good.replace('FROM runtime-${TARGETARCH} AS final', 'FROM debian:trixie-slim AS final'),
+            'debian final': good.replace('FROM runtime-${TARGETARCH} AS image', 'FROM debian:trixie-slim AS image'),
+            'final not from the shell stages': good.replace('FROM shell-${FERRETDB_SHELL} AS final',
+                                                            'FROM debian:trixie-slim AS final'),
             'shell RUN': good.replace('RUN ["/ferretdb", "--version"]', 'RUN /ferretdb --version'),
             'apt in final': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["apt-get", "update"]'),
-            'sh in exec form': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["/bin/sh", "-c", "true"]'),
+            # /bin/sh is in the image only with FERRETDB_SHELL=true: running it
+            # in the stage both share would break the build without the shell
+            'sh without the shell': good.replace('RUN ["/ferretdb", "--version"]', 'RUN ["/bin/sh", "-c", "true"]'),
+            'a real shell': good.replace('ln -s /ferretdb /links/bin/sh;', 'ln -s /bin/busybox /links/bin/sh;'),
+            'a mongosh program': good.replace('ln -s /ferretdb /links/usr/bin/mongosh;',
+                                              'cp /bins/mongosh /links/usr/bin/mongosh;'),
+            'sh with the shell off': good.replace('false) ;;', 'false) ln -s /ferretdb /links/bin/sh ;;'),
+            'shell not the default': good.replace('ARG FERRETDB_SHELL=true', 'ARG FERRETDB_SHELL=false'),
+            'busybox in final': good.replace('RUN ["/bin/sh", "-c", "true"]', 'RUN ["/bin/busybox", "true"]'),
             'other base': good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-s390x',
                                        'FROM debian:trixie-slim AS runtime-s390x'),
             'a base with a C library': good.replace('FROM gcr.io/distroless/static-debian13:nonroot AS runtime-arm64',
