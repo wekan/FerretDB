@@ -14,7 +14,7 @@ require (
 	github.com/alecthomas/kong v1.17.0
 	github.com/arl/statsviz v0.8.2
 	github.com/dop251/goja v0.0.0-20261021140635-64adc8bb4d51
-	github.com/go-sql-driver/mysql v1.10.1
+	github.com/go-sql-driver/mysql v1.10.2
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgerrcode v0.0.0-20250907135507-afb5586c32a6
 	github.com/jackc/pgx/v5 v5.13.0
@@ -25,7 +25,7 @@ require (
 	github.com/prometheus/common v0.74.0
 	github.com/stretchr/testify v1.12.1
 	github.com/xdg-go/scram v1.4.0
-	github.com/xdg-go/stringprep v1.0.4
+	github.com/xdg-go/stringprep v1.0.5
 	go.mongodb.org/mongo-driver v1.17.10
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.47.0
