@@ -4,6 +4,10 @@ version: 3
 env:
   GORACE: halt_on_error=1,history_size=2
   GOCOVERDIR: tmp/cover
+  # The development services (postgres, mysql, mongodb, ...). docker-compose.yml
+  # runs WeKan against FerretDB since it took that name, and `task env-up`
+  # asked it for services it does not have.
+  COMPOSE_FILE: docker-compose.dev.yml
 
 vars:
   SHARD_INDEX: 0
@@ -15,7 +19,7 @@ vars:
   TESTJS_PORT: 27017
   RACE_FLAG: -race={{and (ne OS "windows") (ne ARCH "arm") (ne ARCH "riscv64")}}
   BUILD_TAGS: ferretdb_debug,ferretdb_hana
-  SERVICES: postgres postgres_secured mysql mongodb mongodb_secured jaeger
+  SERVICES: postgres postgres_secured mysql mariadb tidb mongodb mongodb_secured jaeger
 
 tasks:
   # invoked when `task` is run without arguments
@@ -283,6 +287,58 @@ tasks:
         -target-backend=ferretdb-mysql
         -target-tls
         -mysql-url='mysql://username:password@127.0.0.1:3306/ferretdb'
+        -compat-url='mongodb://username:password@127.0.0.1:47018/?tls=true&tlsCertificateKeyFile=client.pem&tlsCaFile=rootCA-cert.pem&replicaSet=rs0'
+        -disable-pushdown={{.DISABLE_PUSHDOWN}}
+
+  test-integration-mariadb:
+    desc: "Run integration tests for `mysql` handler against MariaDB"
+    deps: [gen-version]
+    dir: integration
+    cmds:
+      - >
+        ../bin/envtool{{exeExt}} tests run
+        --shard-index={{.SHARD_INDEX}}
+        --shard-total={{.SHARD_TOTAL}}
+        --run='{{.TEST_RUN}}'
+        --skip='{{.TEST_SKIP}}'
+        --
+        -count=1
+        -timeout={{.TEST_TIMEOUT}}
+        {{.RACE_FLAG}}
+        -tags={{.BUILD_TAGS}}
+        -shuffle=on
+        -coverpkg=../...
+        -coverprofile=integration-mariadb.txt
+        ./...
+        -target-backend=ferretdb-mysql
+        -target-tls
+        -mysql-url='mysql://username:password@127.0.0.1:3307/ferretdb'
+        -compat-url='mongodb://username:password@127.0.0.1:47018/?tls=true&tlsCertificateKeyFile=client.pem&tlsCaFile=rootCA-cert.pem&replicaSet=rs0'
+        -disable-pushdown={{.DISABLE_PUSHDOWN}}
+
+  test-integration-tidb:
+    desc: "Run integration tests for `mysql` handler against TiDB"
+    deps: [gen-version]
+    dir: integration
+    cmds:
+      - >
+        ../bin/envtool{{exeExt}} tests run
+        --shard-index={{.SHARD_INDEX}}
+        --shard-total={{.SHARD_TOTAL}}
+        --run='{{.TEST_RUN}}'
+        --skip='{{.TEST_SKIP}}'
+        --
+        -count=1
+        -timeout={{.TEST_TIMEOUT}}
+        {{.RACE_FLAG}}
+        -tags={{.BUILD_TAGS}}
+        -shuffle=on
+        -coverpkg=../...
+        -coverprofile=integration-tidb.txt
+        ./...
+        -target-backend=ferretdb-mysql
+        -target-tls
+        -mysql-url='mysql://username:password@127.0.0.1:4000/ferretdb'
         -compat-url='mongodb://username:password@127.0.0.1:47018/?tls=true&tlsCertificateKeyFile=client.pem&tlsCaFile=rootCA-cert.pem&replicaSet=rs0'
         -disable-pushdown={{.DISABLE_PUSHDOWN}}
 

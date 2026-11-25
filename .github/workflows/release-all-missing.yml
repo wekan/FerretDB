@@ -97,6 +97,7 @@ jobs:
           python3 -B tests/dependency-floors.py
           python3 -B tests/go-telemetry-off.py
           python3 -B tests/mptcp-off.py
+          python3 -B tests/compat-databases.py
 
       - name: Resolve release version
         id: ver

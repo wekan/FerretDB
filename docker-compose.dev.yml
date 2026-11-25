@@ -69,6 +69,43 @@ services:
       - MYSQL_PASSWORD=password
       - MYSQL_DATABASE=ferretdb
 
+  # MySQL-compatible servers the mysql backend is tested against too
+  # (task test-integration-mariadb / test-integration-tidb). Other ports, so
+  # they run beside mysql.
+  mariadb:
+    build:
+      context: ./build/deps
+      dockerfile: mariadb.Dockerfile
+    container_name: ferretdb_mariadb
+    command:
+      - --max_connections=200
+    ports:
+      - 3307:3306
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # UTC−03:30/−02:30. Set to catch timezone problems.
+      - TZ=America/St_Johns
+      - MARIADB_ROOT_PASSWORD=password
+      - MARIADB_USER=username
+      - MARIADB_PASSWORD=password
+      - MARIADB_DATABASE=ferretdb
+
+  # TiDB starts with a passwordless root and a `test` database and runs no init
+  # scripts: `envtool setup` makes the `username` user and the `ferretdb`
+  # database the mysql and mariadb containers get from their environment.
+  tidb:
+    build:
+      context: ./build/deps
+      dockerfile: tidb.Dockerfile
+    container_name: ferretdb_tidb
+    ports:
+      - 4000:4000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=America/St_Johns
+
   mongodb:
     build:
       context: ./build/deps

@@ -146,14 +146,36 @@ func setupPostgresSecured(ctx context.Context, logger *slog.Logger) error {
 
 // setupMySQL configures `mysql` container.
 func setupMySQL(ctx context.Context, logger *slog.Logger) error {
-	uri := "mysql://root:password@127.0.0.1:3306/ferretdb"
+	return setupAnyMySQL(ctx, logging.WithName(logger, "mysql"), "mysql://root:password@127.0.0.1:3306/ferretdb", 3306, "password", true) //nolint:lll // for readability
+}
 
+// setupMariaDB configures `mariadb` container, the mysql backend's tests against MariaDB.
+func setupMariaDB(ctx context.Context, logger *slog.Logger) error {
+	return setupAnyMySQL(ctx, logging.WithName(logger, "mariadb"), "mysql://root:password@127.0.0.1:3307/ferretdb", 3307, "password", true) //nolint:lll // for readability
+}
+
+// setupTiDB configures `tidb` container. Its image runs no init scripts and
+// starts with a passwordless root and a `test` database, so the user and the
+// database the other MySQL-compatible containers get from their environment
+// are made here.
+func setupTiDB(ctx context.Context, logger *slog.Logger) error {
+	return setupAnyMySQL(ctx, logging.WithName(logger, "tidb"), "mysql://root@127.0.0.1:4000/test", 4000, "", false,
+		"CREATE USER IF NOT EXISTS 'username'@'%' IDENTIFIED BY 'password'",
+		"CREATE DATABASE IF NOT EXISTS ferretdb",
+		"GRANT ALL PRIVILEGES ON *.* TO 'username'@'%'")
+}
+
+// setupAnyMySQL waits until a MySQL-compatible server at uri answers as root,
+// runs statements, and then lets `username` do everything when grant is set.
+func setupAnyMySQL(ctx context.Context, logger *slog.Logger, uri string, port uint16, rootPassword string, grant bool,
+	statements ...string,
+) error {
 	sp, err := state.NewProvider("")
 	if err != nil {
 		return err
 	}
 
-	if err = waitForPort(ctx, logging.WithName(logger, "mysql"), 3306); err != nil {
+	if err = waitForPort(ctx, logger, port); err != nil {
 		return err
 	}
 
@@ -166,8 +188,18 @@ func setupMySQL(ctx context.Context, logger *slog.Logger) error {
 
 	var retry int64
 	for ctx.Err() == nil {
-		db, err := p.Get("root", "password")
+		db, err := p.Get("root", rootPassword)
 		if err == nil {
+			for _, q := range statements {
+				if _, err = db.ExecContext(ctx, q); err != nil {
+					return lazyerrors.Error(err)
+				}
+			}
+
+			if !grant {
+				break
+			}
+
 			if _, err = db.ExecContext(ctx, "GRANT ALL PRIVILEGES ON *.* TO 'username'@'%';"); err != nil {
 				return lazyerrors.Error(err)
 			}
@@ -264,6 +296,8 @@ func setup(ctx context.Context, logger *slog.Logger) error {
 		setupPostgres,
 		setupPostgresSecured,
 		setupMySQL,
+		setupMariaDB,
+		setupTiDB,
 		setupMongodb,
 		setupMongodbSecured,
 	} {
