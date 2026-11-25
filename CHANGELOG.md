@@ -2,6 +2,21 @@
 
 <!-- markdownlint-disable MD024 MD034 -->
 
+## Upcoming FerretDB release
+
+### Fixed 🐛
+
+- **Docker images on distroless static, without mongosh**
+  ([5dec96767](https://github.com/wekan/FerretDB/commit/5dec9676737995bf6df2b45f48a984803e7f255a)): every one of Artifact
+  Hub's 42 findings in the image was in glibc, libstdc++, libgcc and libatomic,
+  which were there only for the Node.js of a bundled mongosh; none has a Debian
+  fix, and the static ferretdb binary uses none of them. The runtime is now
+  `gcr.io/distroless/static-debian13`, with no C library, shell or package
+  manager, and 386 gets the same Debian packages in scratch. mongosh is no
+  longer in the image: run it from elsewhere against the published port. The
+  `mongosh_version` input of `docker.yml` and `release-all.yml` is gone with it.
+  by @xet7. Thanks to xet7.
+
 ## [v1.114.0](https://github.com/wekan/FerretDB/releases/tag/v1.114.0) (2026-11-25)
 
 ### Fixed 🐛
