@@ -4,8 +4,20 @@
 
 ## Upcoming FerretDB release
 
+### Fixed 🐛
+
+- **`task env-up` uses the development compose file again**
+  ([53642f1cb](https://github.com/wekan/FerretDB/commit/53642f1cbebd917210dbd7ad718643a0d4abed21)): it asked
+  `docker-compose.yml`, which runs WeKan, for postgres, mysql and mongodb; the
+  Taskfile names `docker-compose.dev.yml` now. by @xet7. Thanks to xet7.
+
 ### Other Changes 🤖
 
+- **The mysql backend's tests against MariaDB 13.0.2 and TiDB v8.5.8**
+  ([53642f1cb](https://github.com/wekan/FerretDB/commit/53642f1cbebd917210dbd7ad718643a0d4abed21)):
+  `task test-integration-mariadb` and `task test-integration-tidb`, their
+  services and `envtool setup`, checked by `tests/compat-databases.py`.
+  `TODO.md` lists the other databases looked at. by @xet7. Thanks to xet7.
 - **Sync the integration module with the main module after #63**
   ([d37483667](https://github.com/wekan/FerretDB/commit/d374836674c633a78ddfa7f93e210317dc6c85c3)): `go mod tidy` in
   `integration/`, which also records `mattn/go-sqlite3`. by @xet7. Thanks to
